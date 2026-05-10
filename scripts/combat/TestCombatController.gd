@@ -3,6 +3,7 @@ extends Control
 const COMBAT_GRID_SCRIPT := preload("res://scripts/grid/CombatGrid.gd")
 const BLUFF_SYSTEM_SCRIPT := preload("res://scripts/combat/BluffSystem.gd")
 const COMBAT_RESOLVER_SCRIPT := preload("res://scripts/combat/CombatResolver.gd")
+const COMBAT_SESSION_SCRIPT := preload("res://scripts/combat/CombatSession.gd")
 const DECK_MANAGER_SCRIPT := preload("res://scripts/cards/DeckManager.gd")
 const ENEMY_INTENT_SYSTEM_SCRIPT := preload("res://scripts/enemies/EnemyIntentSystem.gd")
 const HAND_VIEW_SCRIPT := preload("res://scripts/ui/HandView.gd")
@@ -32,10 +33,12 @@ var log_label: RichTextLabel
 var combat_grid: Control
 var bluff_system: Node
 var combat_resolver: Node
+var combat_session: Node
 var deck_manager: Node
 var enemy_intent_system: Node
 var hand_view: HBoxContainer
 var pile_counts_label: Label
+var resource_state_label: Label
 var combat_state_label: RichTextLabel
 var bluff_state_label: RichTextLabel
 var enemy_call_option: OptionButton
@@ -59,18 +62,14 @@ var fold_button: Button
 var reset_bluff_button: Button
 var debug_truth_visible: bool = true
 var current_intent_previews: Array[Dictionary] = []
+var reveal_resolved_this_phase: bool = false
 
 
 func _ready() -> void:
 	_build_ui()
 	_connect_turn_manager()
 	log_label.clear()
-	turn_manager.reset_combat()
-	combat_grid.call("reset_grid")
-	_reset_combat_state()
-	_reset_deck_and_draw_opening_hand()
-	_reset_enemy_intents()
-	bluff_system.call("reset_bluff")
+	_reset_playable_combat()
 
 
 func _build_ui() -> void:
@@ -98,7 +97,7 @@ func _build_ui() -> void:
 	layout.add_child(title)
 
 	var subtitle := Label.new()
-	subtitle.text = "Phase 6 proves cards and enemy intents can resolve into HP, Guard, traps, and outcomes."
+	subtitle.text = "Phase 7 brings the prototype into one playable loop: draw, commit, bluff, reveal, resolve, cleanup."
 	subtitle.add_theme_font_size_override("font_size", 16)
 	layout.add_child(subtitle)
 
@@ -111,6 +110,11 @@ func _build_ui() -> void:
 	phase_label.text = "Phase: -"
 	phase_label.add_theme_font_size_override("font_size", 22)
 	layout.add_child(phase_label)
+
+	resource_state_label = Label.new()
+	resource_state_label.text = "Energy: -"
+	resource_state_label.add_theme_font_size_override("font_size", 18)
+	layout.add_child(resource_state_label)
 
 	var buttons := HBoxContainer.new()
 	buttons.name = "DebugButtons"
@@ -355,6 +359,13 @@ func _build_ui() -> void:
 	combat_resolver.connect("state_changed", _on_combat_state_changed)
 	combat_resolver.connect("combat_ended", _on_combat_ended)
 
+	combat_session = Node.new()
+	combat_session.name = "CombatSession"
+	combat_session.set_script(COMBAT_SESSION_SCRIPT)
+	add_child(combat_session)
+	combat_session.connect("log_requested", _on_log_requested)
+	combat_session.connect("state_changed", _on_session_state_changed)
+
 
 func _connect_turn_manager() -> void:
 	turn_manager.phase_changed.connect(_on_phase_changed)
@@ -366,10 +377,19 @@ func _connect_turn_manager() -> void:
 func _on_phase_changed(new_phase: int) -> void:
 	phase_label.text = "Phase: %s" % turn_manager.get_phase_display(new_phase)
 	var phase_key: String = turn_manager.get_phase_key(new_phase)
+	reveal_resolved_this_phase = false
+	combat_session.call("enter_phase", phase_key, turn_manager.turn_number)
+
+	if phase_key == "DRAW":
+		_draw_to_hand_target()
 	if phase_key == "ENEMY_INTENT_PREVIEW":
 		enemy_intent_system.call("roll_intents")
 	elif phase_key == "REVEAL":
 		_resolve_reveal()
+	elif phase_key == "CLEANUP":
+		_cleanup_turn()
+
+	_refresh_action_controls()
 
 
 func _on_turn_started(new_turn_number: int) -> void:
@@ -385,17 +405,15 @@ func _on_log_requested(message: String) -> void:
 
 
 func _on_next_phase_pressed() -> void:
+	if not bool(combat_session.call("can_debug_adjust")):
+		_append_log("Combat is over. Reset to start a new loop.")
+		return
 	turn_manager.advance_phase()
 
 
 func _on_reset_pressed() -> void:
 	log_label.clear()
-	turn_manager.reset_combat()
-	combat_grid.call("reset_grid")
-	_reset_combat_state()
-	_reset_deck_and_draw_opening_hand()
-	_reset_enemy_intents()
-	bluff_system.call("reset_bluff")
+	_reset_playable_combat()
 
 
 func _on_reset_grid_pressed() -> void:
@@ -403,10 +421,16 @@ func _on_reset_grid_pressed() -> void:
 
 
 func _on_draw_pressed() -> void:
+	if not bool(combat_session.call("can_debug_adjust")):
+		_append_log("Combat is over. Reset before drawing.")
+		return
 	deck_manager.call("draw_cards", 5)
 
 
 func _on_discard_hand_pressed() -> void:
+	if not bool(combat_session.call("can_debug_adjust")):
+		_append_log("Combat is over. Reset before discarding.")
+		return
 	deck_manager.call("discard_hand")
 
 
@@ -415,10 +439,19 @@ func _on_reset_deck_pressed() -> void:
 
 
 func _on_roll_intents_pressed() -> void:
+	if not bool(combat_session.call("can_debug_adjust")):
+		_append_log("Combat is over. Reset before rolling intents.")
+		return
 	enemy_intent_system.call("roll_intents")
 
 
 func _on_reveal_intents_pressed() -> void:
+	if not bool(combat_session.call("can_reveal")):
+		_append_log("Reveal is only available during the Reveal phase.")
+		return
+	if reveal_resolved_this_phase:
+		_append_log("Reveal already resolved for this phase.")
+		return
 	_resolve_reveal()
 
 
@@ -429,7 +462,22 @@ func _on_toggle_truth_pressed() -> void:
 
 
 func _on_card_clicked(hand_index: int) -> void:
-	deck_manager.call("play_card_at", hand_index)
+	if not bool(combat_session.call("can_play_cards")):
+		_append_log("Cards can only be played during Player Commit.")
+		return
+
+	var card: Resource = deck_manager.call("get_card_at", hand_index)
+	if card == null:
+		_append_log("No card at hand index %d." % hand_index)
+		return
+
+	var cost := _get_card_cost(card)
+	var card_name := _get_card_name(card)
+	if not bool(combat_session.call("spend_energy", cost, card_name)):
+		return
+
+	if not bool(deck_manager.call("play_card_at", hand_index)):
+		combat_session.call("refund_energy", cost, "%s failed to play" % card_name)
 
 
 func _on_card_played(card: Resource) -> void:
@@ -437,12 +485,36 @@ func _on_card_played(card: Resource) -> void:
 
 
 func _on_commit_first_card_pressed() -> void:
+	if not bool(combat_session.call("can_play_cards")):
+		_append_log("Cards can only be committed during Player Commit.")
+		return
+
+	if bool(deck_manager.call("has_committed_card")):
+		_append_log("Resolve or fold the committed card before committing another.")
+		return
+
+	var card: Resource = deck_manager.call("get_card_at", 0)
+	if card == null:
+		_append_log("No first card in hand to commit.")
+		return
+
+	var cost := _get_card_cost(card)
+	var card_name := _get_card_name(card)
+	if not bool(combat_session.call("spend_energy", cost, "Commit %s" % card_name)):
+		return
+
 	var committed: Resource = deck_manager.call("commit_card_at", 0)
 	if committed != null:
 		bluff_system.call("set_committed_card", committed)
+	else:
+		combat_session.call("refund_energy", cost, "Commit failed")
 
 
 func _on_set_call_pressed() -> void:
+	if not bool(combat_session.call("can_bluff")):
+		_append_log("Calls can only be set during Bluff Wager.")
+		return
+
 	var enemy_metadata = _get_selected_metadata(enemy_call_option)
 	var intent_metadata = _get_selected_metadata(intent_call_option)
 	var lane_metadata = _get_selected_metadata(lane_call_option)
@@ -461,15 +533,24 @@ func _on_set_call_pressed() -> void:
 
 
 func _on_raise_pressed() -> void:
+	if not bool(combat_session.call("can_bluff")):
+		_append_log("Raise is only available during Bluff Wager.")
+		return
 	bluff_system.call("raise_wager", 1)
 
 
 func _on_fold_pressed() -> void:
+	if not bool(combat_session.call("can_bluff")):
+		_append_log("Fold is only available during Bluff Wager.")
+		return
 	if bool(bluff_system.call("fold")):
 		deck_manager.call("fold_committed_card")
 
 
 func _on_reset_bluff_pressed() -> void:
+	if not bool(combat_session.call("can_debug_adjust")):
+		_append_log("Combat is over. Reset combat to reset bluff state.")
+		return
 	bluff_system.call("reset_bluff")
 
 
@@ -485,6 +566,18 @@ func _on_piles_changed(counts: Dictionary) -> void:
 		counts.get("exhaust", 0),
 		counts.get("committed", 0)
 	]
+	_refresh_action_controls()
+
+
+func _reset_playable_combat() -> void:
+	combat_session.call("reset_session")
+	combat_grid.call("reset_grid")
+	_reset_combat_state()
+	_reset_deck_and_draw_opening_hand()
+	_reset_enemy_intents()
+	bluff_system.call("reset_bluff")
+	turn_manager.reset_combat()
+	_refresh_action_controls()
 
 
 func _reset_deck_and_draw_opening_hand() -> void:
@@ -500,6 +593,26 @@ func _reset_enemy_intents() -> void:
 
 func _reset_combat_state() -> void:
 	combat_resolver.call("reset_combat", ENEMY_PATHS)
+
+
+func _draw_to_hand_target() -> void:
+	var counts: Dictionary = deck_manager.call("get_counts")
+	var hand_target: int = int(combat_session.get("hand_target"))
+	var missing_cards: int = max(0, hand_target - int(counts.get("hand", 0)))
+	if missing_cards == 0:
+		_append_log("Draw phase: hand already at target.")
+		return
+
+	deck_manager.call("draw_cards", missing_cards)
+
+
+func _cleanup_turn() -> void:
+	if bool(deck_manager.call("has_committed_card")):
+		_append_log("Cleanup found a committed card; resolving it into discard before ending turn.")
+		deck_manager.call("resolve_committed_card")
+
+	deck_manager.call("discard_hand")
+	_append_log("Cleanup complete. Advance to begin the next turn.")
 
 
 func _on_intent_previews_changed(previews: Array[Dictionary]) -> void:
@@ -569,10 +682,23 @@ func _on_combat_state_changed(state: Dictionary) -> void:
 		state.get("traps_armed", 0),
 		state.get("outcome", "ongoing")
 	])
+	_refresh_action_controls()
 
 
 func _on_combat_ended(outcome: String) -> void:
 	_append_log("Combat ended: %s." % outcome)
+	combat_session.call("mark_combat_ended", outcome)
+	_refresh_action_controls()
+
+
+func _on_session_state_changed(state: Dictionary) -> void:
+	resource_state_label.text = "Energy: %d/%d | Phase Gate: %s | Loop: %s" % [
+		state.get("energy", 0),
+		state.get("max_energy", 0),
+		state.get("current_phase_key", "UNKNOWN"),
+		state.get("outcome", "ongoing")
+	]
+	_refresh_action_controls()
 
 
 func _on_enemy_call_selected(_index: int) -> void:
@@ -580,6 +706,10 @@ func _on_enemy_call_selected(_index: int) -> void:
 
 
 func _resolve_reveal() -> void:
+	if reveal_resolved_this_phase:
+		return
+
+	reveal_resolved_this_phase = true
 	var revealed: Array = enemy_intent_system.call("reveal_intents")
 	bluff_system.call("reveal", revealed)
 	if bool(deck_manager.call("has_committed_card")):
@@ -587,6 +717,32 @@ func _resolve_reveal() -> void:
 		if resolved_card != null:
 			combat_resolver.call("apply_card", resolved_card)
 	combat_resolver.call("apply_revealed_intents", revealed)
+	_refresh_action_controls()
+
+
+func _refresh_action_controls() -> void:
+	if next_phase_button == null or combat_session == null:
+		return
+
+	var can_debug_adjust := bool(combat_session.call("can_debug_adjust"))
+	var can_play := bool(combat_session.call("can_play_cards"))
+	var can_bluff := bool(combat_session.call("can_bluff"))
+	var can_reveal := bool(combat_session.call("can_reveal"))
+	var has_committed := bool(deck_manager.call("has_committed_card")) if deck_manager != null else false
+
+	next_phase_button.disabled = not can_debug_adjust
+	reset_grid_button.disabled = not can_debug_adjust
+	draw_button.disabled = not can_debug_adjust
+	discard_hand_button.disabled = not can_debug_adjust
+	reset_deck_button.disabled = not can_debug_adjust
+	roll_intents_button.disabled = not can_debug_adjust
+	reveal_intents_button.disabled = not can_reveal or reveal_resolved_this_phase
+
+	commit_first_card_button.disabled = not can_play or has_committed
+	set_call_button.disabled = not can_bluff
+	raise_button.disabled = not can_bluff or not has_committed
+	fold_button.disabled = not can_bluff or not has_committed
+	reset_bluff_button.disabled = not can_debug_adjust
 
 
 func _refresh_enemy_call_options() -> void:
@@ -619,9 +775,23 @@ func _refresh_intent_call_options() -> void:
 
 
 func _get_selected_metadata(option_button: OptionButton):
-	if option_button.item_count == 0:
+	if option_button.item_count == 0 or option_button.selected < 0:
 		return null
 	return option_button.get_item_metadata(option_button.selected)
+
+
+func _get_card_cost(card: Resource) -> int:
+	if card == null:
+		return 0
+	return int(card.get("cost"))
+
+
+func _get_card_name(card: Resource) -> String:
+	if card == null:
+		return "Unknown Card"
+	if card.has_method("get_display_name"):
+		return String(card.call("get_display_name"))
+	return String(card.get("display_name"))
 
 
 func _append_log(message: String) -> void:

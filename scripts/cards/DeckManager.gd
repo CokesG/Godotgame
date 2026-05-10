@@ -77,10 +77,6 @@ func draw_cards(amount: int) -> Array[Resource]:
 
 
 func play_card_at(hand_index: int) -> bool:
-	if committed_card != null:
-		log_requested.emit("Resolve or fold the committed card before playing another card.")
-		return false
-
 	if hand_index < 0 or hand_index >= hand.size():
 		log_requested.emit("Cannot play card at hand index %d." % hand_index)
 		return false
@@ -172,6 +168,16 @@ func get_counts() -> Dictionary:
 
 func get_hand_snapshot() -> Array[Resource]:
 	return hand.duplicate()
+
+
+func get_hand_count() -> int:
+	return hand.size()
+
+
+func get_card_at(hand_index: int) -> Resource:
+	if hand_index < 0 or hand_index >= hand.size():
+		return null
+	return hand[hand_index]
 
 
 func get_committed_card() -> Resource:
