@@ -24,6 +24,72 @@ const ENEMY_PATHS := [
 	"res://resources/enemies/skulker.tres",
 	"res://resources/enemies/shieldbearer.tres"
 ]
+const PHASE_ACTION_LABELS := {
+	"START_TURN": "Start Draw",
+	"DRAW": "Read Intents",
+	"ENEMY_INTENT_PREVIEW": "Commit Cards",
+	"PLAYER_COMMIT": "End Commit",
+	"BLUFF_WAGER": "Reveal",
+	"REVEAL": "Continue",
+	"RESOLVE": "Cleanup",
+	"CLEANUP": "Next Turn"
+}
+const PHASE_GUIDANCE := {
+	"START_TURN": {
+		"title": "Start Turn",
+		"detail": "Energy refreshes. Continue to fill the hand."
+	},
+	"DRAW": {
+		"title": "Draw",
+		"detail": "The hand fills toward five cards automatically."
+	},
+	"ENEMY_INTENT_PREVIEW": {
+		"title": "Read",
+		"detail": "Compare enemy odds and tells before committing."
+	},
+	"PLAYER_COMMIT": {
+		"title": "Commit",
+		"detail": "Click cards to play them, or commit the first card face-down."
+	},
+	"BLUFF_WAGER": {
+		"title": "Bluff",
+		"detail": "Set a call, raise if confident, or fold the committed card."
+	},
+	"REVEAL": {
+		"title": "Reveal",
+		"detail": "Enemy intent and committed cards resolve once this phase begins."
+	},
+	"RESOLVE": {
+		"title": "Resolve",
+		"detail": "Review HP, Guard, traps, and the combat log."
+	},
+	"CLEANUP": {
+		"title": "Cleanup",
+		"detail": "Leftover hand cards are discarded before the next turn."
+	}
+}
+const RECIPE_STEPS := [
+	{
+		"id": "read_intents",
+		"label": "Read one enemy intent preview"
+	},
+	{
+		"id": "play_or_commit",
+		"label": "Play a card or commit one face-down"
+	},
+	{
+		"id": "bluff_choice",
+		"label": "Set a call, raise, or fold"
+	},
+	{
+		"id": "reveal_resolve",
+		"label": "Resolve the reveal"
+	},
+	{
+		"id": "cleanup",
+		"label": "Clean up and start the next turn"
+	}
+]
 
 @onready var turn_manager: Node = $TurnManager
 
@@ -39,15 +105,21 @@ var enemy_intent_system: Node
 var hand_view: HBoxContainer
 var pile_counts_label: Label
 var resource_state_label: Label
+var phase_guidance_label: Label
+var phase_detail_label: Label
+var recipe_label: RichTextLabel
 var combat_state_label: RichTextLabel
 var bluff_state_label: RichTextLabel
 var enemy_call_option: OptionButton
 var intent_call_option: OptionButton
 var lane_call_option: OptionButton
 var intent_preview_label: RichTextLabel
+var truth_title_label: Label
 var debug_truth_label: RichTextLabel
+var debug_controls: HBoxContainer
 var next_phase_button: Button
 var reset_button: Button
+var toggle_debug_button: Button
 var reset_grid_button: Button
 var draw_button: Button
 var discard_hand_button: Button
@@ -60,9 +132,11 @@ var set_call_button: Button
 var raise_button: Button
 var fold_button: Button
 var reset_bluff_button: Button
-var debug_truth_visible: bool = true
+var debug_controls_visible: bool = false
+var debug_truth_visible: bool = false
 var current_intent_previews: Array[Dictionary] = []
 var reveal_resolved_this_phase: bool = false
+var recipe_progress: Dictionary = {}
 
 
 func _ready() -> void:
@@ -97,7 +171,7 @@ func _build_ui() -> void:
 	layout.add_child(title)
 
 	var subtitle := Label.new()
-	subtitle.text = "Phase 7 brings the prototype into one playable loop: draw, commit, bluff, reveal, resolve, cleanup."
+	subtitle.text = "Phase 8 turns the combat harness into a readable playable loop."
 	subtitle.add_theme_font_size_override("font_size", 16)
 	layout.add_child(subtitle)
 
@@ -116,55 +190,103 @@ func _build_ui() -> void:
 	resource_state_label.add_theme_font_size_override("font_size", 18)
 	layout.add_child(resource_state_label)
 
-	var buttons := HBoxContainer.new()
-	buttons.name = "DebugButtons"
-	buttons.add_theme_constant_override("separation", 8)
-	layout.add_child(buttons)
+	var guidance_panel := PanelContainer.new()
+	guidance_panel.name = "TurnGuidance"
+	guidance_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	layout.add_child(guidance_panel)
+
+	var guidance_layout := VBoxContainer.new()
+	guidance_layout.name = "GuidanceLayout"
+	guidance_layout.add_theme_constant_override("separation", 4)
+	guidance_panel.add_child(guidance_layout)
+
+	phase_guidance_label = Label.new()
+	phase_guidance_label.name = "PhaseGuidance"
+	phase_guidance_label.text = "Start Turn"
+	phase_guidance_label.add_theme_font_size_override("font_size", 20)
+	guidance_layout.add_child(phase_guidance_label)
+
+	phase_detail_label = Label.new()
+	phase_detail_label.name = "PhaseDetail"
+	phase_detail_label.text = "Energy refreshes. Continue to fill the hand."
+	phase_detail_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	guidance_layout.add_child(phase_detail_label)
+
+	var recipe_panel := PanelContainer.new()
+	recipe_panel.name = "RecipePanel"
+	recipe_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	layout.add_child(recipe_panel)
+
+	recipe_label = RichTextLabel.new()
+	recipe_label.name = "RecipeLabel"
+	recipe_label.bbcode_enabled = false
+	recipe_label.fit_content = true
+	recipe_label.scroll_active = false
+	recipe_label.custom_minimum_size = Vector2(0, 118)
+	recipe_panel.add_child(recipe_label)
+
+	var primary_controls := HBoxContainer.new()
+	primary_controls.name = "PrimaryControls"
+	primary_controls.add_theme_constant_override("separation", 8)
+	layout.add_child(primary_controls)
 
 	next_phase_button = Button.new()
-	next_phase_button.text = "Next Phase"
+	next_phase_button.name = "ContinueButton"
+	next_phase_button.text = "Start Draw"
 	next_phase_button.pressed.connect(_on_next_phase_pressed)
-	buttons.add_child(next_phase_button)
+	primary_controls.add_child(next_phase_button)
 
 	reset_button = Button.new()
-	reset_button.text = "Reset Combat"
+	reset_button.name = "NewCombatButton"
+	reset_button.text = "New Combat"
 	reset_button.pressed.connect(_on_reset_pressed)
-	buttons.add_child(reset_button)
+	primary_controls.add_child(reset_button)
+
+	toggle_debug_button = Button.new()
+	toggle_debug_button.name = "ToggleDebugButton"
+	toggle_debug_button.text = "Show Debug"
+	toggle_debug_button.pressed.connect(_on_toggle_debug_pressed)
+	primary_controls.add_child(toggle_debug_button)
+
+	debug_controls = HBoxContainer.new()
+	debug_controls.name = "DebugControls"
+	debug_controls.add_theme_constant_override("separation", 8)
+	layout.add_child(debug_controls)
 
 	reset_grid_button = Button.new()
 	reset_grid_button.text = "Reset Grid"
 	reset_grid_button.pressed.connect(_on_reset_grid_pressed)
-	buttons.add_child(reset_grid_button)
+	debug_controls.add_child(reset_grid_button)
 
 	draw_button = Button.new()
 	draw_button.text = "Draw 5"
 	draw_button.pressed.connect(_on_draw_pressed)
-	buttons.add_child(draw_button)
+	debug_controls.add_child(draw_button)
 
 	discard_hand_button = Button.new()
 	discard_hand_button.text = "Discard Hand"
 	discard_hand_button.pressed.connect(_on_discard_hand_pressed)
-	buttons.add_child(discard_hand_button)
+	debug_controls.add_child(discard_hand_button)
 
 	reset_deck_button = Button.new()
 	reset_deck_button.text = "Reset Deck"
 	reset_deck_button.pressed.connect(_on_reset_deck_pressed)
-	buttons.add_child(reset_deck_button)
+	debug_controls.add_child(reset_deck_button)
 
 	roll_intents_button = Button.new()
 	roll_intents_button.text = "Roll Intents"
 	roll_intents_button.pressed.connect(_on_roll_intents_pressed)
-	buttons.add_child(roll_intents_button)
+	debug_controls.add_child(roll_intents_button)
 
 	reveal_intents_button = Button.new()
 	reveal_intents_button.text = "Reveal Intents"
 	reveal_intents_button.pressed.connect(_on_reveal_intents_pressed)
-	buttons.add_child(reveal_intents_button)
+	debug_controls.add_child(reveal_intents_button)
 
 	toggle_truth_button = Button.new()
-	toggle_truth_button.text = "Hide Truth"
+	toggle_truth_button.text = "Show Truth"
 	toggle_truth_button.pressed.connect(_on_toggle_truth_pressed)
-	buttons.add_child(toggle_truth_button)
+	debug_controls.add_child(toggle_truth_button)
 
 	var body := HBoxContainer.new()
 	body.name = "CombatBody"
@@ -198,10 +320,11 @@ func _build_ui() -> void:
 	intent_preview_label.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	intent_column.add_child(intent_preview_label)
 
-	var truth_title := Label.new()
-	truth_title.text = "Debug Truth"
-	truth_title.add_theme_font_size_override("font_size", 18)
-	intent_column.add_child(truth_title)
+	truth_title_label = Label.new()
+	truth_title_label.name = "DebugTruthTitle"
+	truth_title_label.text = "Debug Truth"
+	truth_title_label.add_theme_font_size_override("font_size", 18)
+	intent_column.add_child(truth_title_label)
 
 	debug_truth_label = RichTextLabel.new()
 	debug_truth_label.name = "DebugTruth"
@@ -365,6 +488,7 @@ func _build_ui() -> void:
 	add_child(combat_session)
 	combat_session.connect("log_requested", _on_log_requested)
 	combat_session.connect("state_changed", _on_session_state_changed)
+	_update_debug_visibility()
 
 
 func _connect_turn_manager() -> void:
@@ -384,6 +508,7 @@ func _on_phase_changed(new_phase: int) -> void:
 		_draw_to_hand_target()
 	if phase_key == "ENEMY_INTENT_PREVIEW":
 		enemy_intent_system.call("roll_intents")
+		_mark_recipe_step("read_intents")
 	elif phase_key == "REVEAL":
 		_resolve_reveal()
 	elif phase_key == "CLEANUP":
@@ -457,8 +582,12 @@ func _on_reveal_intents_pressed() -> void:
 
 func _on_toggle_truth_pressed() -> void:
 	debug_truth_visible = not debug_truth_visible
-	debug_truth_label.visible = debug_truth_visible
-	toggle_truth_button.text = "Hide Truth" if debug_truth_visible else "Show Truth"
+	_update_debug_visibility()
+
+
+func _on_toggle_debug_pressed() -> void:
+	debug_controls_visible = not debug_controls_visible
+	_update_debug_visibility()
 
 
 func _on_card_clicked(hand_index: int) -> void:
@@ -478,6 +607,8 @@ func _on_card_clicked(hand_index: int) -> void:
 
 	if not bool(deck_manager.call("play_card_at", hand_index)):
 		combat_session.call("refund_energy", cost, "%s failed to play" % card_name)
+	else:
+		_mark_recipe_step("play_or_commit")
 
 
 func _on_card_played(card: Resource) -> void:
@@ -506,6 +637,7 @@ func _on_commit_first_card_pressed() -> void:
 	var committed: Resource = deck_manager.call("commit_card_at", 0)
 	if committed != null:
 		bluff_system.call("set_committed_card", committed)
+		_mark_recipe_step("play_or_commit")
 	else:
 		combat_session.call("refund_energy", cost, "Commit failed")
 
@@ -530,13 +662,15 @@ func _on_set_call_pressed() -> void:
 		String(intent_metadata.get("intent_name", "Intent")),
 		int(lane_metadata)
 	)
+	_mark_recipe_step("bluff_choice")
 
 
 func _on_raise_pressed() -> void:
 	if not bool(combat_session.call("can_bluff")):
 		_append_log("Raise is only available during Bluff Wager.")
 		return
-	bluff_system.call("raise_wager", 1)
+	if bool(bluff_system.call("raise_wager", 1)):
+		_mark_recipe_step("bluff_choice")
 
 
 func _on_fold_pressed() -> void:
@@ -545,6 +679,7 @@ func _on_fold_pressed() -> void:
 		return
 	if bool(bluff_system.call("fold")):
 		deck_manager.call("fold_committed_card")
+		_mark_recipe_step("bluff_choice")
 
 
 func _on_reset_bluff_pressed() -> void:
@@ -570,6 +705,7 @@ func _on_piles_changed(counts: Dictionary) -> void:
 
 
 func _reset_playable_combat() -> void:
+	_reset_recipe_progress()
 	combat_session.call("reset_session")
 	combat_grid.call("reset_grid")
 	_reset_combat_state()
@@ -612,6 +748,7 @@ func _cleanup_turn() -> void:
 		deck_manager.call("resolve_committed_card")
 
 	deck_manager.call("discard_hand")
+	_mark_recipe_step("cleanup")
 	_append_log("Cleanup complete. Advance to begin the next turn.")
 
 
@@ -717,6 +854,7 @@ func _resolve_reveal() -> void:
 		if resolved_card != null:
 			combat_resolver.call("apply_card", resolved_card)
 	combat_resolver.call("apply_revealed_intents", revealed)
+	_mark_recipe_step("reveal_resolve")
 	_refresh_action_controls()
 
 
@@ -729,8 +867,10 @@ func _refresh_action_controls() -> void:
 	var can_bluff := bool(combat_session.call("can_bluff"))
 	var can_reveal := bool(combat_session.call("can_reveal"))
 	var has_committed := bool(deck_manager.call("has_committed_card")) if deck_manager != null else false
+	var phase_key: String = String(combat_session.get("current_phase_key"))
 
 	next_phase_button.disabled = not can_debug_adjust
+	next_phase_button.text = "Combat Over" if not can_debug_adjust else String(PHASE_ACTION_LABELS.get(phase_key, "Continue"))
 	reset_grid_button.disabled = not can_debug_adjust
 	draw_button.disabled = not can_debug_adjust
 	discard_hand_button.disabled = not can_debug_adjust
@@ -743,6 +883,90 @@ func _refresh_action_controls() -> void:
 	raise_button.disabled = not can_bluff or not has_committed
 	fold_button.disabled = not can_bluff or not has_committed
 	reset_bluff_button.disabled = not can_debug_adjust
+	_refresh_guidance()
+
+
+func _refresh_guidance() -> void:
+	if phase_guidance_label == null or recipe_label == null or combat_session == null:
+		return
+
+	var state: Dictionary = combat_session.call("get_state")
+	var phase_key: String = String(state.get("current_phase_key", "START_TURN"))
+	var guidance = PHASE_GUIDANCE.get(phase_key, PHASE_GUIDANCE.get("START_TURN", {}))
+
+	if bool(state.get("combat_over", false)):
+		phase_guidance_label.text = "Combat Complete"
+		phase_detail_label.text = "Outcome: %s. Start a new combat when ready." % state.get("outcome", "unknown")
+	else:
+		phase_guidance_label.text = String(guidance.get("title", "Turn"))
+		phase_detail_label.text = String(guidance.get("detail", "Continue the combat loop."))
+
+	_refresh_recipe_label()
+
+
+func _reset_recipe_progress() -> void:
+	recipe_progress.clear()
+	for step in RECIPE_STEPS:
+		var step_id: String = String(step.get("id", ""))
+		recipe_progress[step_id] = false
+	_refresh_recipe_label()
+
+
+func _mark_recipe_step(step_id: String) -> void:
+	if recipe_progress.is_empty():
+		_reset_recipe_progress()
+
+	if not recipe_progress.has(step_id):
+		return
+
+	if bool(recipe_progress.get(step_id, false)):
+		return
+
+	recipe_progress[step_id] = true
+	_refresh_recipe_label()
+
+
+func _refresh_recipe_label() -> void:
+	if recipe_label == null:
+		return
+
+	recipe_label.clear()
+	recipe_label.append_text("Playable Combat Recipe\n")
+	for step in RECIPE_STEPS:
+		var step_id: String = String(step.get("id", ""))
+		var step_label: String = String(step.get("label", "Step"))
+		var done: bool = bool(recipe_progress.get(step_id, false))
+		var marker := "x" if done else " "
+		recipe_label.append_text("[%s] %s\n" % [marker, step_label])
+
+	var next_step: String = _get_next_recipe_step_label()
+	if next_step.is_empty():
+		recipe_label.append_text("Next: repeat the loop with a cleaner read.")
+	else:
+		recipe_label.append_text("Next: %s" % next_step)
+
+
+func _get_next_recipe_step_label() -> String:
+	for step in RECIPE_STEPS:
+		var step_id: String = String(step.get("id", ""))
+		if not bool(recipe_progress.get(step_id, false)):
+			return String(step.get("label", "Step"))
+	return ""
+
+
+func _update_debug_visibility() -> void:
+	if debug_controls != null:
+		debug_controls.visible = debug_controls_visible
+	if toggle_debug_button != null:
+		toggle_debug_button.text = "Hide Debug" if debug_controls_visible else "Show Debug"
+	if toggle_truth_button != null:
+		toggle_truth_button.text = "Hide Truth" if debug_truth_visible else "Show Truth"
+
+	var truth_visible := debug_controls_visible and debug_truth_visible
+	if truth_title_label != null:
+		truth_title_label.visible = truth_visible
+	if debug_truth_label != null:
+		debug_truth_label.visible = truth_visible
 
 
 func _refresh_enemy_call_options() -> void:
