@@ -49,7 +49,7 @@ const PHASE_GUIDANCE := {
 	},
 	"PLAYER_COMMIT": {
 		"title": "Commit",
-		"detail": "Click cards to play them, or commit the first card face-down."
+		"detail": "Choose targets, click cards to play them, or commit the first card face-down."
 	},
 	"BLUFF_WAGER": {
 		"title": "Bluff",
@@ -113,6 +113,8 @@ var bluff_state_label: RichTextLabel
 var enemy_call_option: OptionButton
 var intent_call_option: OptionButton
 var lane_call_option: OptionButton
+var target_enemy_option: OptionButton
+var movement_cell_option: OptionButton
 var intent_preview_label: RichTextLabel
 var truth_title_label: Label
 var debug_truth_label: RichTextLabel
@@ -137,6 +139,8 @@ var debug_truth_visible: bool = false
 var current_intent_previews: Array[Dictionary] = []
 var reveal_resolved_this_phase: bool = false
 var recipe_progress: Dictionary = {}
+var pending_card_context: Dictionary = {}
+var committed_card_context: Dictionary = {}
 
 
 func _ready() -> void:
@@ -320,6 +324,19 @@ func _build_ui() -> void:
 	intent_preview_label.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	intent_column.add_child(intent_preview_label)
 
+	var target_title := Label.new()
+	target_title.text = "Card Targets"
+	target_title.add_theme_font_size_override("font_size", 18)
+	intent_column.add_child(target_title)
+
+	target_enemy_option = OptionButton.new()
+	target_enemy_option.name = "TargetEnemyOption"
+	intent_column.add_child(target_enemy_option)
+
+	movement_cell_option = OptionButton.new()
+	movement_cell_option.name = "MovementCellOption"
+	intent_column.add_child(movement_cell_option)
+
 	truth_title_label = Label.new()
 	truth_title_label.name = "DebugTruthTitle"
 	truth_title_label.text = "Debug Truth"
@@ -424,6 +441,7 @@ func _build_ui() -> void:
 	log_label.custom_minimum_size = Vector2(0, 320)
 	log_column.add_child(log_label)
 	combat_grid.connect("log_requested", _on_log_requested)
+	combat_grid.connect("unit_moved", _on_grid_unit_moved)
 
 	var deck_panel := VBoxContainer.new()
 	deck_panel.name = "DeckPanel"
@@ -602,17 +620,29 @@ func _on_card_clicked(hand_index: int) -> void:
 
 	var cost := _get_card_cost(card)
 	var card_name := _get_card_name(card)
+	pending_card_context = _build_card_context(card)
+	if not _validate_card_context(card, pending_card_context):
+		pending_card_context.clear()
+		return
+
 	if not bool(combat_session.call("spend_energy", cost, card_name)):
+		pending_card_context.clear()
 		return
 
 	if not bool(deck_manager.call("play_card_at", hand_index)):
 		combat_session.call("refund_energy", cost, "%s failed to play" % card_name)
+		pending_card_context.clear()
 	else:
 		_mark_recipe_step("play_or_commit")
 
 
 func _on_card_played(card: Resource) -> void:
-	combat_resolver.call("apply_card", card)
+	if _is_movement_card(card):
+		_resolve_movement_card(card, pending_card_context)
+	else:
+		combat_resolver.call("apply_card_with_context", card, pending_card_context)
+	pending_card_context.clear()
+	_refresh_targeting_options()
 
 
 func _on_commit_first_card_pressed() -> void:
@@ -631,11 +661,16 @@ func _on_commit_first_card_pressed() -> void:
 
 	var cost := _get_card_cost(card)
 	var card_name := _get_card_name(card)
+	var context: Dictionary = _build_card_context(card)
+	if not _validate_card_context(card, context):
+		return
+
 	if not bool(combat_session.call("spend_energy", cost, "Commit %s" % card_name)):
 		return
 
 	var committed: Resource = deck_manager.call("commit_card_at", 0)
 	if committed != null:
+		committed_card_context = context.duplicate()
 		bluff_system.call("set_committed_card", committed)
 		_mark_recipe_step("play_or_commit")
 	else:
@@ -679,6 +714,7 @@ func _on_fold_pressed() -> void:
 		return
 	if bool(bluff_system.call("fold")):
 		deck_manager.call("fold_committed_card")
+		committed_card_context.clear()
 		_mark_recipe_step("bluff_choice")
 
 
@@ -706,6 +742,8 @@ func _on_piles_changed(counts: Dictionary) -> void:
 
 func _reset_playable_combat() -> void:
 	_reset_recipe_progress()
+	pending_card_context.clear()
+	committed_card_context.clear()
 	combat_session.call("reset_session")
 	combat_grid.call("reset_grid")
 	_reset_combat_state()
@@ -746,6 +784,7 @@ func _cleanup_turn() -> void:
 	if bool(deck_manager.call("has_committed_card")):
 		_append_log("Cleanup found a committed card; resolving it into discard before ending turn.")
 		deck_manager.call("resolve_committed_card")
+		committed_card_context.clear()
 
 	deck_manager.call("discard_hand")
 	_mark_recipe_step("cleanup")
@@ -819,6 +858,7 @@ func _on_combat_state_changed(state: Dictionary) -> void:
 		state.get("traps_armed", 0),
 		state.get("outcome", "ongoing")
 	])
+	_refresh_targeting_options()
 	_refresh_action_controls()
 
 
@@ -838,6 +878,10 @@ func _on_session_state_changed(state: Dictionary) -> void:
 	_refresh_action_controls()
 
 
+func _on_grid_unit_moved(_unit_id: StringName, _from_cell: Vector2i, _to_cell: Vector2i) -> void:
+	_refresh_targeting_options()
+
+
 func _on_enemy_call_selected(_index: int) -> void:
 	_refresh_intent_call_options()
 
@@ -852,7 +896,11 @@ func _resolve_reveal() -> void:
 	if bool(deck_manager.call("has_committed_card")):
 		var resolved_card: Resource = deck_manager.call("resolve_committed_card")
 		if resolved_card != null:
-			combat_resolver.call("apply_card", resolved_card)
+			if _is_movement_card(resolved_card):
+				_resolve_movement_card(resolved_card, committed_card_context)
+			else:
+				combat_resolver.call("apply_card_with_context", resolved_card, committed_card_context)
+			committed_card_context.clear()
 	combat_resolver.call("apply_revealed_intents", revealed)
 	_mark_recipe_step("reveal_resolve")
 	_refresh_action_controls()
@@ -884,6 +932,124 @@ func _refresh_action_controls() -> void:
 	fold_button.disabled = not can_bluff or not has_committed
 	reset_bluff_button.disabled = not can_debug_adjust
 	_refresh_guidance()
+
+
+func _refresh_targeting_options() -> void:
+	if target_enemy_option == null or movement_cell_option == null or combat_resolver == null or combat_grid == null:
+		return
+
+	var selected_enemy_id: StringName = _get_selected_enemy_target_id()
+	target_enemy_option.clear()
+	var targets: Array = combat_resolver.call("get_alive_enemy_targets")
+	for target in targets:
+		if typeof(target) != TYPE_DICTIONARY:
+			continue
+		target_enemy_option.add_item("%s HP %d/%d" % [
+			target.get("name", "Enemy"),
+			target.get("hp", 0),
+			target.get("max_hp", 0)
+		])
+		target_enemy_option.set_item_metadata(target_enemy_option.item_count - 1, target)
+		if StringName(target.get("id", &"")) == selected_enemy_id:
+			target_enemy_option.select(target_enemy_option.item_count - 1)
+
+	if target_enemy_option.item_count == 0:
+		target_enemy_option.add_item("No living enemies")
+		target_enemy_option.set_item_metadata(0, {})
+	elif target_enemy_option.selected < 0:
+		target_enemy_option.select(0)
+
+	var selected_cell: Vector2i = _get_selected_move_cell()
+	movement_cell_option.clear()
+	var move_cells: Array = combat_grid.call("get_empty_adjacent_cells_for", &"player")
+	for cell in move_cells:
+		if typeof(cell) != TYPE_VECTOR2I:
+			continue
+		movement_cell_option.add_item("Move to %s" % combat_grid.call("format_cell", cell))
+		movement_cell_option.set_item_metadata(movement_cell_option.item_count - 1, cell)
+		if cell == selected_cell:
+			movement_cell_option.select(movement_cell_option.item_count - 1)
+
+	if movement_cell_option.item_count == 0:
+		movement_cell_option.add_item("No legal move")
+		movement_cell_option.set_item_metadata(0, Vector2i(-1, -1))
+	elif movement_cell_option.selected < 0:
+		movement_cell_option.select(0)
+
+
+func _build_card_context(card: Resource) -> Dictionary:
+	var target_enemy: Dictionary = _get_selected_enemy_target()
+	var target_cell: Vector2i = _get_selected_move_cell()
+	var target_enemy_id: StringName = StringName(target_enemy.get("id", &""))
+	var target_enemy_name: String = String(target_enemy.get("name", "Enemy"))
+	return {
+		"target_enemy_id": target_enemy_id,
+		"target_enemy_name": target_enemy_name,
+		"target_cell": target_cell,
+		"target_cell_label": combat_grid.call("format_cell", target_cell),
+		"card_id": card.get("id")
+	}
+
+
+func _validate_card_context(card: Resource, context: Dictionary) -> bool:
+	if _is_attack_or_read_card(card):
+		var target_enemy_id: StringName = StringName(context.get("target_enemy_id", &""))
+		if target_enemy_id.is_empty() or not bool(combat_resolver.call("has_living_enemy", target_enemy_id)):
+			_append_log("%s needs a living enemy target." % _get_card_name(card))
+			return false
+
+	if _is_movement_card(card):
+		var target_cell: Vector2i = context.get("target_cell", Vector2i(-1, -1))
+		if not _is_valid_player_move_target(target_cell):
+			_append_log("%s needs a legal adjacent move target." % _get_card_name(card))
+			return false
+
+	return true
+
+
+func _resolve_movement_card(card: Resource, context: Dictionary) -> void:
+	var target_cell: Vector2i = context.get("target_cell", Vector2i(-1, -1))
+	if not _is_valid_player_move_target(target_cell):
+		_append_log("%s fizzles because the move target is no longer legal." % _get_card_name(card))
+		return
+
+	if bool(combat_grid.call("move_unit", &"player", target_cell)):
+		_append_log("%s moves the Gambler-Knight to %s." % [
+			_get_card_name(card),
+			combat_grid.call("format_cell", target_cell)
+		])
+
+
+func _is_valid_player_move_target(target_cell: Vector2i) -> bool:
+	var valid_cells: Array = combat_grid.call("get_empty_adjacent_cells_for", &"player")
+	return valid_cells.has(target_cell)
+
+
+func _is_attack_or_read_card(card: Resource) -> bool:
+	return int(card.get("target_type")) == 2
+
+
+func _is_movement_card(card: Resource) -> bool:
+	return int(card.get("card_type")) == 2
+
+
+func _get_selected_enemy_target() -> Dictionary:
+	var metadata = _get_selected_metadata(target_enemy_option)
+	if typeof(metadata) != TYPE_DICTIONARY:
+		return {}
+	return metadata
+
+
+func _get_selected_enemy_target_id() -> StringName:
+	var target: Dictionary = _get_selected_enemy_target()
+	return StringName(target.get("id", &""))
+
+
+func _get_selected_move_cell() -> Vector2i:
+	var metadata = _get_selected_metadata(movement_cell_option)
+	if typeof(metadata) == TYPE_VECTOR2I:
+		return metadata
+	return Vector2i(-1, -1)
 
 
 func _refresh_guidance() -> void:

@@ -18,8 +18,18 @@ func _initialize() -> void:
 		quit(1)
 		return
 
-	if grid.get_unit_position(&"enemy_1") != Vector2i(1, 0):
-		push_error("Enemy did not start at (1,0).")
+	if grid.get_unit_position(&"brute") != Vector2i(1, 0):
+		push_error("Brute did not start at (1,0).")
+		quit(1)
+		return
+
+	if grid.get_unit_position(&"skulker") != Vector2i(0, 0):
+		push_error("Skulker did not start at (0,0).")
+		quit(1)
+		return
+
+	if grid.get_unit_position(&"shieldbearer") != Vector2i(2, 0):
+		push_error("Shieldbearer did not start at (2,0).")
 		quit(1)
 		return
 

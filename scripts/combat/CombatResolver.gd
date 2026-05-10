@@ -51,6 +51,10 @@ func reset_combat(enemy_paths: Array) -> void:
 
 
 func apply_card(card: Resource) -> void:
+	apply_card_with_context(card, {})
+
+
+func apply_card_with_context(card: Resource, context: Dictionary = {}) -> void:
 	if _is_finished():
 		log_requested.emit("Combat is already over.")
 		return
@@ -60,9 +64,9 @@ func apply_card(card: Resource) -> void:
 
 	match card_id:
 		&"quick_slash":
-			_damage_first_alive_enemy(4, card_name)
+			_damage_targeted_enemy(4, card_name, context)
 		&"low_stab":
-			_damage_first_alive_enemy(2, card_name)
+			_damage_targeted_enemy(2, card_name, context)
 		&"guard_up":
 			_add_player_guard(5, card_name)
 		&"iron_vow":
@@ -72,12 +76,16 @@ func apply_card(card: Resource) -> void:
 		&"hook_step":
 			log_requested.emit("%s prepares a follow-up. Phase 6 logs setup but does not chain cards yet." % card_name)
 		&"read_tell":
-			log_requested.emit("%s sharpens the read. Intent preview is already visible in the debug harness." % card_name)
+			log_requested.emit("%s sharpens the read on %s." % [card_name, _get_context_enemy_name(context)])
 		&"false_opening":
 			log_requested.emit("%s creates bait. Use Commit/Call/Raise to cash it in." % card_name)
 		&"snare_card":
 			traps_armed += 1
-			log_requested.emit("%s arms a trap. Traps armed: %d." % [card_name, traps_armed])
+			log_requested.emit("%s arms a trap at %s. Traps armed: %d." % [
+				card_name,
+				String(context.get("target_cell_label", "the selected cell")),
+				traps_armed
+			])
 		&"blood_ritual":
 			log_requested.emit("%s feeds the wager engine. Nerve remains tracked by BluffSystem." % card_name)
 		_:
@@ -128,6 +136,25 @@ func get_state() -> Dictionary:
 	}
 
 
+func get_alive_enemy_targets() -> Array[Dictionary]:
+	var targets: Array[Dictionary] = []
+	for enemy_id in enemy_order:
+		if _enemy_is_alive(enemy_id):
+			var enemy: Dictionary = enemy_states[enemy_id]
+			targets.append({
+				"id": enemy_id,
+				"name": enemy.get("name", "Enemy"),
+				"hp": enemy.get("hp", 0),
+				"max_hp": enemy.get("max_hp", 0),
+				"guard": enemy.get("guard", 0)
+			})
+	return targets
+
+
+func has_living_enemy(enemy_id: StringName) -> bool:
+	return _enemy_is_alive(enemy_id)
+
+
 func _damage_first_alive_enemy(amount: int, source: String) -> void:
 	var enemy_id := _get_first_alive_enemy_id()
 	if enemy_id.is_empty():
@@ -135,6 +162,20 @@ func _damage_first_alive_enemy(amount: int, source: String) -> void:
 		return
 
 	_damage_enemy(enemy_id, amount, source)
+
+
+func _damage_targeted_enemy(amount: int, source: String, context: Dictionary) -> void:
+	var target_enemy_id: StringName = StringName(context.get("target_enemy_id", &""))
+	if target_enemy_id.is_empty() or not _enemy_is_alive(target_enemy_id):
+		if not target_enemy_id.is_empty():
+			log_requested.emit("%s cannot target %s, falling back to the first living enemy." % [
+				source,
+				String(context.get("target_enemy_name", target_enemy_id))
+			])
+		_damage_first_alive_enemy(amount, source)
+		return
+
+	_damage_enemy(target_enemy_id, amount, source)
 
 
 func _damage_enemy(enemy_id: StringName, amount: int, source: String) -> void:
@@ -222,6 +263,13 @@ func _get_resource_name(resource: Resource) -> String:
 	if resource.has_method("get_display_name"):
 		return String(resource.call("get_display_name"))
 	return String(resource.get("display_name"))
+
+
+func _get_context_enemy_name(context: Dictionary) -> String:
+	var target_enemy_name: String = String(context.get("target_enemy_name", "the selected enemy"))
+	if target_enemy_name.is_empty():
+		return "the selected enemy"
+	return target_enemy_name
 
 
 func _is_finished() -> bool:

@@ -7,9 +7,24 @@ signal cell_selected(cell: Vector2i)
 
 const GRID_CELL_VIEW_SCRIPT := preload("res://scripts/grid/GridCellView.gd")
 const PLAYER_ID := &"player"
-const ENEMY_ID := &"enemy_1"
 const PLAYER_LABEL := "Gambler-Knight"
-const ENEMY_LABEL := "Brute"
+const DEFAULT_ENEMY_SPAWNS := [
+	{
+		"id": &"skulker",
+		"cell": Vector2i(0, 0),
+		"label": "Skulker"
+	},
+	{
+		"id": &"brute",
+		"cell": Vector2i(1, 0),
+		"label": "Brute"
+	},
+	{
+		"id": &"shieldbearer",
+		"cell": Vector2i(2, 0),
+		"label": "Shieldbearer"
+	}
+]
 
 @export var grid_size: Vector2i = Vector2i(3, 3)
 
@@ -28,7 +43,7 @@ func _ready() -> void:
 	reset_grid()
 
 
-func reset_grid() -> void:
+func reset_grid(enemy_spawns: Array = []) -> void:
 	occupants_by_cell.clear()
 	unit_positions.clear()
 	unit_labels.clear()
@@ -36,10 +51,18 @@ func reset_grid() -> void:
 	valid_move_cells.clear()
 
 	place_unit(PLAYER_ID, Vector2i(1, 2), PLAYER_LABEL)
-	place_unit(ENEMY_ID, Vector2i(1, 0), ENEMY_LABEL)
+	var spawns: Array = DEFAULT_ENEMY_SPAWNS if enemy_spawns.is_empty() else enemy_spawns
+	for spawn in spawns:
+		if typeof(spawn) != TYPE_DICTIONARY:
+			continue
+		place_unit(
+			StringName(spawn.get("id", &"")),
+			spawn.get("cell", Vector2i(-1, -1)),
+			String(spawn.get("label", "Enemy"))
+		)
 	_refresh_cells()
 	_update_status("Select the Gambler-Knight, then choose an adjacent green cell.")
-	log_requested.emit("Grid reset: player at (1,2), enemy at (1,0).")
+	log_requested.emit("Grid reset: player at (1,2), enemies on the top row.")
 
 
 func place_unit(unit_id: StringName, cell: Vector2i, display_label: String) -> bool:
@@ -70,8 +93,8 @@ func select_cell(cell: Vector2i) -> void:
 			_select_unit(PLAYER_ID)
 			return
 
-		if occupant_id == ENEMY_ID:
-			log_requested.emit("The Brute is not controllable in this prototype.")
+		if _is_enemy_unit(occupant_id):
+			log_requested.emit("%s is not controllable in this prototype." % get_unit_label(occupant_id))
 			return
 
 		log_requested.emit("No unit at %s. Select the Gambler-Knight first." % format_cell(cell))
@@ -181,6 +204,10 @@ func get_valid_moves_for(unit_id: StringName) -> Array[Vector2i]:
 	return moves
 
 
+func get_empty_adjacent_cells_for(unit_id: StringName) -> Array[Vector2i]:
+	return get_valid_moves_for(unit_id)
+
+
 func format_cell(cell: Vector2i) -> String:
 	return "(%d,%d)" % [cell.x, cell.y]
 
@@ -253,9 +280,11 @@ func _refresh_cells() -> void:
 func _get_short_label(unit_id: StringName) -> String:
 	if unit_id == PLAYER_ID:
 		return "GK"
-	if unit_id == ENEMY_ID:
-		return "BR"
-	return String(unit_id)
+	return String(unit_id).substr(0, 2).to_upper()
+
+
+func _is_enemy_unit(unit_id: StringName) -> bool:
+	return not unit_id.is_empty() and unit_id != PLAYER_ID
 
 
 func _update_status(message: String) -> void:

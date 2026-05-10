@@ -21,6 +21,16 @@ func _ready() -> void:
 		_fail("Expected RecipePanel.")
 		return
 
+	var target_enemy_option := combat_scene.find_child("TargetEnemyOption", true, false)
+	if target_enemy_option == null:
+		_fail("Expected TargetEnemyOption.")
+		return
+
+	var movement_cell_option := combat_scene.find_child("MovementCellOption", true, false)
+	if movement_cell_option == null:
+		_fail("Expected MovementCellOption.")
+		return
+
 	var continue_button := combat_scene.find_child("ContinueButton", true, false)
 	if continue_button == null:
 		_fail("Expected ContinueButton.")

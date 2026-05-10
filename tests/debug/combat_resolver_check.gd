@@ -31,6 +31,16 @@ func _ready() -> void:
 		_fail("Quick Slash should reduce Brute HP from 24 to 20.")
 		return
 
+	resolver.call("apply_card_with_context", quick_slash, {
+		"target_enemy_id": &"skulker",
+		"target_enemy_name": "Skulker"
+	})
+	state = resolver.call("get_state")
+	var skulker: Dictionary = state.get("enemies", [])[1]
+	if int(skulker.get("hp", -1)) != 10:
+		_fail("Targeted Quick Slash should reduce Skulker HP from 14 to 10.")
+		return
+
 	resolver.call("apply_revealed_intents", [{
 		"enemy_id": &"brute",
 		"enemy_name": "Brute",
