@@ -1,0 +1,16 @@
+[gd_resource type="Resource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/enemies/IntentDefinition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"skulker_feint"
+display_name = "False Step"
+public_text = "Feign one lane, then punish a bad call."
+hidden_text = "The Skulker feints and will punish committed counters later."
+intent_type = 3
+weight = 0.35
+telegraph_tier = 1
+target_lane = 0
+payload = {"feint": true}
+tell_tags = Array[StringName]([&"shifting_feet", &"false_tell"])

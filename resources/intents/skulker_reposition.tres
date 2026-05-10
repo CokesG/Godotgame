@@ -1,0 +1,16 @@
+[gd_resource type="Resource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/enemies/IntentDefinition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"skulker_reposition"
+display_name = "Slip Away"
+public_text = "Move to a safer cell."
+hidden_text = "The Skulker slips away before your line is clean."
+intent_type = 2
+weight = 0.2
+telegraph_tier = 2
+target_lane = 2
+payload = {"move": 1}
+tell_tags = Array[StringName]([&"eyes_exit", &"mobile"])

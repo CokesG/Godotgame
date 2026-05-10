@@ -1,0 +1,16 @@
+[gd_resource type="Resource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/enemies/IntentDefinition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"shieldbearer_bash"
+display_name = "Shield Bash"
+public_text = "Short-range bash if you stay close."
+hidden_text = "The Shieldbearer bashes for 5 damage."
+intent_type = 0
+weight = 0.3
+telegraph_tier = 1
+target_lane = 1
+payload = {"damage": 5}
+tell_tags = Array[StringName]([&"shield_twist", &"close_range"])

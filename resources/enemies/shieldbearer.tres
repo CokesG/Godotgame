@@ -1,0 +1,21 @@
+[gd_resource type="Resource" load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scripts/enemies/EnemyDefinition.gd" id="1"]
+[ext_resource type="Resource" path="res://resources/intents/shieldbearer_guard.tres" id="2"]
+[ext_resource type="Resource" path="res://resources/intents/shieldbearer_bash.tres" id="3"]
+[ext_resource type="Resource" path="res://resources/intents/shieldbearer_taunt.tres" id="4"]
+
+[resource]
+script = ExtResource("1")
+id = &"shieldbearer"
+display_name = "Shieldbearer"
+role = 1
+max_hp = 20
+bluff_chance = 0.2
+aggression = 0.35
+behavior_tags = Array[StringName]([&"guard", &"protector"])
+intents = Array[Resource]([ExtResource("2"), ExtResource("3"), ExtResource("4")])
+tell_description = "Shield height reveals whether it will protect, bash, or bait you."
+counterplay_note = "Move around its guard turns and punish when it taunts."
+visual_identity = "A silent guard with a coffin-shaped shield."
+reward_tags = Array[StringName]([&"defense", &"trap"])

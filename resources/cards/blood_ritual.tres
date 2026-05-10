@@ -1,0 +1,16 @@
+[gd_resource type="Resource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/cards/CardDefinition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"blood_ritual"
+display_name = "Blood Ritual"
+rules_text = "Gain 2 Nerve. Exhaust."
+cost = 2
+card_type = 6
+rarity = 1
+target_type = 1
+tags = Array[StringName]([&"ritual", &"nerve", &"exhaust"])
+effects = Array[Dictionary]([])
+design_note = "Exercises the exhaust pile in Phase 3."

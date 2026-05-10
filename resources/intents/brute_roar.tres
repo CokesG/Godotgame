@@ -1,0 +1,16 @@
+[gd_resource type="Resource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/enemies/IntentDefinition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"brute_roar"
+display_name = "Rage Roar"
+public_text = "Build Rage instead of attacking."
+hidden_text = "The Brute roars and gains Rage for its next attack."
+intent_type = 4
+weight = 0.15
+telegraph_tier = 2
+target_lane = -1
+payload = {"rage": 1}
+tell_tags = Array[StringName]([&"deep_breath", &"setup"])

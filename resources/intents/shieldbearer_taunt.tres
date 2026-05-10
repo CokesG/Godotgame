@@ -1,0 +1,16 @@
+[gd_resource type="Resource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/enemies/IntentDefinition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"shieldbearer_taunt"
+display_name = "Taunting Knock"
+public_text = "Draw attention and make attacks less certain."
+hidden_text = "The Shieldbearer taunts, increasing Suspicion later."
+intent_type = 5
+weight = 0.2
+telegraph_tier = 2
+target_lane = -1
+payload = {"suspicion": 1}
+tell_tags = Array[StringName]([&"shield_knock", &"mind_game"])

@@ -1,0 +1,16 @@
+[gd_resource type="Resource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/enemies/IntentDefinition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"shieldbearer_guard"
+display_name = "Raise Shield"
+public_text = "Gain Guard and protect an ally."
+hidden_text = "The Shieldbearer raises its shield for 9 Guard."
+intent_type = 1
+weight = 0.5
+telegraph_tier = 0
+target_lane = 1
+payload = {"guard": 9}
+tell_tags = Array[StringName]([&"shield_high", &"protect"])

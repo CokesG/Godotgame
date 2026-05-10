@@ -1,0 +1,21 @@
+[gd_resource type="Resource" load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scripts/enemies/EnemyDefinition.gd" id="1"]
+[ext_resource type="Resource" path="res://resources/intents/brute_smash.tres" id="2"]
+[ext_resource type="Resource" path="res://resources/intents/brute_guard.tres" id="3"]
+[ext_resource type="Resource" path="res://resources/intents/brute_roar.tres" id="4"]
+
+[resource]
+script = ExtResource("1")
+id = &"brute"
+display_name = "Brute"
+role = 5
+max_hp = 24
+bluff_chance = 0.1
+aggression = 0.8
+behavior_tags = Array[StringName]([&"direct", &"lane_pressure"])
+intents = Array[Resource]([ExtResource("2"), ExtResource("3"), ExtResource("4")])
+tell_description = "Raised weapon means Smash is more likely; lowered head means Roar is possible."
+counterplay_note = "Bait the heavy attack, then move or guard before reveal."
+visual_identity = "A hulking table-breaker with a cracked club."
+reward_tags = Array[StringName]([&"attack", &"guard"])

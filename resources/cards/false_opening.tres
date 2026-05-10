@@ -1,0 +1,16 @@
+[gd_resource type="Resource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/cards/CardDefinition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"false_opening"
+display_name = "False Opening"
+rules_text = "Bait an attack toward your current lane."
+cost = 1
+card_type = 3
+rarity = 1
+target_type = 1
+tags = Array[StringName]([&"bluff", &"bait"])
+effects = Array[Dictionary]([])
+design_note = "Prototype bluff card for Commit / Reveal later."

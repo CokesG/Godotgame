@@ -1,0 +1,16 @@
+[gd_resource type="Resource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/enemies/IntentDefinition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"skulker_cut"
+display_name = "Cut Purse"
+public_text = "Fast strike at the weakest opening."
+hidden_text = "The Skulker cuts for 4 damage and pressures your hand."
+intent_type = 0
+weight = 0.45
+telegraph_tier = 0
+target_lane = -1
+payload = {"damage": 4}
+tell_tags = Array[StringName]([&"blade_flash", &"quick"])

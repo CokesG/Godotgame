@@ -1,0 +1,21 @@
+[gd_resource type="Resource" load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scripts/enemies/EnemyDefinition.gd" id="1"]
+[ext_resource type="Resource" path="res://resources/intents/skulker_cut.tres" id="2"]
+[ext_resource type="Resource" path="res://resources/intents/skulker_feint.tres" id="3"]
+[ext_resource type="Resource" path="res://resources/intents/skulker_reposition.tres" id="4"]
+
+[resource]
+script = ExtResource("1")
+id = &"skulker"
+display_name = "Skulker"
+role = 2
+max_hp = 14
+bluff_chance = 0.35
+aggression = 0.55
+behavior_tags = Array[StringName]([&"feint", &"mobile"])
+intents = Array[Resource]([ExtResource("2"), ExtResource("3"), ExtResource("4")])
+tell_description = "Footwork hints whether the Skulker is actually leaving or only pretending."
+counterplay_note = "Do not overcommit counters until you have read the tell."
+visual_identity = "A thin knife player hiding behind candle smoke."
+reward_tags = Array[StringName]([&"read", &"movement"])

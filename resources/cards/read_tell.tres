@@ -1,0 +1,16 @@
+[gd_resource type="Resource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/cards/CardDefinition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"read_tell"
+display_name = "Read Tell"
+rules_text = "Preview one hidden enemy intent clue."
+cost = 1
+card_type = 4
+rarity = 1
+target_type = 2
+tags = Array[StringName]([&"read", &"intent"])
+effects = Array[Dictionary]([])
+design_note = "Sets up the enemy intent system in Phase 4."

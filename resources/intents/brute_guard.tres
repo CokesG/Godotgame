@@ -1,0 +1,16 @@
+[gd_resource type="Resource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/enemies/IntentDefinition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"brute_guard"
+display_name = "Brace"
+public_text = "Gain Guard and hold center."
+hidden_text = "The Brute braces and gains 6 Guard."
+intent_type = 1
+weight = 0.25
+telegraph_tier = 1
+target_lane = 1
+payload = {"guard": 6}
+tell_tags = Array[StringName]([&"low_stance", &"defensive"])

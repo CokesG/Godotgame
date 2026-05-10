@@ -1,0 +1,16 @@
+[gd_resource type="Resource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/cards/CardDefinition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"low_stab"
+display_name = "Low Stab"
+rules_text = "Deal 2 damage. Free emergency attack."
+cost = 0
+card_type = 0
+rarity = 0
+target_type = 2
+tags = Array[StringName]([&"attack", &"starter"])
+effects = Array[Dictionary]([])
+design_note = "High-card style fallback when energy is tight."

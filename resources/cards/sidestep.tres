@@ -1,0 +1,16 @@
+[gd_resource type="Resource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/cards/CardDefinition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"sidestep"
+display_name = "Sidestep"
+rules_text = "Move 1 orthogonal cell."
+cost = 0
+card_type = 2
+rarity = 0
+target_type = 3
+tags = Array[StringName]([&"movement", &"starter"])
+effects = Array[Dictionary]([])
+design_note = "Free repositioning for grid proof-of-concept."

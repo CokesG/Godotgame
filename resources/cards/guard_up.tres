@@ -1,0 +1,16 @@
+[gd_resource type="Resource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/cards/CardDefinition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"guard_up"
+display_name = "Guard Up"
+rules_text = "Gain 5 Guard."
+cost = 1
+card_type = 1
+rarity = 0
+target_type = 1
+tags = Array[StringName]([&"defense", &"starter"])
+effects = Array[Dictionary]([])
+design_note = "Basic defensive stabilizer."

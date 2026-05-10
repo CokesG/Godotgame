@@ -1,0 +1,16 @@
+[gd_resource type="Resource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/cards/CardDefinition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"quick_slash"
+display_name = "Quick Slash"
+rules_text = "Deal 4 damage to a target enemy."
+cost = 1
+card_type = 0
+rarity = 0
+target_type = 2
+tags = Array[StringName]([&"attack", &"starter"])
+effects = Array[Dictionary]([])
+design_note = "Baseline cheap attack for the Gambler-Knight."

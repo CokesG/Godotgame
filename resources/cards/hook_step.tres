@@ -1,0 +1,16 @@
+[gd_resource type="Resource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/cards/CardDefinition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"hook_step"
+display_name = "Hook Step"
+rules_text = "Move 1 cell, then prepare a follow-up strike."
+cost = 1
+card_type = 2
+rarity = 1
+target_type = 3
+tags = Array[StringName]([&"movement", &"attack_setup"])
+effects = Array[Dictionary]([])
+design_note = "Early movement/attack bridge for later combo rules."
