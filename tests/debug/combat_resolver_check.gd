@@ -67,7 +67,10 @@ func _ready() -> void:
 		_fail("Shieldbearer should gain 9 Guard.")
 		return
 
-	resolver.call("apply_card", snare_card)
+	resolver.call("apply_card_with_context", snare_card, {
+		"target_cell": Vector2i(1, 1),
+		"target_cell_label": "(1,1)"
+	})
 	state = resolver.call("get_state")
 	if int(state.get("traps_armed", -1)) != 1:
 		_fail("Snare Card should arm one trap.")

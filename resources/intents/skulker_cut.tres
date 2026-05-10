@@ -6,8 +6,8 @@
 script = ExtResource("1")
 id = &"skulker_cut"
 display_name = "Cut Purse"
-public_text = "Fast strike at the weakest opening."
-hidden_text = "The Skulker cuts for 4 damage and pressures your hand."
+public_text = "Fast strike that tracks your current position."
+hidden_text = "The Skulker tracks your current position and cuts for 4 damage."
 intent_type = 0
 weight = 0.45
 telegraph_tier = 0

@@ -12,6 +12,7 @@ const PLAYER_ID := &"player"
 var player_state: Dictionary = {}
 var enemy_states: Dictionary = {}
 var enemy_order: Array[StringName] = []
+var trap_cells: Array[Vector2i] = []
 var traps_armed: int = 0
 var outcome: String = "ongoing"
 
@@ -26,6 +27,7 @@ func reset_combat(enemy_paths: Array) -> void:
 	}
 	enemy_states.clear()
 	enemy_order.clear()
+	trap_cells.clear()
 	traps_armed = 0
 	outcome = "ongoing"
 
@@ -80,12 +82,7 @@ func apply_card_with_context(card: Resource, context: Dictionary = {}) -> void:
 		&"false_opening":
 			log_requested.emit("%s creates bait. Use Commit/Call/Raise to cash it in." % card_name)
 		&"snare_card":
-			traps_armed += 1
-			log_requested.emit("%s arms a trap at %s. Traps armed: %d." % [
-				card_name,
-				String(context.get("target_cell_label", "the selected cell")),
-				traps_armed
-			])
+			_arm_trap(card_name, context)
 		&"blood_ritual":
 			log_requested.emit("%s feeds the wager engine. Nerve remains tracked by BluffSystem." % card_name)
 		_:
@@ -96,6 +93,10 @@ func apply_card_with_context(card: Resource, context: Dictionary = {}) -> void:
 
 
 func apply_revealed_intents(revealed_intents: Array) -> void:
+	apply_revealed_intents_with_context(revealed_intents, {})
+
+
+func apply_revealed_intents_with_context(revealed_intents: Array, context: Dictionary = {}) -> void:
 	if _is_finished():
 		return
 
@@ -107,9 +108,16 @@ func apply_revealed_intents(revealed_intents: Array) -> void:
 		var payload: Dictionary = entry.get("payload", {})
 		var enemy_name := String(entry.get("enemy_name", "Enemy"))
 		var intent_name := String(entry.get("intent_name", "Intent"))
+		var target_lane: int = int(entry.get("target_lane", -1))
+
+		_trigger_trap_for_intent(enemy_id, enemy_name, intent_name, target_lane)
+		if not _enemy_is_alive(enemy_id):
+			_check_combat_end()
+			_emit_state()
+			continue
 
 		if payload.has("damage"):
-			_damage_player(int(payload.get("damage", 0)), "%s's %s" % [enemy_name, intent_name])
+			_resolve_positional_damage(enemy_id, enemy_name, StringName(entry.get("intent_id", &"")), intent_name, int(payload.get("damage", 0)), target_lane, context)
 		elif payload.has("guard"):
 			_add_enemy_guard(enemy_id, int(payload.get("guard", 0)), "%s's %s" % [enemy_name, intent_name])
 		elif payload.has("rage"):
@@ -123,8 +131,8 @@ func apply_revealed_intents(revealed_intents: Array) -> void:
 		else:
 			log_requested.emit("%s resolves %s with no Phase 6 payload." % [enemy_name, intent_name])
 
-	_check_combat_end()
-	_emit_state()
+		_check_combat_end()
+		_emit_state()
 
 
 func get_state() -> Dictionary:
@@ -132,6 +140,7 @@ func get_state() -> Dictionary:
 		"player": player_state.duplicate(),
 		"enemies": _get_enemy_list(),
 		"traps_armed": traps_armed,
+		"trap_cells": trap_cells.duplicate(),
 		"outcome": outcome
 	}
 
@@ -197,6 +206,126 @@ func _damage_enemy(enemy_id: StringName, amount: int, source: String) -> void:
 		log_requested.emit("%s is defeated." % enemy.get("name", "Enemy"))
 
 	enemy_states[enemy_id] = enemy
+
+
+func _arm_trap(source: String, context: Dictionary) -> void:
+	var target_cell: Vector2i = context.get("target_cell", Vector2i(-1, -1))
+	if target_cell.x < 0:
+		trap_cells.append(target_cell)
+		_sync_trap_count()
+		log_requested.emit("%s arms a loose trap. Traps armed: %d." % [source, traps_armed])
+		return
+
+	trap_cells.append(target_cell)
+	_sync_trap_count()
+	log_requested.emit("%s arms a trap at %s. Traps armed: %d." % [
+		source,
+		String(context.get("target_cell_label", "(%d,%d)" % [target_cell.x, target_cell.y])),
+		traps_armed
+	])
+
+
+func _trigger_trap_for_intent(enemy_id: StringName, enemy_name: String, intent_name: String, target_lane: int) -> void:
+	if target_lane < 0:
+		return
+
+	var trap_index: int = _get_trap_index_for_lane(target_lane)
+	if trap_index < 0:
+		return
+
+	var trap_cell: Vector2i = trap_cells[trap_index]
+	trap_cells.remove_at(trap_index)
+	_sync_trap_count()
+	log_requested.emit("Snare trap at %s catches %s's %s in lane %s." % [
+		"(%d,%d)" % [trap_cell.x, trap_cell.y],
+		enemy_name,
+		intent_name,
+		_get_lane_label(target_lane)
+	])
+	_damage_enemy(enemy_id, 3, "Snare trap")
+
+
+func _get_trap_index_for_lane(target_lane: int) -> int:
+	for index in range(trap_cells.size()):
+		if trap_cells[index].x == target_lane:
+			return index
+	return -1
+
+
+func _sync_trap_count() -> void:
+	traps_armed = trap_cells.size()
+
+
+func _resolve_positional_damage(enemy_id: StringName, enemy_name: String, intent_id: StringName, intent_name: String, amount: int, target_lane: int, context: Dictionary) -> void:
+	if amount <= 0:
+		log_requested.emit("%s's %s deals no damage." % [enemy_name, intent_name])
+		return
+
+	if _lane_attack_misses(target_lane, context):
+		log_requested.emit("%s's %s misses lane %s: player is in lane %s." % [
+			enemy_name,
+			intent_name,
+			_get_lane_label(target_lane),
+			_get_lane_label(_get_player_lane(context))
+		])
+		return
+
+	var mitigated_amount: int = amount
+	var call_mitigation: int = _get_call_mitigation(enemy_id, intent_id, context)
+	if call_mitigation > 0:
+		mitigated_amount = max(0, amount - call_mitigation)
+		log_requested.emit("Called read reduces incoming damage by %d." % min(amount, call_mitigation))
+
+	if target_lane >= 0:
+		log_requested.emit("%s's %s hits lane %s for %d damage." % [
+			enemy_name,
+			intent_name,
+			_get_lane_label(target_lane),
+			mitigated_amount
+		])
+	else:
+		log_requested.emit("%s's %s tracks the player for %d damage." % [
+			enemy_name,
+			intent_name,
+			mitigated_amount
+		])
+
+	_damage_player(mitigated_amount, "%s's %s" % [enemy_name, intent_name])
+
+
+func _lane_attack_misses(target_lane: int, context: Dictionary) -> bool:
+	if target_lane < 0:
+		return false
+	if not context.has("player_lane"):
+		return false
+	return _get_player_lane(context) != target_lane
+
+
+func _get_player_lane(context: Dictionary) -> int:
+	return int(context.get("player_lane", -1))
+
+
+func _get_call_mitigation(enemy_id: StringName, intent_id: StringName, context: Dictionary) -> int:
+	var bluff_state: Dictionary = context.get("bluff_state", {})
+	if not bool(bluff_state.get("last_call_correct", context.get("last_call_correct", false))):
+		return 0
+	if StringName(bluff_state.get("last_called_enemy_id", context.get("last_called_enemy_id", &""))) != enemy_id:
+		return 0
+	if StringName(bluff_state.get("last_called_intent_id", context.get("last_called_intent_id", &""))) != intent_id:
+		return 0
+	return 2 + int(bluff_state.get("last_resolved_wager", context.get("last_resolved_wager", 0)))
+
+
+func _get_lane_label(lane: int) -> String:
+	match lane:
+		0:
+			return "Left"
+		1:
+			return "Center"
+		2:
+			return "Right"
+		_:
+			return "Tracking"
 
 
 func _damage_player(amount: int, source: String) -> void:

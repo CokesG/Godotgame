@@ -178,6 +178,34 @@ func get_unit_label(unit_id: StringName) -> String:
 	return String(unit_labels.get(unit_id, String(unit_id)))
 
 
+func get_unit_lane(unit_id: StringName) -> int:
+	var position := get_unit_position(unit_id)
+	if not is_cell_in_bounds(position):
+		return -1
+	return position.x
+
+
+func get_player_context() -> Dictionary:
+	var player_cell := get_unit_position(PLAYER_ID)
+	return {
+		"cell": player_cell,
+		"lane": player_cell.x if is_cell_in_bounds(player_cell) else -1
+	}
+
+
+func get_unit_position_snapshot() -> Dictionary:
+	var snapshot: Dictionary = {}
+	for unit_id in unit_positions.keys():
+		var unit_id_name: StringName = StringName(unit_id)
+		var position: Vector2i = unit_positions[unit_id_name]
+		snapshot[unit_id_name] = {
+			"cell": position,
+			"lane": position.x,
+			"label": get_unit_label(unit_id_name)
+		}
+	return snapshot
+
+
 func is_adjacent(origin: Vector2i, destination: Vector2i) -> bool:
 	var delta := destination - origin
 	return abs(delta.x) + abs(delta.y) == 1

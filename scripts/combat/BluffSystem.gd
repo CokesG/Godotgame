@@ -15,6 +15,11 @@ var called_intent_id: StringName = &""
 var called_intent_name: String = ""
 var called_lane: int = -1
 var last_result: String = ""
+var last_call_correct: bool = false
+var last_called_enemy_id: StringName = &""
+var last_called_intent_id: StringName = &""
+var last_resolved_wager: int = 0
+var last_payout: int = 0
 
 
 func _ready() -> void:
@@ -27,6 +32,7 @@ func reset_bluff() -> void:
 	committed_card = null
 	clear_call(false)
 	last_result = "No call resolved yet."
+	_clear_last_reveal_state()
 	log_requested.emit("Bluff state reset. Nerve: %d." % nerve)
 	_emit_state()
 
@@ -35,6 +41,7 @@ func set_committed_card(card: Resource) -> void:
 	committed_card = card
 	current_wager = 0
 	last_result = "Committed %s face-down." % _get_card_name(card)
+	_clear_last_reveal_state()
 	log_requested.emit(last_result)
 	_emit_state()
 
@@ -98,6 +105,7 @@ func fold() -> bool:
 	var penalty := 1 if nerve > 0 else 0
 	nerve -= penalty
 	last_result = "Folded %s. Lost %d Nerve and avoided reveal risk." % [_get_card_name(committed_card), penalty]
+	_clear_last_reveal_state()
 	log_requested.emit(last_result)
 	committed_card = null
 	current_wager = 0
@@ -107,13 +115,20 @@ func fold() -> bool:
 
 
 func reveal(revealed_intents: Array) -> Dictionary:
+	_capture_called_state()
+	last_resolved_wager = current_wager
+	last_call_correct = false
+	last_payout = 0
+
 	if committed_card == null:
+		_clear_last_reveal_state()
 		last_result = "Reveal resolved without a committed card."
 		log_requested.emit(last_result)
 		_emit_state()
 		return get_state()
 
 	if called_enemy_id.is_empty() or called_intent_id.is_empty():
+		_clear_last_reveal_state(false)
 		last_result = "Reveal exposed %s without a call. No payoff." % _get_card_name(committed_card)
 		log_requested.emit(last_result)
 		committed_card = null
@@ -123,6 +138,8 @@ func reveal(revealed_intents: Array) -> Dictionary:
 
 	var matched_entry := _find_revealed_entry(revealed_intents, called_enemy_id)
 	if matched_entry.is_empty():
+		last_call_correct = false
+		last_payout = 0
 		last_result = "Reveal could not find %s. Wager lost." % called_enemy_name
 		log_requested.emit(last_result)
 		committed_card = null
@@ -134,6 +151,8 @@ func reveal(revealed_intents: Array) -> Dictionary:
 	if correct:
 		var payout := 1 + current_wager * 2
 		nerve += payout
+		last_call_correct = true
+		last_payout = payout
 		last_result = "CALL CORRECT: %s revealed %s%s. %s pays out %d Nerve." % [
 			called_enemy_name,
 			matched_entry.get("intent_name", "Unknown"),
@@ -142,6 +161,8 @@ func reveal(revealed_intents: Array) -> Dictionary:
 			payout
 		]
 	else:
+		last_call_correct = false
+		last_payout = 0
 		last_result = "CALL MISSED: %s revealed %s%s. %s fizzles and the wager is lost." % [
 			called_enemy_name,
 			matched_entry.get("intent_name", "Unknown"),
@@ -169,6 +190,11 @@ func get_state() -> Dictionary:
 		"called_intent_name": called_intent_name if not called_intent_name.is_empty() else "None",
 		"called_lane": called_lane,
 		"call_summary": _get_call_summary(),
+		"last_call_correct": last_call_correct,
+		"last_called_enemy_id": last_called_enemy_id,
+		"last_called_intent_id": last_called_intent_id,
+		"last_resolved_wager": last_resolved_wager,
+		"last_payout": last_payout,
 		"last_result": last_result
 	}
 
@@ -208,6 +234,20 @@ func _get_lane_suffix(lane: int) -> String:
 	if lane < 0:
 		return ""
 	return " in lane %d" % lane
+
+
+func _capture_called_state() -> void:
+	last_called_enemy_id = called_enemy_id
+	last_called_intent_id = called_intent_id
+
+
+func _clear_last_reveal_state(clear_called_state: bool = true) -> void:
+	last_call_correct = false
+	if clear_called_state:
+		last_called_enemy_id = &""
+		last_called_intent_id = &""
+	last_resolved_wager = 0
+	last_payout = 0
 
 
 func _emit_state() -> void:

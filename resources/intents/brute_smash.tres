@@ -6,8 +6,8 @@
 script = ExtResource("1")
 id = &"brute_smash"
 display_name = "Skull Smash"
-public_text = "Heavy attack toward the nearest target."
-hidden_text = "The Brute commits to Skull Smash for 8 damage."
+public_text = "Heavy attack down the center lane."
+hidden_text = "The Brute commits to Skull Smash down center lane for 8 damage."
 intent_type = 0
 weight = 0.6
 telegraph_tier = 0

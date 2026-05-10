@@ -175,7 +175,7 @@ func _build_ui() -> void:
 	layout.add_child(title)
 
 	var subtitle := Label.new()
-	subtitle.text = "Phase 8 turns the combat harness into a readable playable loop."
+	subtitle.text = "Phase 10 makes enemy intent positional: lanes, traps, dodges, and called reads matter."
 	subtitle.add_theme_font_size_override("font_size", 16)
 	layout.add_child(subtitle)
 
@@ -854,8 +854,9 @@ func _on_combat_state_changed(state: Dictionary) -> void:
 			alive_text
 		])
 
-	combat_state_label.append_text("Traps: %d | Outcome: %s" % [
+	combat_state_label.append_text("Traps: %d%s | Outcome: %s" % [
 		state.get("traps_armed", 0),
+		_get_trap_cells_text(state.get("trap_cells", [])),
 		state.get("outcome", "ongoing")
 	])
 	_refresh_targeting_options()
@@ -901,7 +902,8 @@ func _resolve_reveal() -> void:
 			else:
 				combat_resolver.call("apply_card_with_context", resolved_card, committed_card_context)
 			committed_card_context.clear()
-	combat_resolver.call("apply_revealed_intents", revealed)
+	var bluff_state: Dictionary = bluff_system.call("get_state")
+	combat_resolver.call("apply_revealed_intents_with_context", revealed, _build_reveal_context(bluff_state))
 	_mark_recipe_step("reveal_resolve")
 	_refresh_action_controls()
 
@@ -991,6 +993,18 @@ func _build_card_context(card: Resource) -> Dictionary:
 	}
 
 
+func _build_reveal_context(bluff_state: Dictionary) -> Dictionary:
+	var player_context: Dictionary = combat_grid.call("get_player_context")
+	var resolver_state: Dictionary = combat_resolver.call("get_state")
+	return {
+		"player_cell": player_context.get("cell", Vector2i(-1, -1)),
+		"player_lane": int(player_context.get("lane", -1)),
+		"unit_positions": combat_grid.call("get_unit_position_snapshot"),
+		"active_trap_cells": resolver_state.get("trap_cells", []),
+		"bluff_state": bluff_state
+	}
+
+
 func _validate_card_context(card: Resource, context: Dictionary) -> bool:
 	if _is_attack_or_read_card(card):
 		var target_enemy_id: StringName = StringName(context.get("target_enemy_id", &""))
@@ -998,7 +1012,7 @@ func _validate_card_context(card: Resource, context: Dictionary) -> bool:
 			_append_log("%s needs a living enemy target." % _get_card_name(card))
 			return false
 
-	if _is_movement_card(card):
+	if _is_grid_cell_card(card):
 		var target_cell: Vector2i = context.get("target_cell", Vector2i(-1, -1))
 		if not _is_valid_player_move_target(target_cell):
 			_append_log("%s needs a legal adjacent move target." % _get_card_name(card))
@@ -1031,6 +1045,10 @@ func _is_attack_or_read_card(card: Resource) -> bool:
 
 func _is_movement_card(card: Resource) -> bool:
 	return int(card.get("card_type")) == 2
+
+
+func _is_grid_cell_card(card: Resource) -> bool:
+	return int(card.get("target_type")) == 3
 
 
 func _get_selected_enemy_target() -> Dictionary:
@@ -1182,6 +1200,21 @@ func _get_card_name(card: Resource) -> String:
 	if card.has_method("get_display_name"):
 		return String(card.call("get_display_name"))
 	return String(card.get("display_name"))
+
+
+func _get_trap_cells_text(cells: Array) -> String:
+	if cells.is_empty():
+		return ""
+
+	var labels: Array[String] = []
+	for cell in cells:
+		if typeof(cell) == TYPE_VECTOR2I:
+			labels.append("(%d,%d)" % [cell.x, cell.y])
+
+	if labels.is_empty():
+		return ""
+
+	return " at %s" % ", ".join(labels)
 
 
 func _append_log(message: String) -> void:

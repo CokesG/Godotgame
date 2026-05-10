@@ -73,6 +73,15 @@ func _ready() -> void:
 	if int(success_state.get("nerve", -1)) != 5:
 		_fail("Expected correct call payout to leave 5 Nerve, got %d." % int(success_state.get("nerve", -1)))
 		return
+	if not bool(success_state.get("last_call_correct", false)):
+		_fail("Expected structured reveal state to record a correct call.")
+		return
+	if StringName(success_state.get("last_called_enemy_id", &"")) != StringName(entry.get("enemy_id", &"")):
+		_fail("Expected structured reveal state to keep the called enemy id.")
+		return
+	if int(success_state.get("last_resolved_wager", -1)) != 1 or int(success_state.get("last_payout", -1)) != 3:
+		_fail("Expected structured reveal state to record wager 1 and payout 3.")
+		return
 
 	var counts_after_success: Dictionary = deck.call("get_counts")
 	if int(counts_after_success.get("committed", -1)) != 0:

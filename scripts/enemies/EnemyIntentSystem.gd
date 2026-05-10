@@ -164,15 +164,18 @@ func _get_public_options(enemy: Resource) -> Array[Dictionary]:
 		if total_weight > 0.0:
 			percentage = int(round((weight / total_weight) * 100.0))
 
+		var target_lane: int = int(intent.get("target_lane"))
+		var intent_type: int = int(intent.get("intent_type"))
 		options.append({
 			"intent_id": _get_intent_id(intent),
 			"intent_name": _get_intent_name(intent),
-			"summary": _get_public_summary(intent),
+			"summary": "%s [%s]" % [_get_public_summary(intent), _get_lane_text(target_lane, intent_type)],
 			"weight": weight,
 			"percentage": percentage,
 			"tier": _get_tier_name(intent),
-			"target_lane": int(intent.get("target_lane")),
-			"intent_type": int(intent.get("intent_type"))
+			"target_lane": target_lane,
+			"intent_type": intent_type,
+			"lane_text": _get_lane_text(target_lane, intent_type)
 		})
 
 	return options
@@ -247,3 +250,25 @@ func _get_nonnegative_weight(intent: Resource) -> float:
 	if weight < 0.0:
 		return 0.0
 	return weight
+
+
+func _get_lane_text(target_lane: int, intent_type: int) -> String:
+	if target_lane >= 0:
+		return "Lane: %s" % _get_lane_name(target_lane)
+
+	if intent_type == IntentDefinition.IntentType.ATTACK:
+		return "Tracks you"
+
+	return "No attack"
+
+
+func _get_lane_name(lane: int) -> String:
+	match lane:
+		0:
+			return "Left"
+		1:
+			return "Center"
+		2:
+			return "Right"
+		_:
+			return "Unknown"

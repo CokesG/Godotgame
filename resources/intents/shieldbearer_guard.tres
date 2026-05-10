@@ -6,11 +6,11 @@
 script = ExtResource("1")
 id = &"shieldbearer_guard"
 display_name = "Raise Shield"
-public_text = "Gain Guard and protect an ally."
-hidden_text = "The Shieldbearer raises its shield for 9 Guard."
+public_text = "Gain Guard while holding the right lane."
+hidden_text = "The Shieldbearer raises its shield on the right lane for 9 Guard."
 intent_type = 1
 weight = 0.5
 telegraph_tier = 0
-target_lane = 1
+target_lane = 2
 payload = {"guard": 9}
 tell_tags = Array[StringName]([&"shield_high", &"protect"])
