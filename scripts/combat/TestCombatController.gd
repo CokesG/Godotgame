@@ -2,6 +2,7 @@ extends Control
 
 const COMBAT_GRID_SCRIPT := preload("res://scripts/grid/CombatGrid.gd")
 const BLUFF_SYSTEM_SCRIPT := preload("res://scripts/combat/BluffSystem.gd")
+const COMBAT_RESOLVER_SCRIPT := preload("res://scripts/combat/CombatResolver.gd")
 const DECK_MANAGER_SCRIPT := preload("res://scripts/cards/DeckManager.gd")
 const ENEMY_INTENT_SYSTEM_SCRIPT := preload("res://scripts/enemies/EnemyIntentSystem.gd")
 const HAND_VIEW_SCRIPT := preload("res://scripts/ui/HandView.gd")
@@ -30,10 +31,12 @@ var turn_label: Label
 var log_label: RichTextLabel
 var combat_grid: Control
 var bluff_system: Node
+var combat_resolver: Node
 var deck_manager: Node
 var enemy_intent_system: Node
 var hand_view: HBoxContainer
 var pile_counts_label: Label
+var combat_state_label: RichTextLabel
 var bluff_state_label: RichTextLabel
 var enemy_call_option: OptionButton
 var intent_call_option: OptionButton
@@ -64,6 +67,7 @@ func _ready() -> void:
 	log_label.clear()
 	turn_manager.reset_combat()
 	combat_grid.call("reset_grid")
+	_reset_combat_state()
 	_reset_deck_and_draw_opening_hand()
 	_reset_enemy_intents()
 	bluff_system.call("reset_bluff")
@@ -94,7 +98,7 @@ func _build_ui() -> void:
 	layout.add_child(title)
 
 	var subtitle := Label.new()
-	subtitle.text = "Phase 3 proves deck, hand, discard, exhaust, and click-to-play cards."
+	subtitle.text = "Phase 6 proves cards and enemy intents can resolve into HP, Guard, traps, and outcomes."
 	subtitle.add_theme_font_size_override("font_size", 16)
 	layout.add_child(subtitle)
 
@@ -272,6 +276,18 @@ func _build_ui() -> void:
 	log_title.add_theme_font_size_override("font_size", 18)
 	log_column.add_child(log_title)
 
+	var state_title := Label.new()
+	state_title.text = "Combat State"
+	state_title.add_theme_font_size_override("font_size", 18)
+	log_column.add_child(state_title)
+
+	combat_state_label = RichTextLabel.new()
+	combat_state_label.name = "CombatState"
+	combat_state_label.bbcode_enabled = false
+	combat_state_label.fit_content = false
+	combat_state_label.custom_minimum_size = Vector2(0, 160)
+	log_column.add_child(combat_state_label)
+
 	log_label = RichTextLabel.new()
 	log_label.name = "CombatLog"
 	log_label.bbcode_enabled = false
@@ -312,6 +328,7 @@ func _build_ui() -> void:
 	deck_manager.connect("log_requested", _on_log_requested)
 	deck_manager.connect("hand_changed", _on_hand_changed)
 	deck_manager.connect("piles_changed", _on_piles_changed)
+	deck_manager.connect("card_played", _on_card_played)
 	hand_view.connect("card_clicked", _on_card_clicked)
 
 	enemy_intent_system = Node.new()
@@ -329,6 +346,14 @@ func _build_ui() -> void:
 	add_child(bluff_system)
 	bluff_system.connect("log_requested", _on_log_requested)
 	bluff_system.connect("state_changed", _on_bluff_state_changed)
+
+	combat_resolver = Node.new()
+	combat_resolver.name = "CombatResolver"
+	combat_resolver.set_script(COMBAT_RESOLVER_SCRIPT)
+	add_child(combat_resolver)
+	combat_resolver.connect("log_requested", _on_log_requested)
+	combat_resolver.connect("state_changed", _on_combat_state_changed)
+	combat_resolver.connect("combat_ended", _on_combat_ended)
 
 
 func _connect_turn_manager() -> void:
@@ -367,6 +392,7 @@ func _on_reset_pressed() -> void:
 	log_label.clear()
 	turn_manager.reset_combat()
 	combat_grid.call("reset_grid")
+	_reset_combat_state()
 	_reset_deck_and_draw_opening_hand()
 	_reset_enemy_intents()
 	bluff_system.call("reset_bluff")
@@ -404,6 +430,10 @@ func _on_toggle_truth_pressed() -> void:
 
 func _on_card_clicked(hand_index: int) -> void:
 	deck_manager.call("play_card_at", hand_index)
+
+
+func _on_card_played(card: Resource) -> void:
+	combat_resolver.call("apply_card", card)
 
 
 func _on_commit_first_card_pressed() -> void:
@@ -468,6 +498,10 @@ func _reset_enemy_intents() -> void:
 	enemy_intent_system.call("roll_intents")
 
 
+func _reset_combat_state() -> void:
+	combat_resolver.call("reset_combat", ENEMY_PATHS)
+
+
 func _on_intent_previews_changed(previews: Array[Dictionary]) -> void:
 	current_intent_previews = previews.duplicate()
 	intent_preview_label.clear()
@@ -510,6 +544,37 @@ func _on_bluff_state_changed(state: Dictionary) -> void:
 	bluff_state_label.append_text("Last: %s" % state.get("last_result", "None"))
 
 
+func _on_combat_state_changed(state: Dictionary) -> void:
+	combat_state_label.clear()
+	var player: Dictionary = state.get("player", {})
+	combat_state_label.append_text("%s HP %d/%d | Guard %d\n" % [
+		player.get("name", "Player"),
+		player.get("hp", 0),
+		player.get("max_hp", 0),
+		player.get("guard", 0)
+	])
+
+	var enemies: Array = state.get("enemies", [])
+	for enemy in enemies:
+		var alive_text := "alive" if bool(enemy.get("alive", false)) else "defeated"
+		combat_state_label.append_text("%s HP %d/%d | Guard %d | %s\n" % [
+			enemy.get("name", "Enemy"),
+			enemy.get("hp", 0),
+			enemy.get("max_hp", 0),
+			enemy.get("guard", 0),
+			alive_text
+		])
+
+	combat_state_label.append_text("Traps: %d | Outcome: %s" % [
+		state.get("traps_armed", 0),
+		state.get("outcome", "ongoing")
+	])
+
+
+func _on_combat_ended(outcome: String) -> void:
+	_append_log("Combat ended: %s." % outcome)
+
+
 func _on_enemy_call_selected(_index: int) -> void:
 	_refresh_intent_call_options()
 
@@ -518,7 +583,10 @@ func _resolve_reveal() -> void:
 	var revealed: Array = enemy_intent_system.call("reveal_intents")
 	bluff_system.call("reveal", revealed)
 	if bool(deck_manager.call("has_committed_card")):
-		deck_manager.call("resolve_committed_card")
+		var resolved_card: Resource = deck_manager.call("resolve_committed_card")
+		if resolved_card != null:
+			combat_resolver.call("apply_card", resolved_card)
+	combat_resolver.call("apply_revealed_intents", revealed)
 
 
 func _refresh_enemy_call_options() -> void:
