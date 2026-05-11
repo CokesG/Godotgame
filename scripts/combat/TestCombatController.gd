@@ -111,6 +111,8 @@ var phase_guidance_label: Label
 var phase_detail_label: Label
 var recipe_label: RichTextLabel
 var run_state_label: RichTextLabel
+var balance_report_label: RichTextLabel
+var run_results_label: RichTextLabel
 var card_reward_buttons: Array[Button] = []
 var relic_reward_buttons: Array[Button] = []
 var skip_rewards_button: Button
@@ -252,6 +254,22 @@ func _build_ui() -> void:
 	run_state_label.scroll_active = false
 	run_state_label.custom_minimum_size = Vector2(0, 86)
 	run_layout.add_child(run_state_label)
+
+	balance_report_label = RichTextLabel.new()
+	balance_report_label.name = "BalanceReport"
+	balance_report_label.bbcode_enabled = false
+	balance_report_label.fit_content = true
+	balance_report_label.scroll_active = false
+	balance_report_label.custom_minimum_size = Vector2(0, 78)
+	run_layout.add_child(balance_report_label)
+
+	run_results_label = RichTextLabel.new()
+	run_results_label.name = "RunResults"
+	run_results_label.bbcode_enabled = false
+	run_results_label.fit_content = true
+	run_results_label.scroll_active = false
+	run_results_label.custom_minimum_size = Vector2(0, 74)
+	run_layout.add_child(run_results_label)
 
 	var card_rewards_row := HBoxContainer.new()
 	card_rewards_row.name = "CardRewards"
@@ -1098,6 +1116,54 @@ func _refresh_run_panel(state: Dictionary) -> void:
 		relic_text
 	])
 	run_state_label.append_text("Run: %s" % state.get("run_outcome", "running"))
+
+	var balance: Dictionary = state.get("balance_snapshot", {})
+	var evaluation: Dictionary = balance.get("evaluation", {})
+	var deck_profile: Dictionary = evaluation.get("deck", {})
+	var encounter_profile: Dictionary = evaluation.get("encounter", {})
+	var fast_run: Dictionary = balance.get("fast_run", {})
+	if balance_report_label != null:
+		balance_report_label.clear()
+		balance_report_label.append_text("Balance: %s | Est. %d turns | Margin %.1f\n" % [
+			evaluation.get("rating", "unknown"),
+			evaluation.get("projected_turns", 0),
+			evaluation.get("survival_margin", 0.0)
+		])
+		balance_report_label.append_text("Deck %.1f dmg/turn, %.1f guard/turn vs %.1f threat\n" % [
+			deck_profile.get("projected_damage_per_turn", 0.0),
+			deck_profile.get("projected_guard_per_turn", 0.0),
+			encounter_profile.get("expected_damage_per_turn", 0.0)
+		])
+		balance_report_label.append_text("Fast sim: %s, clears %d/%d, end Blood %d" % [
+			fast_run.get("predicted_outcome", "unknown"),
+			fast_run.get("predicted_clears", 0),
+			fast_run.get("total_nodes", 0),
+			fast_run.get("ending_hp", 0)
+		])
+
+	var results: Dictionary = state.get("run_results", {})
+	if run_results_label != null:
+		run_results_label.clear()
+		var outcome := String(state.get("run_outcome", "running"))
+		if outcome == "running":
+			run_results_label.visible = false
+		else:
+			run_results_label.visible = true
+			run_results_label.append_text("%s | %s\n" % [
+				results.get("title", "Run Complete"),
+				results.get("grade", "Table Stakes")
+			])
+			run_results_label.append_text("Won %d/%d | Damage taken %d | Lowest Blood %d\n" % [
+				results.get("combats_won", 0),
+				results.get("total_combats", 0),
+				results.get("damage_taken_total", 0),
+				results.get("lowest_blood", 0)
+			])
+			run_results_label.append_text("Deck %d | Cards +%d | Relics +%d" % [
+				results.get("deck_size", 0),
+				results.get("cards_claimed", 0),
+				results.get("relics_claimed", 0)
+			])
 
 	var card_rewards: Array = state.get("pending_card_rewards", [])
 	for index in range(card_reward_buttons.size()):

@@ -26,6 +26,16 @@ func _ready() -> void:
 		_fail("Expected RunPanel for the Phase 11 prototype path.")
 		return
 
+	var balance_report := combat_scene.find_child("BalanceReport", true, false)
+	if balance_report == null:
+		_fail("Expected BalanceReport for Phase 12 tuning.")
+		return
+
+	var run_results := combat_scene.find_child("RunResults", true, false)
+	if run_results == null:
+		_fail("Expected RunResults for Phase 12 outcomes.")
+		return
+
 	var target_enemy_option := combat_scene.find_child("TargetEnemyOption", true, false)
 	if target_enemy_option == null:
 		_fail("Expected TargetEnemyOption.")

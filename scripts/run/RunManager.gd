@@ -4,6 +4,7 @@ extends Node
 signal log_requested(message: String)
 signal state_changed(state: Dictionary)
 
+const BALANCE_SIMULATOR_SCRIPT := preload("res://scripts/run/RunBalanceSimulator.gd")
 const PLAYER_MAX_HP := 30
 const VICTORY_HEAL := 3
 const STARTER_DECK_PATHS := [
@@ -103,6 +104,11 @@ var pending_card_reward_paths: Array[String] = []
 var pending_relic_reward_paths: Array[String] = []
 var run_outcome: String = "running"
 var last_completed_node_name: String = ""
+var combats_won: int = 0
+var cards_claimed: int = 0
+var relics_claimed: int = 0
+var damage_taken_total: int = 0
+var lowest_blood: int = PLAYER_MAX_HP
 
 
 func reset_run() -> void:
@@ -116,6 +122,11 @@ func reset_run() -> void:
 	pending_relic_reward_paths.clear()
 	run_outcome = "running"
 	last_completed_node_name = ""
+	combats_won = 0
+	cards_claimed = 0
+	relics_claimed = 0
+	damage_taken_total = 0
+	lowest_blood = PLAYER_MAX_HP
 	log_requested.emit("Run reset: Gambler-Knight antes into a five-fight prototype path.")
 	_emit_state()
 
@@ -166,6 +177,9 @@ func mark_combat_victory(combat_state: Dictionary) -> void:
 	last_completed_node_name = String(node.get("name", "Encounter"))
 	var player: Dictionary = combat_state.get("player", {})
 	var ending_hp := int(player.get("hp", player_current_hp))
+	damage_taken_total += max(0, player_current_hp - ending_hp)
+	lowest_blood = min(lowest_blood, ending_hp)
+	combats_won += 1
 	player_current_hp = clampi(ending_hp + VICTORY_HEAL, 1, PLAYER_MAX_HP)
 
 	if String(node.get("kind", "")) == "boss":
@@ -190,6 +204,8 @@ func mark_combat_victory(combat_state: Dictionary) -> void:
 
 func mark_combat_defeat() -> void:
 	run_outcome = "defeat"
+	damage_taken_total += player_current_hp
+	lowest_blood = 0
 	player_current_hp = 0
 	pending_card_reward_paths.clear()
 	pending_relic_reward_paths.clear()
@@ -204,6 +220,7 @@ func claim_card_reward(index: int) -> String:
 
 	var card_path := pending_card_reward_paths[index]
 	deck_paths.append(card_path)
+	cards_claimed += 1
 	pending_card_reward_paths.clear()
 	var card: Resource = load(card_path)
 	log_requested.emit("Added %s to the run deck." % _get_resource_name(card))
@@ -219,6 +236,7 @@ func claim_relic_reward(index: int) -> String:
 
 	var relic_path := pending_relic_reward_paths[index]
 	relic_paths.append(relic_path)
+	relics_claimed += 1
 	pending_relic_reward_paths.clear()
 	var relic: Resource = load(relic_path)
 	log_requested.emit("Claimed relic: %s." % _get_resource_name(relic))
@@ -258,6 +276,78 @@ func get_relic_modifiers() -> Dictionary:
 	return modifiers
 
 
+func get_balance_snapshot() -> Dictionary:
+	var simulator = BALANCE_SIMULATOR_SCRIPT.new()
+	var node := get_current_node()
+	var evaluation: Dictionary = simulator.call("evaluate_encounter", deck_paths, get_current_enemy_paths(), get_relic_modifiers(), player_current_hp)
+	var fast_run: Dictionary = simulator.call("simulate_fast_run", RUN_NODES, deck_paths, get_relic_modifiers(), player_current_hp)
+	return {
+		"current_node_name": String(node.get("name", "Complete")),
+		"current_node_kind": String(node.get("kind", "")),
+		"evaluation": evaluation,
+		"fast_run": fast_run,
+		"reward_tuning": get_reward_tuning_report()
+	}
+
+
+func get_reward_tuning_report() -> Array[Dictionary]:
+	var report: Array[Dictionary] = []
+	var simulator = BALANCE_SIMULATOR_SCRIPT.new()
+	var deck_profile: Dictionary = simulator.call("build_deck_profile", deck_paths, get_relic_modifiers())
+	var node := get_current_node()
+	var reward_tags: Array = node.get("reward_tags", [])
+	var rewards: Array[String] = pending_card_reward_paths if not pending_card_reward_paths.is_empty() else _build_card_rewards(node)
+
+	for path in rewards:
+		var card: Resource = load(path)
+		if card == null:
+			continue
+		report.append({
+			"path": path,
+			"name": _get_resource_name(card),
+			"score": simulator.call("score_card_reward", path, reward_tags, deck_profile),
+			"text": String(card.get("rules_text"))
+		})
+
+	return report
+
+
+func get_run_results() -> Dictionary:
+	var title := "Run In Progress"
+	if run_outcome == "victory":
+		title = "Prototype Path Cleared"
+	elif run_outcome == "defeat":
+		title = "Run Lost"
+
+	var grade := "Table Stakes"
+	if run_outcome == "victory":
+		if player_current_hp >= 20:
+			grade = "Clean Read"
+		elif player_current_hp >= 10:
+			grade = "Hard-Fought Win"
+		else:
+			grade = "Barely Standing"
+	elif run_outcome == "defeat":
+		grade = "House Win"
+
+	return {
+		"title": title,
+		"grade": grade,
+		"outcome": run_outcome,
+		"combats_won": combats_won,
+		"total_combats": RUN_NODES.size(),
+		"blood": player_current_hp,
+		"max_blood": PLAYER_MAX_HP,
+		"lowest_blood": lowest_blood,
+		"damage_taken_total": damage_taken_total,
+		"deck_size": deck_paths.size(),
+		"cards_claimed": cards_claimed,
+		"relics_claimed": relics_claimed,
+		"relic_names": _get_relic_names(),
+		"last_completed_node_name": last_completed_node_name
+	}
+
+
 func get_state() -> Dictionary:
 	var node := get_current_node()
 	return {
@@ -272,6 +362,10 @@ func get_state() -> Dictionary:
 		"relic_names": _get_relic_names(),
 		"pending_card_rewards": _describe_paths(pending_card_reward_paths),
 		"pending_relic_rewards": _describe_paths(pending_relic_reward_paths),
+		"balance_snapshot": get_balance_snapshot(),
+		"run_results": get_run_results(),
+		"combats_won": combats_won,
+		"damage_taken_total": damage_taken_total,
 		"waiting_for_reward": is_waiting_for_reward(),
 		"run_outcome": run_outcome,
 		"can_start_current_node": can_start_current_node()
@@ -280,29 +374,37 @@ func get_state() -> Dictionary:
 
 func _build_card_rewards(node: Dictionary) -> Array[String]:
 	var reward_tags: Array = node.get("reward_tags", [])
-	var chosen: Array[String] = []
-
+	var simulator = BALANCE_SIMULATOR_SCRIPT.new()
+	var deck_profile: Dictionary = simulator.call("build_deck_profile", deck_paths, get_relic_modifiers())
+	var scored_candidates: Array[Dictionary] = []
 	for path in CARD_REWARD_POOL:
-		if chosen.size() >= 3:
-			break
 		if deck_paths.has(path):
 			continue
 		var card: Resource = load(path)
-		if card != null and _resource_has_any_tag(card, reward_tags):
-			chosen.append(path)
-
-	for path in CARD_REWARD_POOL:
-		if chosen.size() >= 3:
-			break
-		if deck_paths.has(path) or chosen.has(path):
+		if card == null:
 			continue
-		chosen.append(path)
+		var score: float = simulator.call("score_card_reward", path, reward_tags, deck_profile)
+		if _resource_has_any_tag(card, reward_tags):
+			score += 1.0
+		scored_candidates.append({
+			"path": path,
+			"score": score,
+			"name": _get_resource_name(card)
+		})
 
-	for path in CARD_REWARD_POOL:
+	scored_candidates.sort_custom(func(left: Dictionary, right: Dictionary) -> bool:
+		var left_score := float(left.get("score", 0.0))
+		var right_score := float(right.get("score", 0.0))
+		if left_score == right_score:
+			return String(left.get("name", "")) < String(right.get("name", ""))
+		return left_score > right_score
+	)
+
+	var chosen: Array[String] = []
+	for candidate in scored_candidates:
 		if chosen.size() >= 3:
 			break
-		if not chosen.has(path):
-			chosen.append(path)
+		chosen.append(String(candidate.get("path", "")))
 
 	return chosen
 
