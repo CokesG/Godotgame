@@ -1,0 +1,16 @@
+[gd_resource type="Resource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/cards/CardDefinition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"black_shield"
+display_name = "Black Shield"
+rules_text = "Gain 11 Guard. Exhaust."
+cost = 2
+card_type = 1
+rarity = 2
+target_type = 1
+tags = Array[StringName]([&"defense", &"guard", &"exhaust"])
+effects = Array[Dictionary]([{"guard": 11}])
+design_note = "Big one-turn answer to elite and boss attacks."

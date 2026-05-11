@@ -1,0 +1,16 @@
+[gd_resource type="Resource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/enemies/IntentDefinition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"champion_snap_call"
+display_name = "Snap Call"
+public_text = "A tracking strike against hesitation."
+hidden_text = "The House Champion snap-calls for 6 tracking damage."
+intent_type = 0
+weight = 0.25
+telegraph_tier = 1
+target_lane = -1
+payload = {"damage": 6}
+tell_tags = Array[StringName]([&"boss", &"tracking"])

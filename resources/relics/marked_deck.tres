@@ -1,0 +1,13 @@
+[gd_resource type="Resource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/relics/RelicDefinition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"marked_deck"
+display_name = "Marked Deck"
+rules_text = "Draw to 6 cards instead of 5."
+rarity = 1
+tags = Array[StringName]([&"draw", &"read"])
+modifiers = {"hand_target_bonus": 1}
+design_note = "Tests larger hands without adding a full draw engine."

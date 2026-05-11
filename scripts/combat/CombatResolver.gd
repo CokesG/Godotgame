@@ -17,12 +17,16 @@ var traps_armed: int = 0
 var outcome: String = "ongoing"
 
 
-func reset_combat(enemy_paths: Array) -> void:
+func reset_combat(enemy_paths: Array, player_hp: int = -1) -> void:
+	var starting_hp := player_max_hp
+	if player_hp > 0:
+		starting_hp = clampi(player_hp, 1, player_max_hp)
+
 	player_state = {
 		"id": PLAYER_ID,
 		"name": "Gambler-Knight",
 		"max_hp": player_max_hp,
-		"hp": player_max_hp,
+		"hp": starting_hp,
 		"guard": 0
 	}
 	enemy_states.clear()
@@ -69,22 +73,45 @@ func apply_card_with_context(card: Resource, context: Dictionary = {}) -> void:
 			_damage_targeted_enemy(4, card_name, context)
 		&"low_stab":
 			_damage_targeted_enemy(2, card_name, context)
+		&"sure_cut":
+			_damage_targeted_enemy(5, card_name, context)
+		&"center_cut":
+			var center_damage := 6 if int(context.get("player_lane", -1)) == 1 else 4
+			_damage_targeted_enemy(center_damage, card_name, context)
+		&"house_edge":
+			_damage_targeted_enemy(3, card_name, context)
+			_add_player_guard(3, card_name)
+		&"all_in_cut":
+			_damage_targeted_enemy(7, card_name, context)
 		&"guard_up":
 			_add_player_guard(5, card_name)
 		&"iron_vow":
 			_add_player_guard(8, card_name)
+		&"bone_guard":
+			_add_player_guard(4, card_name)
+		&"black_shield":
+			_add_player_guard(11, card_name)
 		&"sidestep":
 			log_requested.emit("%s is a movement card. Grid movement remains player-click driven in this prototype." % card_name)
 		&"hook_step":
 			log_requested.emit("%s prepares a follow-up. Phase 6 logs setup but does not chain cards yet." % card_name)
+		&"shadow_step":
+			_add_player_guard(2, card_name)
 		&"read_tell":
 			log_requested.emit("%s sharpens the read on %s." % [card_name, _get_context_enemy_name(context)])
+		&"marked_card":
+			_damage_targeted_enemy(2, card_name, context)
+			log_requested.emit("%s marks the enemy for a cleaner call." % card_name)
 		&"false_opening":
 			log_requested.emit("%s creates bait. Use Commit/Call/Raise to cash it in." % card_name)
 		&"snare_card":
 			_arm_trap(card_name, context)
+		&"tripwire":
+			_arm_trap(card_name, context)
 		&"blood_ritual":
 			log_requested.emit("%s feeds the wager engine. Nerve remains tracked by BluffSystem." % card_name)
+		&"second_wind":
+			_add_player_guard(4, card_name)
 		_:
 			log_requested.emit("%s has no resolver effect yet." % card_name)
 
@@ -162,6 +189,13 @@ func get_alive_enemy_targets() -> Array[Dictionary]:
 
 func has_living_enemy(enemy_id: StringName) -> bool:
 	return _enemy_is_alive(enemy_id)
+
+
+func add_player_guard(amount: int, source: String = "Relic") -> void:
+	if _is_finished():
+		return
+	_add_player_guard(max(0, amount), source)
+	_emit_state()
 
 
 func _damage_first_alive_enemy(amount: int, source: String) -> void:

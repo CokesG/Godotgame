@@ -21,6 +21,11 @@ func _ready() -> void:
 		_fail("Expected RecipePanel.")
 		return
 
+	var run_panel := combat_scene.find_child("RunPanel", true, false)
+	if run_panel == null:
+		_fail("Expected RunPanel for the Phase 11 prototype path.")
+		return
+
 	var target_enemy_option := combat_scene.find_child("TargetEnemyOption", true, false)
 	if target_enemy_option == null:
 		_fail("Expected TargetEnemyOption.")

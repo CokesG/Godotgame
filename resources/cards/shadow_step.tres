@@ -1,0 +1,16 @@
+[gd_resource type="Resource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/cards/CardDefinition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"shadow_step"
+display_name = "Shadow Step"
+rules_text = "Move 1 orthogonal cell and gain 2 Guard."
+cost = 0
+card_type = 2
+rarity = 1
+target_type = 3
+tags = Array[StringName]([&"movement", &"guard"])
+effects = Array[Dictionary]([{"move": 1}, {"guard": 2}])
+design_note = "Keeps movement picks attractive without replacing defense cards."

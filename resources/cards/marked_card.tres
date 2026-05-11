@@ -1,0 +1,16 @@
+[gd_resource type="Resource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/cards/CardDefinition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"marked_card"
+display_name = "Marked Card"
+rules_text = "Deal 2 damage and gain 1 Nerve."
+cost = 1
+card_type = 4
+rarity = 1
+target_type = 2
+tags = Array[StringName]([&"read", &"nerve"])
+effects = Array[Dictionary]([{"damage": 2}, {"nerve": 1}])
+design_note = "A low-tempo read card that fuels future raises."

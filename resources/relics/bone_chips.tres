@@ -1,0 +1,13 @@
+[gd_resource type="Resource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/relics/RelicDefinition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"bone_chips"
+display_name = "Bone Chips"
+rules_text = "Start each combat with 3 Guard."
+rarity = 0
+tags = Array[StringName]([&"guard", &"defense"])
+modifiers = {"starting_guard": 3}
+design_note = "Small survivability relic for the first elite."

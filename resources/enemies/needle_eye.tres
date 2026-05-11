@@ -1,0 +1,21 @@
+[gd_resource type="Resource" load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scripts/enemies/EnemyDefinition.gd" id="1"]
+[ext_resource type="Resource" path="res://resources/intents/needle_eye_thread_shot.tres" id="2"]
+[ext_resource type="Resource" path="res://resources/intents/needle_eye_pin.tres" id="3"]
+[ext_resource type="Resource" path="res://resources/intents/needle_eye_reaim.tres" id="4"]
+
+[resource]
+script = ExtResource("1")
+id = &"needle_eye"
+display_name = "Needle-Eye"
+role = 4
+max_hp = 16
+bluff_chance = 0.25
+aggression = 0.7
+behavior_tags = Array[StringName]([&"sniper", &"lane_pressure"])
+intents = Array[Resource]([ExtResource("2"), ExtResource("3"), ExtResource("4")])
+tell_description = "The glint of the scope points toward the threatened lane."
+counterplay_note = "Use movement to leave the aimed lane, or call the pinned shot for mitigation."
+visual_identity = "A hunched marksman with a needle-thin barrel."
+reward_tags = Array[StringName]([&"movement", &"attack", &"read"])

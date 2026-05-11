@@ -1,0 +1,21 @@
+[gd_resource type="Resource" load_steps=5 format=3]
+
+[ext_resource type="Script" path="res://scripts/enemies/EnemyDefinition.gd" id="1"]
+[ext_resource type="Resource" path="res://resources/intents/hexmonger_blood_hex.tres" id="2"]
+[ext_resource type="Resource" path="res://resources/intents/hexmonger_jinx.tres" id="3"]
+[ext_resource type="Resource" path="res://resources/intents/hexmonger_ward.tres" id="4"]
+
+[resource]
+script = ExtResource("1")
+id = &"hexmonger"
+display_name = "Hexmonger"
+role = 8
+max_hp = 18
+bluff_chance = 0.35
+aggression = 0.45
+behavior_tags = Array[StringName]([&"hex", &"tracking"])
+intents = Array[Resource]([ExtResource("2"), ExtResource("3"), ExtResource("4")])
+tell_description = "A raised charm means Blood Hex is likely; whispered counting means Jinx."
+counterplay_note = "Tracking damage cannot be dodged, so Guard and correct calls matter more."
+visual_identity = "A hooded dealer with charm strings looped around both wrists."
+reward_tags = Array[StringName]([&"ritual", &"read", &"nerve"])

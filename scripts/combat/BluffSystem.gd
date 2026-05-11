@@ -97,6 +97,16 @@ func raise_wager(amount: int = 1) -> bool:
 	return true
 
 
+func gain_nerve(amount: int, source: String = "Nerve gain") -> void:
+	var clean_amount: int = max(0, amount)
+	if clean_amount == 0:
+		return
+
+	nerve += clean_amount
+	log_requested.emit("%s restores %d Nerve. Nerve: %d." % [source, clean_amount, nerve])
+	_emit_state()
+
+
 func fold() -> bool:
 	if committed_card == null:
 		log_requested.emit("No committed card to fold.")

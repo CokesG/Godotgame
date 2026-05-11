@@ -1,0 +1,22 @@
+[gd_resource type="Resource" load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://scripts/enemies/EnemyDefinition.gd" id="1"]
+[ext_resource type="Resource" path="res://resources/intents/grave_dealer_cross_cut.tres" id="2"]
+[ext_resource type="Resource" path="res://resources/intents/grave_dealer_raise_stakes.tres" id="3"]
+[ext_resource type="Resource" path="res://resources/intents/grave_dealer_false_shuffle.tres" id="4"]
+[ext_resource type="Resource" path="res://resources/intents/grave_dealer_chip_stack.tres" id="5"]
+
+[resource]
+script = ExtResource("1")
+id = &"grave_dealer"
+display_name = "Grave Dealer"
+role = 10
+max_hp = 34
+bluff_chance = 0.55
+aggression = 0.65
+behavior_tags = Array[StringName]([&"elite", &"bluff", &"tracking"])
+intents = Array[Resource]([ExtResource("2"), ExtResource("3"), ExtResource("4"), ExtResource("5")])
+tell_description = "The Grave Dealer cuts the deck before real attacks and riffles before false tells."
+counterplay_note = "Do not raise every call; fold weak commits when False Shuffle is live."
+visual_identity = "An undertaker cardsharp with coffin chips and a bone-white visor."
+reward_tags = Array[StringName]([&"bluff", &"attack", &"nerve"])

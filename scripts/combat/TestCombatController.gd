@@ -7,6 +7,7 @@ const COMBAT_SESSION_SCRIPT := preload("res://scripts/combat/CombatSession.gd")
 const DECK_MANAGER_SCRIPT := preload("res://scripts/cards/DeckManager.gd")
 const ENEMY_INTENT_SYSTEM_SCRIPT := preload("res://scripts/enemies/EnemyIntentSystem.gd")
 const HAND_VIEW_SCRIPT := preload("res://scripts/ui/HandView.gd")
+const RUN_MANAGER_SCRIPT := preload("res://scripts/run/RunManager.gd")
 const STARTER_CARD_PATHS := [
 	"res://resources/cards/quick_slash.tres",
 	"res://resources/cards/low_stab.tres",
@@ -100,6 +101,7 @@ var combat_grid: Control
 var bluff_system: Node
 var combat_resolver: Node
 var combat_session: Node
+var run_manager: Node
 var deck_manager: Node
 var enemy_intent_system: Node
 var hand_view: HBoxContainer
@@ -108,6 +110,10 @@ var resource_state_label: Label
 var phase_guidance_label: Label
 var phase_detail_label: Label
 var recipe_label: RichTextLabel
+var run_state_label: RichTextLabel
+var card_reward_buttons: Array[Button] = []
+var relic_reward_buttons: Array[Button] = []
+var skip_rewards_button: Button
 var combat_state_label: RichTextLabel
 var bluff_state_label: RichTextLabel
 var enemy_call_option: OptionButton
@@ -147,7 +153,7 @@ func _ready() -> void:
 	_build_ui()
 	_connect_turn_manager()
 	log_label.clear()
-	_reset_playable_combat()
+	_reset_run_slice()
 
 
 func _build_ui() -> void:
@@ -229,6 +235,59 @@ func _build_ui() -> void:
 	recipe_label.custom_minimum_size = Vector2(0, 118)
 	recipe_panel.add_child(recipe_label)
 
+	var run_panel := PanelContainer.new()
+	run_panel.name = "RunPanel"
+	run_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	layout.add_child(run_panel)
+
+	var run_layout := VBoxContainer.new()
+	run_layout.name = "RunLayout"
+	run_layout.add_theme_constant_override("separation", 6)
+	run_panel.add_child(run_layout)
+
+	run_state_label = RichTextLabel.new()
+	run_state_label.name = "RunState"
+	run_state_label.bbcode_enabled = false
+	run_state_label.fit_content = true
+	run_state_label.scroll_active = false
+	run_state_label.custom_minimum_size = Vector2(0, 86)
+	run_layout.add_child(run_state_label)
+
+	var card_rewards_row := HBoxContainer.new()
+	card_rewards_row.name = "CardRewards"
+	card_rewards_row.add_theme_constant_override("separation", 6)
+	run_layout.add_child(card_rewards_row)
+
+	for index in range(3):
+		var reward_button := Button.new()
+		reward_button.name = "CardReward%d" % index
+		reward_button.text = "Card Reward"
+		reward_button.disabled = true
+		reward_button.pressed.connect(_on_card_reward_pressed.bind(index))
+		card_reward_buttons.append(reward_button)
+		card_rewards_row.add_child(reward_button)
+
+	var relic_rewards_row := HBoxContainer.new()
+	relic_rewards_row.name = "RelicRewards"
+	relic_rewards_row.add_theme_constant_override("separation", 6)
+	run_layout.add_child(relic_rewards_row)
+
+	for index in range(2):
+		var relic_button := Button.new()
+		relic_button.name = "RelicReward%d" % index
+		relic_button.text = "Relic Reward"
+		relic_button.disabled = true
+		relic_button.pressed.connect(_on_relic_reward_pressed.bind(index))
+		relic_reward_buttons.append(relic_button)
+		relic_rewards_row.add_child(relic_button)
+
+	skip_rewards_button = Button.new()
+	skip_rewards_button.name = "SkipRewardsButton"
+	skip_rewards_button.text = "Skip Rewards"
+	skip_rewards_button.disabled = true
+	skip_rewards_button.pressed.connect(_on_skip_rewards_pressed)
+	run_layout.add_child(skip_rewards_button)
+
 	var primary_controls := HBoxContainer.new()
 	primary_controls.name = "PrimaryControls"
 	primary_controls.add_theme_constant_override("separation", 8)
@@ -242,7 +301,7 @@ func _build_ui() -> void:
 
 	reset_button = Button.new()
 	reset_button.name = "NewCombatButton"
-	reset_button.text = "New Combat"
+	reset_button.text = "New Run"
 	reset_button.pressed.connect(_on_reset_pressed)
 	primary_controls.add_child(reset_button)
 
@@ -506,6 +565,13 @@ func _build_ui() -> void:
 	add_child(combat_session)
 	combat_session.connect("log_requested", _on_log_requested)
 	combat_session.connect("state_changed", _on_session_state_changed)
+
+	run_manager = Node.new()
+	run_manager.name = "RunManager"
+	run_manager.set_script(RUN_MANAGER_SCRIPT)
+	add_child(run_manager)
+	run_manager.connect("log_requested", _on_log_requested)
+	run_manager.connect("state_changed", _on_run_state_changed)
 	_update_debug_visibility()
 
 
@@ -556,11 +622,11 @@ func _on_next_phase_pressed() -> void:
 
 func _on_reset_pressed() -> void:
 	log_label.clear()
-	_reset_playable_combat()
+	_reset_run_slice()
 
 
 func _on_reset_grid_pressed() -> void:
-	combat_grid.call("reset_grid")
+	combat_grid.call("reset_grid", run_manager.call("get_current_enemy_spawns"))
 
 
 func _on_draw_pressed() -> void:
@@ -638,9 +704,11 @@ func _on_card_clicked(hand_index: int) -> void:
 
 func _on_card_played(card: Resource) -> void:
 	if _is_movement_card(card):
-		_resolve_movement_card(card, pending_card_context)
+		if bool(_resolve_movement_card(card, pending_card_context)):
+			_apply_card_side_effects(card)
 	else:
 		combat_resolver.call("apply_card_with_context", card, pending_card_context)
+		_apply_card_side_effects(card)
 	pending_card_context.clear()
 	_refresh_targeting_options()
 
@@ -662,6 +730,7 @@ func _on_commit_first_card_pressed() -> void:
 	var cost := _get_card_cost(card)
 	var card_name := _get_card_name(card)
 	var context: Dictionary = _build_card_context(card)
+	context["committed"] = true
 	if not _validate_card_context(card, context):
 		return
 
@@ -740,33 +809,40 @@ func _on_piles_changed(counts: Dictionary) -> void:
 	_refresh_action_controls()
 
 
+func _reset_run_slice() -> void:
+	run_manager.call("reset_run")
+	_reset_playable_combat()
+
+
 func _reset_playable_combat() -> void:
 	_reset_recipe_progress()
 	pending_card_context.clear()
 	committed_card_context.clear()
+	_apply_relic_modifiers()
 	combat_session.call("reset_session")
-	combat_grid.call("reset_grid")
+	combat_grid.call("reset_grid", run_manager.call("get_current_enemy_spawns"))
 	_reset_combat_state()
 	_reset_deck_and_draw_opening_hand()
 	_reset_enemy_intents()
 	bluff_system.call("reset_bluff")
+	_apply_starting_relic_effects()
 	turn_manager.reset_combat()
 	_refresh_action_controls()
 
 
 func _reset_deck_and_draw_opening_hand() -> void:
-	deck_manager.call("configure_deck", STARTER_CARD_PATHS)
+	deck_manager.call("configure_deck", run_manager.call("get_deck_paths"))
 	deck_manager.call("reset_deck")
-	deck_manager.call("draw_cards", 5)
+	deck_manager.call("draw_cards", int(combat_session.get("hand_target")))
 
 
 func _reset_enemy_intents() -> void:
-	enemy_intent_system.call("configure_enemies", ENEMY_PATHS)
+	enemy_intent_system.call("configure_enemies", run_manager.call("get_current_enemy_paths"))
 	enemy_intent_system.call("roll_intents")
 
 
 func _reset_combat_state() -> void:
-	combat_resolver.call("reset_combat", ENEMY_PATHS)
+	combat_resolver.call("reset_combat", run_manager.call("get_current_enemy_paths"), int(run_manager.call("get_player_hp")))
 
 
 func _draw_to_hand_target() -> void:
@@ -866,6 +942,10 @@ func _on_combat_state_changed(state: Dictionary) -> void:
 func _on_combat_ended(outcome: String) -> void:
 	_append_log("Combat ended: %s." % outcome)
 	combat_session.call("mark_combat_ended", outcome)
+	if outcome == "victory":
+		run_manager.call("mark_combat_victory", combat_resolver.call("get_state"))
+	else:
+		run_manager.call("mark_combat_defeat")
 	_refresh_action_controls()
 
 
@@ -877,6 +957,27 @@ func _on_session_state_changed(state: Dictionary) -> void:
 		state.get("outcome", "ongoing")
 	]
 	_refresh_action_controls()
+
+
+func _on_run_state_changed(state: Dictionary) -> void:
+	_refresh_run_panel(state)
+
+
+func _on_card_reward_pressed(index: int) -> void:
+	var claimed_path: String = String(run_manager.call("claim_card_reward", index))
+	if not claimed_path.is_empty():
+		_start_next_encounter_if_ready()
+
+
+func _on_relic_reward_pressed(index: int) -> void:
+	var claimed_path: String = String(run_manager.call("claim_relic_reward", index))
+	if not claimed_path.is_empty():
+		_start_next_encounter_if_ready()
+
+
+func _on_skip_rewards_pressed() -> void:
+	run_manager.call("skip_rewards")
+	_start_next_encounter_if_ready()
 
 
 func _on_grid_unit_moved(_unit_id: StringName, _from_cell: Vector2i, _to_cell: Vector2i) -> void:
@@ -894,18 +995,45 @@ func _resolve_reveal() -> void:
 	reveal_resolved_this_phase = true
 	var revealed: Array = enemy_intent_system.call("reveal_intents")
 	bluff_system.call("reveal", revealed)
+	var bluff_state: Dictionary = bluff_system.call("get_state")
 	if bool(deck_manager.call("has_committed_card")):
 		var resolved_card: Resource = deck_manager.call("resolve_committed_card")
 		if resolved_card != null:
+			committed_card_context["bluff_state"] = bluff_state
 			if _is_movement_card(resolved_card):
-				_resolve_movement_card(resolved_card, committed_card_context)
+				if bool(_resolve_movement_card(resolved_card, committed_card_context)):
+					_apply_card_side_effects(resolved_card)
 			else:
 				combat_resolver.call("apply_card_with_context", resolved_card, committed_card_context)
+				_apply_card_side_effects(resolved_card)
 			committed_card_context.clear()
-	var bluff_state: Dictionary = bluff_system.call("get_state")
 	combat_resolver.call("apply_revealed_intents_with_context", revealed, _build_reveal_context(bluff_state))
 	_mark_recipe_step("reveal_resolve")
 	_refresh_action_controls()
+
+
+func _start_next_encounter_if_ready() -> void:
+	var run_state: Dictionary = run_manager.call("get_state")
+	if String(run_state.get("run_outcome", "running")) != "running":
+		_refresh_action_controls()
+		return
+
+	if bool(run_manager.call("can_start_current_node")):
+		_reset_playable_combat()
+
+
+func _apply_relic_modifiers() -> void:
+	var modifiers: Dictionary = run_manager.call("get_relic_modifiers")
+	combat_session.set("max_energy", 3 + int(modifiers.get("max_energy_bonus", 0)))
+	combat_session.set("hand_target", 5 + int(modifiers.get("hand_target_bonus", 0)))
+	bluff_system.set("starting_nerve", 3 + int(modifiers.get("starting_nerve_bonus", 0)))
+
+
+func _apply_starting_relic_effects() -> void:
+	var modifiers: Dictionary = run_manager.call("get_relic_modifiers")
+	var starting_guard := int(modifiers.get("starting_guard", 0))
+	if starting_guard > 0:
+		combat_resolver.call("add_player_guard", starting_guard, "Relic guard")
 
 
 func _refresh_action_controls() -> void:
@@ -918,9 +1046,19 @@ func _refresh_action_controls() -> void:
 	var can_reveal := bool(combat_session.call("can_reveal"))
 	var has_committed := bool(deck_manager.call("has_committed_card")) if deck_manager != null else false
 	var phase_key: String = String(combat_session.get("current_phase_key"))
+	var run_state: Dictionary = run_manager.call("get_state") if run_manager != null else {}
+	var waiting_for_reward := bool(run_state.get("waiting_for_reward", false))
+	var run_outcome := String(run_state.get("run_outcome", "running"))
 
 	next_phase_button.disabled = not can_debug_adjust
-	next_phase_button.text = "Combat Over" if not can_debug_adjust else String(PHASE_ACTION_LABELS.get(phase_key, "Continue"))
+	if run_outcome == "victory":
+		next_phase_button.text = "Run Complete"
+	elif run_outcome == "defeat":
+		next_phase_button.text = "Run Lost"
+	elif waiting_for_reward:
+		next_phase_button.text = "Choose Reward"
+	else:
+		next_phase_button.text = "Combat Over" if not can_debug_adjust else String(PHASE_ACTION_LABELS.get(phase_key, "Continue"))
 	reset_grid_button.disabled = not can_debug_adjust
 	draw_button.disabled = not can_debug_adjust
 	discard_hand_button.disabled = not can_debug_adjust
@@ -934,6 +1072,62 @@ func _refresh_action_controls() -> void:
 	fold_button.disabled = not can_bluff or not has_committed
 	reset_bluff_button.disabled = not can_debug_adjust
 	_refresh_guidance()
+	if run_manager != null:
+		_refresh_run_panel(run_state)
+
+
+func _refresh_run_panel(state: Dictionary) -> void:
+	if run_state_label == null:
+		return
+
+	var node_index := int(state.get("current_node_index", 0)) + 1
+	var node_count := int(state.get("current_node_count", 0))
+	var relic_names: Array = state.get("relic_names", [])
+	var relic_text := "None" if relic_names.is_empty() else ", ".join(relic_names)
+	run_state_label.clear()
+	run_state_label.append_text("Prototype Run %d/%d: %s [%s]\n" % [
+		min(node_index, node_count),
+		node_count,
+		state.get("current_node_name", "Complete"),
+		state.get("current_node_kind", "")
+	])
+	run_state_label.append_text("Blood: %d/%d | Deck: %d | Relics: %s\n" % [
+		state.get("player_hp", 0),
+		state.get("player_max_hp", 0),
+		state.get("deck_size", 0),
+		relic_text
+	])
+	run_state_label.append_text("Run: %s" % state.get("run_outcome", "running"))
+
+	var card_rewards: Array = state.get("pending_card_rewards", [])
+	for index in range(card_reward_buttons.size()):
+		var button := card_reward_buttons[index]
+		if index < card_rewards.size():
+			var reward: Dictionary = card_rewards[index]
+			button.text = "%s\n%s" % [reward.get("name", "Card"), reward.get("text", "")]
+			button.disabled = false
+			button.visible = true
+		else:
+			button.text = "Card Reward"
+			button.disabled = true
+			button.visible = false
+
+	var relic_rewards: Array = state.get("pending_relic_rewards", [])
+	for index in range(relic_reward_buttons.size()):
+		var button := relic_reward_buttons[index]
+		if index < relic_rewards.size():
+			var reward: Dictionary = relic_rewards[index]
+			button.text = "%s\n%s" % [reward.get("name", "Relic"), reward.get("text", "")]
+			button.disabled = false
+			button.visible = true
+		else:
+			button.text = "Relic Reward"
+			button.disabled = true
+			button.visible = false
+
+	if skip_rewards_button != null:
+		skip_rewards_button.disabled = not bool(state.get("waiting_for_reward", false))
+		skip_rewards_button.visible = bool(state.get("waiting_for_reward", false))
 
 
 func _refresh_targeting_options() -> void:
@@ -982,6 +1176,7 @@ func _refresh_targeting_options() -> void:
 func _build_card_context(card: Resource) -> Dictionary:
 	var target_enemy: Dictionary = _get_selected_enemy_target()
 	var target_cell: Vector2i = _get_selected_move_cell()
+	var player_context: Dictionary = combat_grid.call("get_player_context")
 	var target_enemy_id: StringName = StringName(target_enemy.get("id", &""))
 	var target_enemy_name: String = String(target_enemy.get("name", "Enemy"))
 	return {
@@ -989,6 +1184,7 @@ func _build_card_context(card: Resource) -> Dictionary:
 		"target_enemy_name": target_enemy_name,
 		"target_cell": target_cell,
 		"target_cell_label": combat_grid.call("format_cell", target_cell),
+		"player_lane": int(player_context.get("lane", -1)),
 		"card_id": card.get("id")
 	}
 
@@ -1021,17 +1217,34 @@ func _validate_card_context(card: Resource, context: Dictionary) -> bool:
 	return true
 
 
-func _resolve_movement_card(card: Resource, context: Dictionary) -> void:
+func _resolve_movement_card(card: Resource, context: Dictionary) -> bool:
 	var target_cell: Vector2i = context.get("target_cell", Vector2i(-1, -1))
 	if not _is_valid_player_move_target(target_cell):
 		_append_log("%s fizzles because the move target is no longer legal." % _get_card_name(card))
-		return
+		return false
 
 	if bool(combat_grid.call("move_unit", &"player", target_cell)):
 		_append_log("%s moves the Gambler-Knight to %s." % [
 			_get_card_name(card),
 			combat_grid.call("format_cell", target_cell)
 		])
+		return true
+
+	return false
+
+
+func _apply_card_side_effects(card: Resource) -> void:
+	var card_id: StringName = StringName(card.get("id"))
+	var card_name := _get_card_name(card)
+	match card_id:
+		&"blood_ritual":
+			bluff_system.call("gain_nerve", 2, card_name)
+		&"marked_card":
+			bluff_system.call("gain_nerve", 1, card_name)
+		&"second_wind":
+			bluff_system.call("gain_nerve", 1, card_name)
+		&"shadow_step":
+			combat_resolver.call("add_player_guard", 2, card_name)
 
 
 func _is_valid_player_move_target(target_cell: Vector2i) -> bool:
@@ -1079,8 +1292,16 @@ func _refresh_guidance() -> void:
 	var guidance = PHASE_GUIDANCE.get(phase_key, PHASE_GUIDANCE.get("START_TURN", {}))
 
 	if bool(state.get("combat_over", false)):
-		phase_guidance_label.text = "Combat Complete"
-		phase_detail_label.text = "Outcome: %s. Start a new combat when ready." % state.get("outcome", "unknown")
+		var run_state: Dictionary = run_manager.call("get_state") if run_manager != null else {}
+		if bool(run_state.get("waiting_for_reward", false)):
+			phase_guidance_label.text = "Choose Reward"
+			phase_detail_label.text = "Pick one reward to advance to the next table."
+		elif String(run_state.get("run_outcome", "running")) == "victory":
+			phase_guidance_label.text = "Run Complete"
+			phase_detail_label.text = "The prototype path is cleared."
+		else:
+			phase_guidance_label.text = "Combat Complete"
+			phase_detail_label.text = "Outcome: %s. Start a new run when ready." % state.get("outcome", "unknown")
 	else:
 		phase_guidance_label.text = String(guidance.get("title", "Turn"))
 		phase_detail_label.text = String(guidance.get("detail", "Continue the combat loop."))

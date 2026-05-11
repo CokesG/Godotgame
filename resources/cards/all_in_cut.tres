@@ -1,0 +1,16 @@
+[gd_resource type="Resource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/cards/CardDefinition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"all_in_cut"
+display_name = "All-In Cut"
+rules_text = "Deal 7 damage. Expensive, reliable finisher."
+cost = 2
+card_type = 0
+rarity = 2
+target_type = 2
+tags = Array[StringName]([&"attack", &"finisher"])
+effects = Array[Dictionary]([{"damage": 7}])
+design_note = "High damage ceiling for boss and elite pacing."

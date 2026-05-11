@@ -1,0 +1,13 @@
+[gd_resource type="Resource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/relics/RelicDefinition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"cracked_lens"
+display_name = "Cracked Lens"
+rules_text = "Start each combat with +1 Nerve."
+rarity = 0
+tags = Array[StringName]([&"read", &"nerve"])
+modifiers = {"starting_nerve_bonus": 1}
+design_note = "Smooths failed calls without removing risk."

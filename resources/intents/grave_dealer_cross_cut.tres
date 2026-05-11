@@ -1,0 +1,16 @@
+[gd_resource type="Resource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/enemies/IntentDefinition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"grave_dealer_cross_cut"
+display_name = "Cross Cut"
+public_text = "A fast cut that tracks your position."
+hidden_text = "The Grave Dealer cross-cuts for 6 tracking damage."
+intent_type = 0
+weight = 0.4
+telegraph_tier = 0
+target_lane = -1
+payload = {"damage": 6}
+tell_tags = Array[StringName]([&"elite", &"tracking"])
