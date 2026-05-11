@@ -6,11 +6,11 @@
 script = ExtResource("1")
 id = &"center_cut"
 display_name = "Center Cut"
-rules_text = "Deal 6 damage if you are in the center lane, otherwise deal 4."
+rules_text = "Deal 7 damage if you are in the center lane, otherwise deal 4."
 cost = 1
 card_type = 0
 rarity = 2
 target_type = 2
 tags = Array[StringName]([&"attack", &"position"])
-effects = Array[Dictionary]([{"damage": 6, "center_lane_bonus": true}])
+effects = Array[Dictionary]([{"damage": 7, "center_lane_bonus": true}])
 design_note = "Rewards risky center-lane positioning."

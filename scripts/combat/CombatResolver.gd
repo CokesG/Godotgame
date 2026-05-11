@@ -74,21 +74,21 @@ func apply_card_with_context(card: Resource, context: Dictionary = {}) -> void:
 		&"low_stab":
 			_damage_targeted_enemy(2, card_name, context)
 		&"sure_cut":
-			_damage_targeted_enemy(5, card_name, context)
+			_damage_targeted_enemy(6, card_name, context)
 		&"center_cut":
-			var center_damage := 6 if int(context.get("player_lane", -1)) == 1 else 4
+			var center_damage := 7 if int(context.get("player_lane", -1)) == 1 else 4
 			_damage_targeted_enemy(center_damage, card_name, context)
 		&"house_edge":
-			_damage_targeted_enemy(3, card_name, context)
+			_damage_targeted_enemy(4, card_name, context)
 			_add_player_guard(3, card_name)
 		&"all_in_cut":
-			_damage_targeted_enemy(7, card_name, context)
+			_damage_targeted_enemy(8, card_name, context)
 		&"guard_up":
 			_add_player_guard(5, card_name)
 		&"iron_vow":
 			_add_player_guard(8, card_name)
 		&"bone_guard":
-			_add_player_guard(4, card_name)
+			_add_player_guard(5, card_name)
 		&"black_shield":
 			_add_player_guard(11, card_name)
 		&"sidestep":
@@ -111,7 +111,7 @@ func apply_card_with_context(card: Resource, context: Dictionary = {}) -> void:
 		&"blood_ritual":
 			log_requested.emit("%s feeds the wager engine. Nerve remains tracked by BluffSystem." % card_name)
 		&"second_wind":
-			_add_player_guard(4, card_name)
+			_add_player_guard(5, card_name)
 		_:
 			log_requested.emit("%s has no resolver effect yet." % card_name)
 

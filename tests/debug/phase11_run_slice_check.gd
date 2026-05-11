@@ -150,8 +150,8 @@ func _verify_resolver_effects() -> void:
 	var sure_cut: Resource = load("res://resources/cards/sure_cut.tres")
 	resolver.call("apply_card_with_context", sure_cut, {"target_enemy_id": &"house_champion"})
 	var boss := _get_enemy_state(resolver, &"house_champion")
-	if int(boss.get("hp", -1)) != 43:
-		_fail("Sure Cut should deal 5 to the House Champion.")
+	if int(boss.get("hp", -1)) != 38:
+		_fail("Sure Cut should deal 6 to the House Champion.")
 		return
 
 	var center_cut: Resource = load("res://resources/cards/center_cut.tres")
@@ -160,8 +160,8 @@ func _verify_resolver_effects() -> void:
 		"player_lane": 1
 	})
 	boss = _get_enemy_state(resolver, &"house_champion")
-	if int(boss.get("hp", -1)) != 37:
-		_fail("Center Cut should deal 6 from center lane.")
+	if int(boss.get("hp", -1)) != 31:
+		_fail("Center Cut should deal 7 from center lane.")
 		return
 
 	var house_edge: Resource = load("res://resources/cards/house_edge.tres")

@@ -27,8 +27,8 @@ func _ready() -> void:
 	resolver.call("apply_card", quick_slash)
 	state = resolver.call("get_state")
 	var brute: Dictionary = state.get("enemies", [])[0]
-	if int(brute.get("hp", -1)) != 20:
-		_fail("Quick Slash should reduce Brute HP from 24 to 20.")
+	if int(brute.get("hp", -1)) != 18:
+		_fail("Quick Slash should reduce tuned Brute HP from 22 to 18.")
 		return
 
 	resolver.call("apply_card_with_context", quick_slash, {

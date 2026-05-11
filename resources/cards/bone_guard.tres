@@ -6,11 +6,11 @@
 script = ExtResource("1")
 id = &"bone_guard"
 display_name = "Bone Guard"
-rules_text = "Gain 4 Guard."
+rules_text = "Gain 5 Guard."
 cost = 1
 card_type = 1
 rarity = 1
 target_type = 1
 tags = Array[StringName]([&"defense", &"guard"])
-effects = Array[Dictionary]([{"guard": 4}])
+effects = Array[Dictionary]([{"guard": 5}])
 design_note = "A smaller common block card so reward picks are not all damage."

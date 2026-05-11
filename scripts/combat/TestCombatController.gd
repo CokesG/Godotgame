@@ -113,6 +113,7 @@ var recipe_label: RichTextLabel
 var run_state_label: RichTextLabel
 var balance_report_label: RichTextLabel
 var run_results_label: RichTextLabel
+var playtest_report_label: RichTextLabel
 var card_reward_buttons: Array[Button] = []
 var relic_reward_buttons: Array[Button] = []
 var skip_rewards_button: Button
@@ -137,6 +138,8 @@ var reset_deck_button: Button
 var roll_intents_button: Button
 var reveal_intents_button: Button
 var toggle_truth_button: Button
+var run_playtests_button: Button
+var export_summary_button: Button
 var commit_first_card_button: Button
 var set_call_button: Button
 var raise_button: Button
@@ -271,6 +274,14 @@ func _build_ui() -> void:
 	run_results_label.custom_minimum_size = Vector2(0, 74)
 	run_layout.add_child(run_results_label)
 
+	playtest_report_label = RichTextLabel.new()
+	playtest_report_label.name = "PlaytestReport"
+	playtest_report_label.bbcode_enabled = false
+	playtest_report_label.fit_content = true
+	playtest_report_label.scroll_active = false
+	playtest_report_label.custom_minimum_size = Vector2(0, 72)
+	run_layout.add_child(playtest_report_label)
+
 	var card_rewards_row := HBoxContainer.new()
 	card_rewards_row.name = "CardRewards"
 	card_rewards_row.add_theme_constant_override("separation", 6)
@@ -368,6 +379,18 @@ func _build_ui() -> void:
 	toggle_truth_button.text = "Show Truth"
 	toggle_truth_button.pressed.connect(_on_toggle_truth_pressed)
 	debug_controls.add_child(toggle_truth_button)
+
+	run_playtests_button = Button.new()
+	run_playtests_button.name = "RunPlaytestsButton"
+	run_playtests_button.text = "Run 5 Sims"
+	run_playtests_button.pressed.connect(_on_run_playtests_pressed)
+	debug_controls.add_child(run_playtests_button)
+
+	export_summary_button = Button.new()
+	export_summary_button.name = "ExportSummaryButton"
+	export_summary_button.text = "Export Summary"
+	export_summary_button.pressed.connect(_on_export_summary_pressed)
+	debug_controls.add_child(export_summary_button)
 
 	var body := HBoxContainer.new()
 	body.name = "CombatBody"
@@ -998,6 +1021,20 @@ func _on_skip_rewards_pressed() -> void:
 	_start_next_encounter_if_ready()
 
 
+func _on_run_playtests_pressed() -> void:
+	var batch: Dictionary = run_manager.call("get_playtest_batch")
+	_refresh_playtest_report(batch)
+	_append_log("Playtest sims: %s" % batch.get("summary", "No summary."))
+
+
+func _on_export_summary_pressed() -> void:
+	var path: String = String(run_manager.call("export_run_summary"))
+	if path.is_empty():
+		_append_log("Run summary export failed.")
+	else:
+		_append_log("Run summary exported to %s." % path)
+
+
 func _on_grid_unit_moved(_unit_id: StringName, _from_cell: Vector2i, _to_cell: Vector2i) -> void:
 	_refresh_targeting_options()
 
@@ -1083,6 +1120,8 @@ func _refresh_action_controls() -> void:
 	reset_deck_button.disabled = not can_debug_adjust
 	roll_intents_button.disabled = not can_debug_adjust
 	reveal_intents_button.disabled = not can_reveal or reveal_resolved_this_phase
+	run_playtests_button.disabled = run_manager == null
+	export_summary_button.disabled = run_manager == null
 
 	commit_first_card_button.disabled = not can_play or has_committed
 	set_call_button.disabled = not can_bluff
@@ -1122,10 +1161,14 @@ func _refresh_run_panel(state: Dictionary) -> void:
 	var deck_profile: Dictionary = evaluation.get("deck", {})
 	var encounter_profile: Dictionary = evaluation.get("encounter", {})
 	var fast_run: Dictionary = balance.get("fast_run", {})
+	var playtest_batch: Dictionary = balance.get("playtest_batch", {})
 	if balance_report_label != null:
+		var rating := String(evaluation.get("rating", "unknown"))
+		var band_label := _get_balance_band_label(rating)
+		balance_report_label.modulate = _get_balance_band_color(rating)
 		balance_report_label.clear()
-		balance_report_label.append_text("Balance: %s | Est. %d turns | Margin %.1f\n" % [
-			evaluation.get("rating", "unknown"),
+		balance_report_label.append_text("%s | Est. %d turns | Margin %.1f\n" % [
+			band_label,
 			evaluation.get("projected_turns", 0),
 			evaluation.get("survival_margin", 0.0)
 		])
@@ -1140,6 +1183,8 @@ func _refresh_run_panel(state: Dictionary) -> void:
 			fast_run.get("total_nodes", 0),
 			fast_run.get("ending_hp", 0)
 		])
+
+	_refresh_playtest_report(playtest_batch)
 
 	var results: Dictionary = state.get("run_results", {})
 	if run_results_label != null:
@@ -1170,7 +1215,11 @@ func _refresh_run_panel(state: Dictionary) -> void:
 		var button := card_reward_buttons[index]
 		if index < card_rewards.size():
 			var reward: Dictionary = card_rewards[index]
-			button.text = "%s\n%s" % [reward.get("name", "Card"), reward.get("text", "")]
+			button.text = "%s\n%s\nWhy: %s" % [
+				reward.get("name", "Card"),
+				reward.get("text", ""),
+				reward.get("explanation", "Solid reward option.")
+			]
 			button.disabled = false
 			button.visible = true
 		else:
@@ -1194,6 +1243,50 @@ func _refresh_run_panel(state: Dictionary) -> void:
 	if skip_rewards_button != null:
 		skip_rewards_button.disabled = not bool(state.get("waiting_for_reward", false))
 		skip_rewards_button.visible = bool(state.get("waiting_for_reward", false))
+
+
+func _refresh_playtest_report(batch: Dictionary) -> void:
+	if playtest_report_label == null:
+		return
+
+	playtest_report_label.clear()
+	if batch.is_empty():
+		playtest_report_label.append_text("Playtest sims: not run yet.")
+		return
+
+	playtest_report_label.append_text("5-run sims: %d wins / %d losses | Avg end Blood %.1f\n" % [
+		batch.get("wins", 0),
+		batch.get("losses", 0),
+		batch.get("average_ending_hp", 0.0)
+	])
+	playtest_report_label.append_text("Worst margin %.1f | %s" % [
+		batch.get("worst_margin", 0.0),
+		batch.get("summary", "")
+	])
+
+
+func _get_balance_band_label(rating: String) -> String:
+	match rating:
+		"danger":
+			return "!!! DANGER !!!"
+		"close":
+			return "CLOSE - tense"
+		"favorable":
+			return "FAVORABLE - stable"
+		_:
+			return "BALANCE UNKNOWN"
+
+
+func _get_balance_band_color(rating: String) -> Color:
+	match rating:
+		"danger":
+			return Color(1.0, 0.45, 0.35)
+		"close":
+			return Color(1.0, 0.84, 0.35)
+		"favorable":
+			return Color(0.55, 1.0, 0.6)
+		_:
+			return Color(1.0, 1.0, 1.0)
 
 
 func _refresh_targeting_options() -> void:

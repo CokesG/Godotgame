@@ -281,11 +281,13 @@ func get_balance_snapshot() -> Dictionary:
 	var node := get_current_node()
 	var evaluation: Dictionary = simulator.call("evaluate_encounter", deck_paths, get_current_enemy_paths(), get_relic_modifiers(), player_current_hp)
 	var fast_run: Dictionary = simulator.call("simulate_fast_run", RUN_NODES, deck_paths, get_relic_modifiers(), player_current_hp)
+	var playtest_batch: Dictionary = simulator.call("simulate_playtest_batch", RUN_NODES, deck_paths, RELIC_POOL, get_relic_modifiers(), player_current_hp, 5)
 	return {
 		"current_node_name": String(node.get("name", "Complete")),
 		"current_node_kind": String(node.get("kind", "")),
 		"evaluation": evaluation,
 		"fast_run": fast_run,
+		"playtest_batch": playtest_batch,
 		"reward_tuning": get_reward_tuning_report()
 	}
 
@@ -302,11 +304,14 @@ func get_reward_tuning_report() -> Array[Dictionary]:
 		var card: Resource = load(path)
 		if card == null:
 			continue
+		var details: Dictionary = simulator.call("score_card_reward_details", path, reward_tags, deck_profile, "balanced")
 		report.append({
 			"path": path,
 			"name": _get_resource_name(card),
-			"score": simulator.call("score_card_reward", path, reward_tags, deck_profile),
-			"text": String(card.get("rules_text"))
+			"score": details.get("score", 0.0),
+			"text": String(card.get("rules_text")),
+			"explanation": details.get("explanation", "Solid reward option."),
+			"reasons": details.get("reasons", [])
 		})
 
 	return report
@@ -348,6 +353,38 @@ func get_run_results() -> Dictionary:
 	}
 
 
+func get_playtest_batch() -> Dictionary:
+	var simulator = BALANCE_SIMULATOR_SCRIPT.new()
+	return simulator.call("simulate_playtest_batch", RUN_NODES, deck_paths, RELIC_POOL, get_relic_modifiers(), player_current_hp, 5)
+
+
+func get_run_export_data() -> Dictionary:
+	return {
+		"version": 1,
+		"run_results": get_run_results(),
+		"balance_snapshot": get_balance_snapshot(),
+		"playtest_batch": get_playtest_batch(),
+		"deck": _describe_paths(deck_paths),
+		"relics": _get_relic_names(),
+		"current_node": get_current_node(),
+		"pending_card_rewards": get_reward_tuning_report()
+	}
+
+
+func export_run_summary() -> String:
+	var path := "user://dead_mans_ante_run_summary_%d.json" % Time.get_unix_time_from_system()
+	var file := FileAccess.open(path, FileAccess.WRITE)
+	if file == null:
+		log_requested.emit("Could not export run summary.")
+		return ""
+
+	file.store_string(JSON.stringify(get_run_export_data(), "\t"))
+	file.close()
+	var global_path := ProjectSettings.globalize_path(path)
+	log_requested.emit("Run summary exported: %s" % global_path)
+	return global_path
+
+
 func get_state() -> Dictionary:
 	var node := get_current_node()
 	return {
@@ -360,7 +397,7 @@ func get_state() -> Dictionary:
 		"player_max_hp": PLAYER_MAX_HP,
 		"deck_size": deck_paths.size(),
 		"relic_names": _get_relic_names(),
-		"pending_card_rewards": _describe_paths(pending_card_reward_paths),
+		"pending_card_rewards": _describe_card_rewards(pending_card_reward_paths),
 		"pending_relic_rewards": _describe_paths(pending_relic_reward_paths),
 		"balance_snapshot": get_balance_snapshot(),
 		"run_results": get_run_results(),
@@ -383,7 +420,8 @@ func _build_card_rewards(node: Dictionary) -> Array[String]:
 		var card: Resource = load(path)
 		if card == null:
 			continue
-		var score: float = simulator.call("score_card_reward", path, reward_tags, deck_profile)
+		var details: Dictionary = simulator.call("score_card_reward_details", path, reward_tags, deck_profile, "balanced")
+		var score: float = float(details.get("score", 0.0))
 		if _resource_has_any_tag(card, reward_tags):
 			score += 1.0
 		scored_candidates.append({
@@ -469,6 +507,35 @@ func _describe_paths(paths: Array[String]) -> Array[Dictionary]:
 			"name": _get_resource_name(resource),
 			"text": String(resource.get("rules_text"))
 		})
+	return descriptions
+
+
+func _describe_card_rewards(paths: Array[String]) -> Array[Dictionary]:
+	if paths.is_empty():
+		return []
+
+	var report := get_reward_tuning_report()
+	var descriptions: Array[Dictionary] = []
+	for path in paths:
+		var found := false
+		for entry in report:
+			if String(entry.get("path", "")) == path:
+				descriptions.append(entry)
+				found = true
+				break
+		if found:
+			continue
+
+		var resource: Resource = load(path)
+		if resource != null:
+			descriptions.append({
+				"path": path,
+				"name": _get_resource_name(resource),
+				"text": String(resource.get("rules_text")),
+				"score": 0.0,
+				"explanation": "Solid reward option.",
+				"reasons": []
+			})
 	return descriptions
 
 

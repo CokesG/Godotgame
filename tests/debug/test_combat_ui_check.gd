@@ -36,6 +36,21 @@ func _ready() -> void:
 		_fail("Expected RunResults for Phase 12 outcomes.")
 		return
 
+	var playtest_report := combat_scene.find_child("PlaytestReport", true, false)
+	if playtest_report == null:
+		_fail("Expected PlaytestReport for Phase 13 run comparisons.")
+		return
+
+	var run_playtests_button := combat_scene.find_child("RunPlaytestsButton", true, false)
+	if run_playtests_button == null:
+		_fail("Expected RunPlaytestsButton for Phase 13 simulation.")
+		return
+
+	var export_summary_button := combat_scene.find_child("ExportSummaryButton", true, false)
+	if export_summary_button == null:
+		_fail("Expected ExportSummaryButton for Phase 13 run exports.")
+		return
+
 	var target_enemy_option := combat_scene.find_child("TargetEnemyOption", true, false)
 	if target_enemy_option == null:
 		_fail("Expected TargetEnemyOption.")

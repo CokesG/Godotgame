@@ -6,11 +6,11 @@
 script = ExtResource("1")
 id = &"second_wind"
 display_name = "Second Wind"
-rules_text = "Gain 4 Guard and 1 Nerve. Exhaust."
+rules_text = "Gain 5 Guard and 1 Nerve. Exhaust."
 cost = 1
 card_type = 6
 rarity = 2
 target_type = 1
 tags = Array[StringName]([&"ritual", &"guard", &"nerve", &"exhaust"])
-effects = Array[Dictionary]([{"guard": 4}, {"nerve": 1}])
+effects = Array[Dictionary]([{"guard": 5}, {"nerve": 1}])
 design_note = "Recovery pick for runs that spend Nerve aggressively."

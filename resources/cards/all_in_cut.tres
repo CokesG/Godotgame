@@ -6,11 +6,11 @@
 script = ExtResource("1")
 id = &"all_in_cut"
 display_name = "All-In Cut"
-rules_text = "Deal 7 damage. Expensive, reliable finisher."
+rules_text = "Deal 8 damage. Expensive, reliable finisher."
 cost = 2
 card_type = 0
 rarity = 2
 target_type = 2
 tags = Array[StringName]([&"attack", &"finisher"])
-effects = Array[Dictionary]([{"damage": 7}])
+effects = Array[Dictionary]([{"damage": 8}])
 design_note = "High damage ceiling for boss and elite pacing."

@@ -6,11 +6,11 @@
 script = ExtResource("1")
 id = &"house_edge"
 display_name = "House Edge"
-rules_text = "Deal 3 damage and gain 3 Guard."
+rules_text = "Deal 4 damage and gain 3 Guard."
 cost = 1
 card_type = 0
 rarity = 1
 target_type = 2
 tags = Array[StringName]([&"attack", &"guard"])
-effects = Array[Dictionary]([{"damage": 3}, {"guard": 3}])
+effects = Array[Dictionary]([{"damage": 4}, {"guard": 3}])
 design_note = "Bridge card for players who need tempo and safety."

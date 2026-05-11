@@ -108,7 +108,7 @@ func _verify_trap_trigger(resolver: Node, logs: Array[String]) -> void:
 	})
 
 	var brute: Dictionary = _get_enemy_state(resolver, &"brute")
-	if int(brute.get("hp", -1)) != 21:
+	if int(brute.get("hp", -1)) != 19:
 		_fail("Snare trap should deal 3 damage to Brute when it targets trapped center lane.")
 		return
 
