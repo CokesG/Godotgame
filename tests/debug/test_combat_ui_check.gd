@@ -49,6 +49,11 @@ func _ready() -> void:
 		_fail("Expected ActionPrompt for Phase 14 next-action clarity.")
 		return
 
+	var turn_status := combat_scene.find_child("TurnStatus", true, false)
+	if turn_status == null:
+		_fail("Expected TurnStatus for Phase 17 turn-state readability.")
+		return
+
 	var run_panel := combat_scene.find_child("RunPanel", true, false)
 	if run_panel == null:
 		_fail("Expected RunPanel for the Phase 11 prototype path.")
@@ -117,6 +122,16 @@ func _ready() -> void:
 	var threat_summary := combat_scene.find_child("ThreatSummary", true, false)
 	if threat_summary == null:
 		_fail("Expected ThreatSummary for Phase 14 intent readability.")
+		return
+
+	var enemy_status := combat_scene.find_child("EnemyStatus", true, false)
+	if enemy_status == null:
+		_fail("Expected EnemyStatus for Phase 17 enemy readability.")
+		return
+
+	var card_action_hint := combat_scene.find_child("CardActionHint", true, false)
+	if card_action_hint == null:
+		_fail("Expected CardActionHint for Phase 17 card affordances.")
 		return
 
 	var continue_button := combat_scene.find_child("ContinueButton", true, false)

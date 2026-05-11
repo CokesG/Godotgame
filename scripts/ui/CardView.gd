@@ -8,8 +8,9 @@ var hand_index: int = -1
 
 
 func _ready() -> void:
-	custom_minimum_size = Vector2(132, 176)
+	custom_minimum_size = Vector2(156, 176)
 	focus_mode = Control.FOCUS_NONE
+	autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	pressed.connect(_on_pressed)
 	_refresh()
 
@@ -33,8 +34,13 @@ func _refresh() -> void:
 	var cost := int(card_resource.get("cost"))
 	var rules_text := String(card_resource.get("rules_text"))
 	var type_label := _get_card_type_label()
-	text = "%s\nCost %d\n%s\n\n%s" % [card_name, cost, type_label, rules_text]
-	tooltip_text = "Click to play %s" % card_name
+	var target_label := _get_target_label()
+	text = "%s\nCost %d | %s\nTarget: %s\n%s" % [card_name, cost, type_label, target_label, rules_text]
+	tooltip_text = "Click to play %s during Player Commit. Target: %s%s" % [
+		card_name,
+		target_label,
+		_get_tag_tooltip()
+	]
 
 	var style := StyleBoxFlat.new()
 	style.corner_radius_top_left = 6
@@ -46,7 +52,7 @@ func _refresh() -> void:
 	style.border_width_right = 2
 	style.border_width_bottom = 2
 	style.bg_color = Color(0.16, 0.14, 0.12)
-	style.border_color = Color(0.72, 0.58, 0.38)
+	style.border_color = _get_card_type_color()
 	add_theme_stylebox_override("normal", style)
 	add_theme_stylebox_override("hover", style)
 	add_theme_stylebox_override("pressed", style)
@@ -73,3 +79,51 @@ func _get_card_type_label() -> String:
 	if card_type >= 0 and card_type < labels.size():
 		return labels[card_type]
 	return "Card"
+
+
+func _get_target_label() -> String:
+	var target_type := int(card_resource.get("target_type"))
+	var labels := [
+		"None",
+		"Self",
+		"Enemy",
+		"Grid Cell",
+		"Lane",
+		"Any Unit"
+	]
+	if target_type >= 0 and target_type < labels.size():
+		return labels[target_type]
+	return "Unknown"
+
+
+func _get_tag_tooltip() -> String:
+	var tags_value = card_resource.get("tags")
+	if typeof(tags_value) != TYPE_ARRAY:
+		return ""
+
+	var labels: Array[String] = []
+	for tag in tags_value:
+		labels.append(String(tag).capitalize())
+	if labels.is_empty():
+		return ""
+	return " | Tags: %s" % ", ".join(labels)
+
+
+func _get_card_type_color() -> Color:
+	match int(card_resource.get("card_type")):
+		0:
+			return Color(0.92, 0.42, 0.34)
+		1:
+			return Color(0.36, 0.74, 0.58)
+		2:
+			return Color(0.38, 0.68, 0.92)
+		3:
+			return Color(0.88, 0.72, 0.32)
+		4:
+			return Color(0.72, 0.56, 0.92)
+		5:
+			return Color(0.78, 0.46, 0.72)
+		6:
+			return Color(0.88, 0.52, 0.40)
+		_:
+			return Color(0.72, 0.58, 0.38)

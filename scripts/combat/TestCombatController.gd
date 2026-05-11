@@ -119,6 +119,7 @@ var run_shell_detail_label: RichTextLabel
 var start_run_button: Button
 var shell_new_run_button: Button
 var shell_export_button: Button
+var turn_status_label: RichTextLabel
 var action_prompt_label: Label
 var phase_guidance_label: Label
 var phase_detail_label: Label
@@ -139,6 +140,7 @@ var intent_call_option: OptionButton
 var lane_call_option: OptionButton
 var target_enemy_option: OptionButton
 var movement_cell_option: OptionButton
+var enemy_status_label: RichTextLabel
 var threat_summary_label: RichTextLabel
 var intent_preview_label: RichTextLabel
 var truth_title_label: Label
@@ -163,6 +165,7 @@ var set_call_button: Button
 var raise_button: Button
 var fold_button: Button
 var reset_bluff_button: Button
+var card_action_hint_label: RichTextLabel
 var debug_controls_visible: bool = false
 var debug_truth_visible: bool = false
 var current_intent_previews: Array[Dictionary] = []
@@ -280,6 +283,19 @@ func _build_ui() -> void:
 	resource_state_label.text = "Energy: -"
 	resource_state_label.add_theme_font_size_override("font_size", 18)
 	layout.add_child(resource_state_label)
+
+	var turn_status_panel := PanelContainer.new()
+	turn_status_panel.name = "TurnStatusPanel"
+	turn_status_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	layout.add_child(turn_status_panel)
+
+	turn_status_label = RichTextLabel.new()
+	turn_status_label.name = "TurnStatus"
+	turn_status_label.bbcode_enabled = false
+	turn_status_label.fit_content = true
+	turn_status_label.scroll_active = false
+	turn_status_label.custom_minimum_size = Vector2(0, 70)
+	turn_status_panel.add_child(turn_status_label)
 
 	var guidance_panel := PanelContainer.new()
 	guidance_panel.name = "TurnGuidance"
@@ -536,6 +552,14 @@ func _build_ui() -> void:
 	intent_title.add_theme_font_size_override("font_size", 18)
 	intent_column.add_child(intent_title)
 
+	enemy_status_label = RichTextLabel.new()
+	enemy_status_label.name = "EnemyStatus"
+	enemy_status_label.bbcode_enabled = false
+	enemy_status_label.fit_content = true
+	enemy_status_label.scroll_active = false
+	enemy_status_label.custom_minimum_size = Vector2(320, 112)
+	intent_column.add_child(enemy_status_label)
+
 	threat_summary_label = RichTextLabel.new()
 	threat_summary_label.name = "ThreatSummary"
 	threat_summary_label.bbcode_enabled = false
@@ -559,10 +583,12 @@ func _build_ui() -> void:
 
 	target_enemy_option = OptionButton.new()
 	target_enemy_option.name = "TargetEnemyOption"
+	target_enemy_option.item_selected.connect(_on_target_enemy_selected)
 	intent_column.add_child(target_enemy_option)
 
 	movement_cell_option = OptionButton.new()
 	movement_cell_option.name = "MovementCellOption"
+	movement_cell_option.item_selected.connect(_on_movement_cell_selected)
 	intent_column.add_child(movement_cell_option)
 
 	truth_title_label = Label.new()
@@ -680,6 +706,14 @@ func _build_ui() -> void:
 	pile_counts_label.text = "Draw: 0 | Hand: 0 | Discard: 0 | Exhaust: 0"
 	pile_counts_label.add_theme_font_size_override("font_size", 16)
 	deck_panel.add_child(pile_counts_label)
+
+	card_action_hint_label = RichTextLabel.new()
+	card_action_hint_label.name = "CardActionHint"
+	card_action_hint_label.bbcode_enabled = false
+	card_action_hint_label.fit_content = true
+	card_action_hint_label.scroll_active = false
+	card_action_hint_label.custom_minimum_size = Vector2(0, 64)
+	deck_panel.add_child(card_action_hint_label)
 
 	var hand_scroll := ScrollContainer.new()
 	hand_scroll.name = "HandScroll"
@@ -979,6 +1013,7 @@ func _on_reset_bluff_pressed() -> void:
 
 func _on_hand_changed(cards: Array[Resource]) -> void:
 	hand_view.call("set_cards", cards)
+	_refresh_card_action_hint()
 
 
 func _on_piles_changed(counts: Dictionary) -> void:
@@ -1084,6 +1119,8 @@ func _on_intent_previews_changed(previews: Array[Dictionary]) -> void:
 			intent_preview_label.append_text("  Tell: %s\n" % tell)
 		intent_preview_label.append_text("\n")
 	_refresh_enemy_call_options()
+	if combat_resolver != null:
+		_refresh_enemy_status(combat_resolver.call("get_state"))
 
 
 func _on_debug_truth_changed(truth: Array[Dictionary]) -> void:
@@ -1136,6 +1173,7 @@ func _on_combat_state_changed(state: Dictionary) -> void:
 		_get_trap_cells_text(state.get("trap_cells", [])),
 		state.get("outcome", "ongoing")
 	])
+	_refresh_enemy_status(state)
 	_refresh_targeting_options()
 	_refresh_action_controls()
 
@@ -1158,6 +1196,14 @@ func _on_session_state_changed(state: Dictionary) -> void:
 		state.get("outcome", "ongoing")
 	]
 	_refresh_action_controls()
+
+
+func _on_target_enemy_selected(_index: int) -> void:
+	_refresh_card_action_hint()
+
+
+func _on_movement_cell_selected(_index: int) -> void:
+	_refresh_card_action_hint()
 
 
 func _on_run_state_changed(state: Dictionary) -> void:
@@ -1297,6 +1343,8 @@ func _refresh_action_controls() -> void:
 	if run_manager != null:
 		_refresh_run_panel(run_state)
 	_refresh_run_shell(run_state)
+	_refresh_turn_status(run_state)
+	_refresh_card_action_hint()
 
 
 func _refresh_run_panel(state: Dictionary) -> void:
@@ -1757,6 +1805,7 @@ func _refresh_targeting_options() -> void:
 		movement_cell_option.set_item_metadata(0, Vector2i(-1, -1))
 	elif movement_cell_option.selected < 0:
 		movement_cell_option.select(0)
+	_refresh_card_action_hint()
 
 
 func _build_card_context(card: Resource) -> Dictionary:
@@ -1945,6 +1994,204 @@ func _get_action_prompt(session_state: Dictionary, run_state: Dictionary) -> Str
 			return "Next: discard leftovers and start the next turn."
 		_:
 			return "Next: continue the combat loop."
+
+
+func _refresh_turn_status(run_state: Dictionary) -> void:
+	if turn_status_label == null or combat_session == null:
+		return
+
+	var session_state: Dictionary = combat_session.call("get_state")
+	var phase_key: String = String(session_state.get("current_phase_key", "START_TURN"))
+	var phase_name: String = phase_key.capitalize().replace("_", " ")
+	var turn_number: int = int(turn_manager.get("turn_number")) if turn_manager != null else 0
+	var rating: String = _get_run_balance_rating(run_state)
+	turn_status_label.clear()
+	turn_status_label.append_text("Turn %d | %s | Energy %d/%d | Balance: %s\n" % [
+		turn_number,
+		phase_name,
+		session_state.get("energy", 0),
+		session_state.get("max_energy", 0),
+		_get_balance_band_label(rating)
+	])
+	turn_status_label.append_text(_get_turn_state_feedback(session_state, run_state))
+
+
+func _get_turn_state_feedback(session_state: Dictionary, run_state: Dictionary) -> String:
+	if run_flow_state == RUN_FLOW_START:
+		return "State: Start Run is live. Combat buttons and card clicks wait until the table opens."
+	if run_flow_state == RUN_FLOW_REWARD:
+		return "State: rewards are live. Pick the card that closes the shown deck gap."
+	if run_flow_state == RUN_FLOW_RESULTS:
+		return "State: run results are live. Export the summary or start a new run."
+
+	if bool(session_state.get("combat_over", false)):
+		if bool(run_state.get("waiting_for_reward", false)):
+			return "State: combat won. Rewards are the next real action."
+		return "State: combat ended. Review Blood, enemy HP, and run outcome."
+
+	var phase_key: String = String(session_state.get("current_phase_key", "START_TURN"))
+	match phase_key:
+		"START_TURN":
+			return "State: reset the turn economy, then draw back up."
+		"DRAW":
+			return "State: fill the hand before reading enemy intent."
+		"ENEMY_INTENT_PREVIEW":
+			return "State: read top threats, then choose a target and move before committing."
+		"PLAYER_COMMIT":
+			return "State: cards are playable now. Watch Energy, Target, and Move before clicking."
+		"BLUFF_WAGER":
+			return "State: bluff choices are live. Call, raise, or fold before reveal."
+		"REVEAL":
+			return "State: reveal is live. Damage, Guard, movement, traps, and calls resolve here."
+		"RESOLVE":
+			return "State: resolve aftermath. Check Blood, Guard, enemy HP, and threat outcome."
+		"CLEANUP":
+			return "State: cleanup discards leftovers and prepares the next turn."
+		_:
+			return "State: continue the combat loop."
+
+
+func _get_run_balance_rating(run_state: Dictionary) -> String:
+	var balance: Dictionary = run_state.get("balance_snapshot", {})
+	var evaluation: Dictionary = balance.get("evaluation", {})
+	return String(evaluation.get("rating", "unknown"))
+
+
+func _refresh_enemy_status(state: Dictionary) -> void:
+	if enemy_status_label == null:
+		return
+
+	enemy_status_label.clear()
+	var player: Dictionary = state.get("player", {})
+	enemy_status_label.append_text("Blood %d/%d | Guard %d\n" % [
+		player.get("hp", 0),
+		player.get("max_hp", 0),
+		player.get("guard", 0)
+	])
+
+	var enemies: Array = state.get("enemies", [])
+	if enemies.is_empty():
+		enemy_status_label.append_text("Enemies: none active.")
+		return
+
+	for enemy in enemies:
+		if typeof(enemy) != TYPE_DICTIONARY:
+			continue
+		var enemy_data: Dictionary = enemy
+		var enemy_id: StringName = StringName(enemy_data.get("id", &""))
+		enemy_status_label.append_text("%s HP %d/%d | Guard %d | %s | Threat %s\n" % [
+			enemy_data.get("name", "Enemy"),
+			enemy_data.get("hp", 0),
+			enemy_data.get("max_hp", 0),
+			enemy_data.get("guard", 0),
+			_get_enemy_hp_status(enemy_data),
+			_get_enemy_read_text(enemy_id)
+		])
+
+
+func _get_enemy_hp_status(enemy: Dictionary) -> String:
+	if not bool(enemy.get("alive", false)):
+		return "DEFEATED"
+
+	var hp: int = int(enemy.get("hp", 0))
+	var max_hp: int = max(1, int(enemy.get("max_hp", 1)))
+	var hp_ratio: float = float(hp) / float(max_hp)
+	if hp_ratio <= 0.25:
+		return "FINISH"
+	if hp_ratio <= 0.5:
+		return "WOUNDED"
+	return "HEALTHY"
+
+
+func _get_enemy_read_text(enemy_id: StringName) -> String:
+	var preview: Dictionary = _get_intent_preview_for_enemy(enemy_id)
+	if preview.is_empty():
+		return "pending"
+
+	var options: Array = preview.get("options", [])
+	var top_option: Dictionary = _get_top_intent_option(options)
+	if top_option.is_empty():
+		return "no weighted read"
+
+	return "%s %d%% %s" % [
+		_get_threat_level(top_option),
+		top_option.get("percentage", 0),
+		top_option.get("intent_name", "Intent")
+	]
+
+
+func _get_intent_preview_for_enemy(enemy_id: StringName) -> Dictionary:
+	for preview in current_intent_previews:
+		if StringName(preview.get("enemy_id", &"")) == enemy_id:
+			return preview
+	return {}
+
+
+func _refresh_card_action_hint() -> void:
+	if card_action_hint_label == null:
+		return
+
+	var session_state: Dictionary = combat_session.call("get_state") if combat_session != null else {}
+	var counts: Dictionary = deck_manager.call("get_counts") if deck_manager != null else {}
+	card_action_hint_label.clear()
+	card_action_hint_label.append_text("Hand %d | Energy %d/%d | Target: %s | Move: %s\n" % [
+		counts.get("hand", 0),
+		session_state.get("energy", 0),
+		session_state.get("max_energy", 0),
+		_get_target_affordance_text(),
+		_get_move_affordance_text()
+	])
+	card_action_hint_label.append_text(_get_card_affordance_text(session_state))
+
+
+func _get_target_affordance_text() -> String:
+	if target_enemy_option == null:
+		return "none"
+
+	var target: Dictionary = _get_selected_enemy_target()
+	if target.is_empty():
+		return "none"
+	return "%s HP %d/%d" % [
+		target.get("name", "Enemy"),
+		target.get("hp", 0),
+		target.get("max_hp", 0)
+	]
+
+
+func _get_move_affordance_text() -> String:
+	if movement_cell_option == null:
+		return "none"
+
+	var target_cell: Vector2i = _get_selected_move_cell()
+	if target_cell == Vector2i(-1, -1):
+		return "none"
+	if combat_grid == null:
+		return "(%d,%d)" % [target_cell.x, target_cell.y]
+	return String(combat_grid.call("format_cell", target_cell))
+
+
+func _get_card_affordance_text(session_state: Dictionary) -> String:
+	if run_flow_state == RUN_FLOW_START:
+		return "Cards wait: press Start Run before committing actions."
+	if run_flow_state == RUN_FLOW_REWARD:
+		return "Cards wait: choose rewards before the next table."
+	if run_flow_state == RUN_FLOW_RESULTS:
+		return "Cards wait: the run is over until New Run."
+	if bool(session_state.get("combat_over", false)):
+		return "Cards wait: combat is over."
+
+	var phase_key: String = String(session_state.get("current_phase_key", "START_TURN"))
+	match phase_key:
+		"PLAYER_COMMIT":
+			return "Cards are playable now: attack/read use Target, movement uses Move, Guard/self cards ignore target."
+		"BLUFF_WAGER":
+			return "Hand is locked while bluff choices resolve the committed plan."
+		"REVEAL":
+			return "Hand is locked during reveal; watch the play area resolve."
+		"ENEMY_INTENT_PREVIEW":
+			return "Pick Target and Move now so card clicks make sense on commit."
+		_:
+			return "Hand is visible for planning; card clicks unlock on Player Commit."
 
 
 func _reset_recipe_progress() -> void:
