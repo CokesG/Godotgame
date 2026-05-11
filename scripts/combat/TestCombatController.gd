@@ -26,6 +26,10 @@ const ENEMY_PATHS := [
 	"res://resources/enemies/shieldbearer.tres"
 ]
 const INTENT_TYPE_ATTACK := 0
+const RUN_FLOW_START := "start"
+const RUN_FLOW_COMBAT := "combat"
+const RUN_FLOW_REWARD := "reward"
+const RUN_FLOW_RESULTS := "results"
 const PHASE_ACTION_LABELS := {
 	"START_TURN": "Start Draw",
 	"DRAW": "Read Intents",
@@ -109,6 +113,12 @@ var hand_view: HBoxContainer
 var pile_counts_label: Label
 var resource_state_label: Label
 var run_header_label: RichTextLabel
+var run_shell_panel: PanelContainer
+var run_shell_title_label: Label
+var run_shell_detail_label: RichTextLabel
+var start_run_button: Button
+var shell_new_run_button: Button
+var shell_export_button: Button
 var action_prompt_label: Label
 var phase_guidance_label: Label
 var phase_detail_label: Label
@@ -154,6 +164,7 @@ var debug_controls_visible: bool = false
 var debug_truth_visible: bool = false
 var current_intent_previews: Array[Dictionary] = []
 var reveal_resolved_this_phase: bool = false
+var run_flow_state: String = RUN_FLOW_START
 var recipe_progress: Dictionary = {}
 var pending_card_context: Dictionary = {}
 var committed_card_context: Dictionary = {}
@@ -204,6 +215,53 @@ func _build_ui() -> void:
 	run_header_label.scroll_active = false
 	run_header_label.custom_minimum_size = Vector2(0, 64)
 	layout.add_child(run_header_label)
+
+	run_shell_panel = PanelContainer.new()
+	run_shell_panel.name = "RunShellPanel"
+	run_shell_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	layout.add_child(run_shell_panel)
+
+	var run_shell_layout := VBoxContainer.new()
+	run_shell_layout.name = "RunShellLayout"
+	run_shell_layout.add_theme_constant_override("separation", 6)
+	run_shell_panel.add_child(run_shell_layout)
+
+	run_shell_title_label = Label.new()
+	run_shell_title_label.name = "RunShellTitle"
+	run_shell_title_label.text = "Run Start"
+	run_shell_title_label.add_theme_font_size_override("font_size", 20)
+	run_shell_layout.add_child(run_shell_title_label)
+
+	run_shell_detail_label = RichTextLabel.new()
+	run_shell_detail_label.name = "RunShellDetail"
+	run_shell_detail_label.bbcode_enabled = false
+	run_shell_detail_label.fit_content = true
+	run_shell_detail_label.scroll_active = false
+	run_shell_detail_label.custom_minimum_size = Vector2(0, 56)
+	run_shell_layout.add_child(run_shell_detail_label)
+
+	var run_shell_actions := HBoxContainer.new()
+	run_shell_actions.name = "RunShellActions"
+	run_shell_actions.add_theme_constant_override("separation", 8)
+	run_shell_layout.add_child(run_shell_actions)
+
+	start_run_button = Button.new()
+	start_run_button.name = "StartRunButton"
+	start_run_button.text = "Start Run"
+	start_run_button.pressed.connect(_on_start_run_pressed)
+	run_shell_actions.add_child(start_run_button)
+
+	shell_new_run_button = Button.new()
+	shell_new_run_button.name = "ShellNewRunButton"
+	shell_new_run_button.text = "New Run"
+	shell_new_run_button.pressed.connect(_on_reset_pressed)
+	run_shell_actions.add_child(shell_new_run_button)
+
+	shell_export_button = Button.new()
+	shell_export_button.name = "ShellExportButton"
+	shell_export_button.text = "Export Summary"
+	shell_export_button.pressed.connect(_on_export_summary_pressed)
+	run_shell_actions.add_child(shell_export_button)
 
 	turn_label = Label.new()
 	turn_label.text = "Turn: -"
@@ -698,6 +756,12 @@ func _on_log_requested(message: String) -> void:
 
 
 func _on_next_phase_pressed() -> void:
+	if run_flow_state == RUN_FLOW_START:
+		_on_start_run_pressed()
+		return
+	if run_flow_state == RUN_FLOW_RESULTS:
+		_append_log("Run is complete. Start a new run to play again.")
+		return
 	if not bool(combat_session.call("can_debug_adjust")):
 		_append_log("Combat is over. Reset to start a new loop.")
 		return
@@ -707,6 +771,14 @@ func _on_next_phase_pressed() -> void:
 func _on_reset_pressed() -> void:
 	log_label.clear()
 	_reset_run_slice()
+
+
+func _on_start_run_pressed() -> void:
+	if run_flow_state != RUN_FLOW_START:
+		return
+	_set_run_flow_state(RUN_FLOW_COMBAT)
+	_append_log("Run started: Opening Table is live.")
+	_refresh_action_controls()
 
 
 func _on_reset_grid_pressed() -> void:
@@ -894,6 +966,7 @@ func _on_piles_changed(counts: Dictionary) -> void:
 
 
 func _reset_run_slice() -> void:
+	_set_run_flow_state(RUN_FLOW_START)
 	run_manager.call("reset_run")
 	_reset_playable_combat()
 
@@ -911,6 +984,8 @@ func _reset_playable_combat() -> void:
 	bluff_system.call("reset_bluff")
 	_apply_starting_relic_effects()
 	turn_manager.reset_combat()
+	if run_flow_state != RUN_FLOW_START:
+		_set_run_flow_state(RUN_FLOW_COMBAT)
 	_refresh_action_controls()
 
 
@@ -1059,6 +1134,7 @@ func _on_session_state_changed(state: Dictionary) -> void:
 
 
 func _on_run_state_changed(state: Dictionary) -> void:
+	_sync_run_flow_from_state(state)
 	_refresh_run_panel(state)
 
 
@@ -1132,6 +1208,7 @@ func _start_next_encounter_if_ready() -> void:
 		return
 
 	if bool(run_manager.call("can_start_current_node")):
+		_set_run_flow_state(RUN_FLOW_COMBAT)
 		_reset_playable_combat()
 
 
@@ -1162,9 +1239,12 @@ func _refresh_action_controls() -> void:
 	var run_state: Dictionary = run_manager.call("get_state") if run_manager != null else {}
 	var waiting_for_reward := bool(run_state.get("waiting_for_reward", false))
 	var run_outcome := String(run_state.get("run_outcome", "running"))
+	var shell_blocks_combat := run_flow_state == RUN_FLOW_START or run_flow_state == RUN_FLOW_RESULTS
 
-	next_phase_button.disabled = not can_debug_adjust
-	if run_outcome == "victory":
+	next_phase_button.disabled = shell_blocks_combat or not can_debug_adjust
+	if run_flow_state == RUN_FLOW_START:
+		next_phase_button.text = "Start Run"
+	elif run_outcome == "victory":
 		next_phase_button.text = "Run Complete"
 	elif run_outcome == "defeat":
 		next_phase_button.text = "Run Lost"
@@ -1181,14 +1261,15 @@ func _refresh_action_controls() -> void:
 	run_playtests_button.disabled = run_manager == null
 	export_summary_button.disabled = run_manager == null
 
-	commit_first_card_button.disabled = not can_play or has_committed
-	set_call_button.disabled = not can_bluff
-	raise_button.disabled = not can_bluff or not has_committed
-	fold_button.disabled = not can_bluff or not has_committed
-	reset_bluff_button.disabled = not can_debug_adjust
+	commit_first_card_button.disabled = shell_blocks_combat or not can_play or has_committed
+	set_call_button.disabled = shell_blocks_combat or not can_bluff
+	raise_button.disabled = shell_blocks_combat or not can_bluff or not has_committed
+	fold_button.disabled = shell_blocks_combat or not can_bluff or not has_committed
+	reset_bluff_button.disabled = shell_blocks_combat or not can_debug_adjust
 	_refresh_guidance()
 	if run_manager != null:
 		_refresh_run_panel(run_state)
+	_refresh_run_shell(run_state)
 
 
 func _refresh_run_panel(state: Dictionary) -> void:
@@ -1330,6 +1411,100 @@ func _refresh_playtest_report(batch: Dictionary) -> void:
 		playtest_report_label.append_text("\nWatch: no repeated danger nodes in the current sims.")
 	else:
 		playtest_report_label.append_text("\nWatch: %s" % ", ".join(danger_nodes))
+
+
+func _set_run_flow_state(new_state: String) -> void:
+	if run_flow_state == new_state:
+		return
+	run_flow_state = new_state
+
+
+func _sync_run_flow_from_state(state: Dictionary) -> void:
+	var run_outcome := String(state.get("run_outcome", "running"))
+	if run_outcome != "running":
+		_set_run_flow_state(RUN_FLOW_RESULTS)
+	elif bool(state.get("waiting_for_reward", false)):
+		_set_run_flow_state(RUN_FLOW_REWARD)
+	elif run_flow_state != RUN_FLOW_START:
+		_set_run_flow_state(RUN_FLOW_COMBAT)
+	_refresh_run_shell(state)
+	if phase_guidance_label != null:
+		_refresh_guidance()
+
+
+func _refresh_run_shell(state: Dictionary) -> void:
+	if run_shell_panel == null or run_shell_title_label == null or run_shell_detail_label == null:
+		return
+
+	run_shell_panel.visible = true
+	run_shell_title_label.text = _get_run_shell_title(state)
+	run_shell_detail_label.clear()
+	run_shell_detail_label.append_text(_get_run_shell_detail(state))
+
+	if start_run_button != null:
+		start_run_button.visible = run_flow_state == RUN_FLOW_START
+		start_run_button.disabled = run_flow_state != RUN_FLOW_START
+	if shell_new_run_button != null:
+		shell_new_run_button.visible = run_flow_state == RUN_FLOW_RESULTS
+		shell_new_run_button.disabled = run_flow_state != RUN_FLOW_RESULTS
+	if shell_export_button != null:
+		shell_export_button.visible = run_flow_state == RUN_FLOW_RESULTS
+		shell_export_button.disabled = run_flow_state != RUN_FLOW_RESULTS
+
+
+func _get_run_shell_title(state: Dictionary) -> String:
+	match run_flow_state:
+		RUN_FLOW_START:
+			return "Run Start"
+		RUN_FLOW_REWARD:
+			return "Post-Combat Reward"
+		RUN_FLOW_RESULTS:
+			var results: Dictionary = state.get("run_results", {})
+			return String(results.get("title", "Run Results"))
+		_:
+			return "Current Table"
+
+
+func _get_run_shell_detail(state: Dictionary) -> String:
+	var node_index: int = min(int(state.get("current_node_index", 0)) + 1, int(state.get("current_node_count", 0)))
+	var node_count := int(state.get("current_node_count", 0))
+	match run_flow_state:
+		RUN_FLOW_START:
+			return "The Gambler-Knight enters a five-table prototype run.\nStart when ready: Opening Table begins at %d/%d Blood with a %d-card deck." % [
+				state.get("player_hp", 0),
+				state.get("player_max_hp", 0),
+				state.get("deck_size", 0)
+			]
+		RUN_FLOW_REWARD:
+			var card_rewards: Array = state.get("pending_card_rewards", [])
+			var relic_rewards: Array = state.get("pending_relic_rewards", [])
+			var best_card := "a card reward"
+			if not card_rewards.is_empty() and typeof(card_rewards[0]) == TYPE_DICTIONARY:
+				best_card = String(Dictionary(card_rewards[0]).get("name", "a card reward"))
+			var relic_note := " Claim the relic after the card." if not relic_rewards.is_empty() else ""
+			return "Table %d cleared. Choose %s to advance the run.%s" % [
+				max(1, node_index),
+				best_card,
+				relic_note
+			]
+		RUN_FLOW_RESULTS:
+			var results: Dictionary = state.get("run_results", {})
+			return "%s | Won %d/%d | Blood %d/%d\nDamage taken %d | Lowest Blood %d | Deck %d cards" % [
+				results.get("grade", "Table Stakes"),
+				results.get("combats_won", 0),
+				results.get("total_combats", 0),
+				results.get("blood", 0),
+				results.get("max_blood", 0),
+				results.get("damage_taken_total", 0),
+				results.get("lowest_blood", 0),
+				results.get("deck_size", 0)
+			]
+		_:
+			return "Table %d/%d is live: %s.\nUse the threat summary, target selector, and next-action prompt to play the turn." % [
+				node_index,
+				node_count,
+				state.get("current_node_name", "Encounter")
+			]
 
 
 func _refresh_run_header(state: Dictionary, evaluation: Dictionary) -> void:
@@ -1650,7 +1825,16 @@ func _refresh_guidance() -> void:
 	var guidance = PHASE_GUIDANCE.get(phase_key, PHASE_GUIDANCE.get("START_TURN", {}))
 	var run_state: Dictionary = run_manager.call("get_state") if run_manager != null else {}
 
-	if bool(state.get("combat_over", false)):
+	if run_flow_state == RUN_FLOW_START:
+		phase_guidance_label.text = "Run Start"
+		phase_detail_label.text = "Press Start Run when you are ready to sit at the first table."
+	elif run_flow_state == RUN_FLOW_REWARD:
+		phase_guidance_label.text = "Choose Reward"
+		phase_detail_label.text = "Pick a card, then claim a relic if one is pending."
+	elif run_flow_state == RUN_FLOW_RESULTS:
+		phase_guidance_label.text = "Run Results"
+		phase_detail_label.text = "Review the run, export a summary, or start a new run."
+	elif bool(state.get("combat_over", false)):
 		if bool(run_state.get("waiting_for_reward", false)):
 			phase_guidance_label.text = "Choose Reward"
 			phase_detail_label.text = "Pick one reward to advance to the next table."
@@ -1671,6 +1855,13 @@ func _refresh_guidance() -> void:
 
 
 func _get_action_prompt(session_state: Dictionary, run_state: Dictionary) -> String:
+	if run_flow_state == RUN_FLOW_START:
+		return "Next: press Start Run to begin the five-table path."
+	if run_flow_state == RUN_FLOW_REWARD:
+		return "Next: choose one reward; the next table starts when rewards are clear."
+	if run_flow_state == RUN_FLOW_RESULTS:
+		return "Next: export the run summary or start a new run."
+
 	if bool(session_state.get("combat_over", false)):
 		if bool(run_state.get("waiting_for_reward", false)):
 			return "Next: choose one reward and move to the next table."

@@ -26,6 +26,21 @@ func _ready() -> void:
 		_fail("Expected RunHeader for Phase 14 run readability.")
 		return
 
+	var run_shell_panel := combat_scene.find_child("RunShellPanel", true, false)
+	if run_shell_panel == null:
+		_fail("Expected RunShellPanel for Phase 15 run flow.")
+		return
+
+	var start_run_button := combat_scene.find_child("StartRunButton", true, false)
+	if start_run_button == null:
+		_fail("Expected StartRunButton for Phase 15 run start.")
+		return
+
+	var shell_export_button := combat_scene.find_child("ShellExportButton", true, false)
+	if shell_export_button == null:
+		_fail("Expected ShellExportButton for Phase 15 run results export.")
+		return
+
 	var action_prompt := combat_scene.find_child("ActionPrompt", true, false)
 	if action_prompt == null:
 		_fail("Expected ActionPrompt for Phase 14 next-action clarity.")
