@@ -20,6 +20,9 @@ func _ready() -> void:
 	if recipe_panel == null:
 		_fail("Expected RecipePanel.")
 		return
+	if bool(recipe_panel.get("visible")):
+		_fail("RecipePanel should start inside the hidden debug drawer flow.")
+		return
 
 	var run_header := combat_scene.find_child("RunHeader", true, false)
 	if run_header == null:
@@ -60,6 +63,9 @@ func _ready() -> void:
 	if balance_report == null:
 		_fail("Expected BalanceReport for Phase 12 tuning.")
 		return
+	if bool(balance_report.get("visible")):
+		_fail("BalanceReport should start hidden in the debug drawer.")
+		return
 
 	var run_results := combat_scene.find_child("RunResults", true, false)
 	if run_results == null:
@@ -69,6 +75,23 @@ func _ready() -> void:
 	var playtest_report := combat_scene.find_child("PlaytestReport", true, false)
 	if playtest_report == null:
 		_fail("Expected PlaytestReport for Phase 13 run comparisons.")
+		return
+	if bool(playtest_report.get("visible")):
+		_fail("PlaytestReport should start hidden in the debug drawer.")
+		return
+
+	var debug_drawer := combat_scene.find_child("DebugDrawer", true, false)
+	if debug_drawer == null:
+		_fail("Expected DebugDrawer for Phase 16 diagnostics.")
+		return
+
+	if bool(debug_drawer.get("visible")):
+		_fail("DebugDrawer should start hidden.")
+		return
+
+	var debug_summary := combat_scene.find_child("DebugSummary", true, false)
+	if debug_summary == null:
+		_fail("Expected DebugSummary for Phase 16 diagnostics.")
 		return
 
 	var run_playtests_button := combat_scene.find_child("RunPlaytestsButton", true, false)

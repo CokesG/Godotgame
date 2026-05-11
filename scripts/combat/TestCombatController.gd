@@ -122,6 +122,7 @@ var shell_export_button: Button
 var action_prompt_label: Label
 var phase_guidance_label: Label
 var phase_detail_label: Label
+var recipe_panel: PanelContainer
 var recipe_label: RichTextLabel
 var run_state_label: RichTextLabel
 var balance_report_label: RichTextLabel
@@ -142,6 +143,8 @@ var threat_summary_label: RichTextLabel
 var intent_preview_label: RichTextLabel
 var truth_title_label: Label
 var debug_truth_label: RichTextLabel
+var debug_drawer_panel: PanelContainer
+var debug_summary_label: RichTextLabel
 var debug_controls: HBoxContainer
 var next_phase_button: Button
 var reset_button: Button
@@ -307,7 +310,7 @@ func _build_ui() -> void:
 	action_prompt_label.add_theme_font_size_override("font_size", 16)
 	guidance_layout.add_child(action_prompt_label)
 
-	var recipe_panel := PanelContainer.new()
+	recipe_panel = PanelContainer.new()
 	recipe_panel.name = "RecipePanel"
 	recipe_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	layout.add_child(recipe_panel)
@@ -433,10 +436,34 @@ func _build_ui() -> void:
 	toggle_debug_button.pressed.connect(_on_toggle_debug_pressed)
 	primary_controls.add_child(toggle_debug_button)
 
+	debug_drawer_panel = PanelContainer.new()
+	debug_drawer_panel.name = "DebugDrawer"
+	debug_drawer_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	layout.add_child(debug_drawer_panel)
+
+	var debug_drawer_layout := VBoxContainer.new()
+	debug_drawer_layout.name = "DebugDrawerLayout"
+	debug_drawer_layout.add_theme_constant_override("separation", 6)
+	debug_drawer_panel.add_child(debug_drawer_layout)
+
+	var debug_drawer_title := Label.new()
+	debug_drawer_title.name = "DebugDrawerTitle"
+	debug_drawer_title.text = "Debug Drawer"
+	debug_drawer_title.add_theme_font_size_override("font_size", 18)
+	debug_drawer_layout.add_child(debug_drawer_title)
+
+	debug_summary_label = RichTextLabel.new()
+	debug_summary_label.name = "DebugSummary"
+	debug_summary_label.bbcode_enabled = false
+	debug_summary_label.fit_content = true
+	debug_summary_label.scroll_active = false
+	debug_summary_label.custom_minimum_size = Vector2(0, 68)
+	debug_drawer_layout.add_child(debug_summary_label)
+
 	debug_controls = HBoxContainer.new()
 	debug_controls.name = "DebugControls"
 	debug_controls.add_theme_constant_override("separation", 8)
-	layout.add_child(debug_controls)
+	debug_drawer_layout.add_child(debug_controls)
 
 	reset_grid_button = Button.new()
 	reset_grid_button.text = "Reset Grid"
@@ -1287,6 +1314,7 @@ func _refresh_run_panel(state: Dictionary) -> void:
 	var fast_run: Dictionary = balance.get("fast_run", {})
 	var playtest_batch: Dictionary = balance.get("playtest_batch", {})
 	_refresh_run_header(state, evaluation)
+	_refresh_debug_summary(state, evaluation, fast_run, playtest_batch)
 
 	run_state_label.clear()
 	run_state_label.append_text("Table %d/%d: %s [%s]\n" % [
@@ -1411,6 +1439,31 @@ func _refresh_playtest_report(batch: Dictionary) -> void:
 		playtest_report_label.append_text("\nWatch: no repeated danger nodes in the current sims.")
 	else:
 		playtest_report_label.append_text("\nWatch: %s" % ", ".join(danger_nodes))
+
+
+func _refresh_debug_summary(state: Dictionary, evaluation: Dictionary, fast_run: Dictionary, playtest_batch: Dictionary) -> void:
+	if debug_summary_label == null:
+		return
+
+	debug_summary_label.clear()
+	debug_summary_label.append_text("Run index %d/%d | Flow %s | Outcome %s\n" % [
+		min(int(state.get("current_node_index", 0)) + 1, int(state.get("current_node_count", 0))),
+		state.get("current_node_count", 0),
+		run_flow_state,
+		state.get("run_outcome", "running")
+	])
+	debug_summary_label.append_text("Balance %s | margin %.1f | fast %s %d/%d\n" % [
+		evaluation.get("rating", "unknown"),
+		evaluation.get("survival_margin", 0.0),
+		fast_run.get("predicted_outcome", "unknown"),
+		fast_run.get("predicted_clears", 0),
+		fast_run.get("total_nodes", 0)
+	])
+	debug_summary_label.append_text("Playtest %dW/%dL | avg Blood %.1f" % [
+		playtest_batch.get("wins", 0),
+		playtest_batch.get("losses", 0),
+		playtest_batch.get("average_ending_hp", 0.0)
+	])
 
 
 func _set_run_flow_state(new_state: String) -> void:
@@ -1945,12 +1998,22 @@ func _get_next_recipe_step_label() -> String:
 
 
 func _update_debug_visibility() -> void:
+	if debug_drawer_panel != null:
+		debug_drawer_panel.visible = debug_controls_visible
 	if debug_controls != null:
 		debug_controls.visible = debug_controls_visible
 	if toggle_debug_button != null:
 		toggle_debug_button.text = "Hide Debug" if debug_controls_visible else "Show Debug"
 	if toggle_truth_button != null:
 		toggle_truth_button.text = "Hide Truth" if debug_truth_visible else "Show Truth"
+	if recipe_panel != null:
+		recipe_panel.visible = debug_controls_visible
+	if run_state_label != null:
+		run_state_label.visible = debug_controls_visible
+	if balance_report_label != null:
+		balance_report_label.visible = debug_controls_visible
+	if playtest_report_label != null:
+		playtest_report_label.visible = debug_controls_visible
 
 	var truth_visible := debug_controls_visible and debug_truth_visible
 	if truth_title_label != null:
