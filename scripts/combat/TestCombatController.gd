@@ -25,6 +25,7 @@ const ENEMY_PATHS := [
 	"res://resources/enemies/skulker.tres",
 	"res://resources/enemies/shieldbearer.tres"
 ]
+const INTENT_TYPE_ATTACK := 0
 const PHASE_ACTION_LABELS := {
 	"START_TURN": "Start Draw",
 	"DRAW": "Read Intents",
@@ -107,6 +108,8 @@ var enemy_intent_system: Node
 var hand_view: HBoxContainer
 var pile_counts_label: Label
 var resource_state_label: Label
+var run_header_label: RichTextLabel
+var action_prompt_label: Label
 var phase_guidance_label: Label
 var phase_detail_label: Label
 var recipe_label: RichTextLabel
@@ -114,6 +117,7 @@ var run_state_label: RichTextLabel
 var balance_report_label: RichTextLabel
 var run_results_label: RichTextLabel
 var playtest_report_label: RichTextLabel
+var reward_prompt_label: RichTextLabel
 var card_reward_buttons: Array[Button] = []
 var relic_reward_buttons: Array[Button] = []
 var skip_rewards_button: Button
@@ -124,6 +128,7 @@ var intent_call_option: OptionButton
 var lane_call_option: OptionButton
 var target_enemy_option: OptionButton
 var movement_cell_option: OptionButton
+var threat_summary_label: RichTextLabel
 var intent_preview_label: RichTextLabel
 var truth_title_label: Label
 var debug_truth_label: RichTextLabel
@@ -181,14 +186,24 @@ func _build_ui() -> void:
 	margin.add_child(layout)
 
 	var title := Label.new()
-	title.text = "Dead Man's Ante - Test Combat Harness"
+	title.name = "ScreenTitle"
+	title.text = "Dead Man's Ante - Prototype Run"
 	title.add_theme_font_size_override("font_size", 28)
 	layout.add_child(title)
 
 	var subtitle := Label.new()
-	subtitle.text = "Phase 10 makes enemy intent positional: lanes, traps, dodges, and called reads matter."
+	subtitle.name = "ScreenSubtitle"
+	subtitle.text = "Read the table, survive five fights, and tune the run from what actually happens."
 	subtitle.add_theme_font_size_override("font_size", 16)
 	layout.add_child(subtitle)
+
+	run_header_label = RichTextLabel.new()
+	run_header_label.name = "RunHeader"
+	run_header_label.bbcode_enabled = false
+	run_header_label.fit_content = true
+	run_header_label.scroll_active = false
+	run_header_label.custom_minimum_size = Vector2(0, 64)
+	layout.add_child(run_header_label)
 
 	turn_label = Label.new()
 	turn_label.text = "Turn: -"
@@ -226,6 +241,13 @@ func _build_ui() -> void:
 	phase_detail_label.text = "Energy refreshes. Continue to fill the hand."
 	phase_detail_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	guidance_layout.add_child(phase_detail_label)
+
+	action_prompt_label = Label.new()
+	action_prompt_label.name = "ActionPrompt"
+	action_prompt_label.text = "Next: start the run."
+	action_prompt_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	action_prompt_label.add_theme_font_size_override("font_size", 16)
+	guidance_layout.add_child(action_prompt_label)
 
 	var recipe_panel := PanelContainer.new()
 	recipe_panel.name = "RecipePanel"
@@ -282,6 +304,15 @@ func _build_ui() -> void:
 	playtest_report_label.custom_minimum_size = Vector2(0, 72)
 	run_layout.add_child(playtest_report_label)
 
+	reward_prompt_label = RichTextLabel.new()
+	reward_prompt_label.name = "RewardPrompt"
+	reward_prompt_label.bbcode_enabled = false
+	reward_prompt_label.fit_content = true
+	reward_prompt_label.scroll_active = false
+	reward_prompt_label.visible = false
+	reward_prompt_label.custom_minimum_size = Vector2(0, 60)
+	run_layout.add_child(reward_prompt_label)
+
 	var card_rewards_row := HBoxContainer.new()
 	card_rewards_row.name = "CardRewards"
 	card_rewards_row.add_theme_constant_override("separation", 6)
@@ -292,6 +323,8 @@ func _build_ui() -> void:
 		reward_button.name = "CardReward%d" % index
 		reward_button.text = "Card Reward"
 		reward_button.disabled = true
+		reward_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		reward_button.custom_minimum_size = Vector2(0, 108)
 		reward_button.pressed.connect(_on_card_reward_pressed.bind(index))
 		card_reward_buttons.append(reward_button)
 		card_rewards_row.add_child(reward_button)
@@ -306,6 +339,8 @@ func _build_ui() -> void:
 		relic_button.name = "RelicReward%d" % index
 		relic_button.text = "Relic Reward"
 		relic_button.disabled = true
+		relic_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		relic_button.custom_minimum_size = Vector2(0, 76)
 		relic_button.pressed.connect(_on_relic_reward_pressed.bind(index))
 		relic_reward_buttons.append(relic_button)
 		relic_rewards_row.add_child(relic_button)
@@ -415,6 +450,14 @@ func _build_ui() -> void:
 	intent_title.text = "Enemy Intent Preview"
 	intent_title.add_theme_font_size_override("font_size", 18)
 	intent_column.add_child(intent_title)
+
+	threat_summary_label = RichTextLabel.new()
+	threat_summary_label.name = "ThreatSummary"
+	threat_summary_label.bbcode_enabled = false
+	threat_summary_label.fit_content = true
+	threat_summary_label.scroll_active = false
+	threat_summary_label.custom_minimum_size = Vector2(320, 76)
+	intent_column.add_child(threat_summary_label)
 
 	intent_preview_label = RichTextLabel.new()
 	intent_preview_label.name = "IntentPreview"
@@ -910,14 +953,29 @@ func _cleanup_turn() -> void:
 
 func _on_intent_previews_changed(previews: Array[Dictionary]) -> void:
 	current_intent_previews = previews.duplicate()
+	if threat_summary_label != null:
+		threat_summary_label.clear()
+		threat_summary_label.append_text(_build_threat_summary(previews))
+
 	intent_preview_label.clear()
 	for preview in previews:
-		intent_preview_label.append_text("%s\n" % preview.get("enemy_name", "Enemy"))
 		var options: Array = preview.get("options", [])
+		var top_option: Dictionary = _get_top_intent_option(options)
+		intent_preview_label.append_text("%s | Top threat: %s %d%%\n" % [
+			preview.get("enemy_name", "Enemy"),
+			_get_threat_level(top_option),
+			top_option.get("percentage", 0)
+		])
 		for option in options:
-			intent_preview_label.append_text("  %d%% %s\n" % [
-				option.get("percentage", 0),
-				option.get("summary", "Unknown intent")
+			if typeof(option) != TYPE_DICTIONARY:
+				continue
+			var option_data: Dictionary = option
+			var marker := ">" if StringName(option_data.get("intent_id", &"")) == StringName(top_option.get("intent_id", &"")) else " "
+			intent_preview_label.append_text("%s %s %d%% %s\n" % [
+				marker,
+				_get_threat_level(option_data),
+				option_data.get("percentage", 0),
+				option_data.get("summary", "Unknown intent")
 			])
 		var tell := String(preview.get("tell", ""))
 		if not tell.is_empty():
@@ -1141,8 +1199,16 @@ func _refresh_run_panel(state: Dictionary) -> void:
 	var node_count := int(state.get("current_node_count", 0))
 	var relic_names: Array = state.get("relic_names", [])
 	var relic_text := "None" if relic_names.is_empty() else ", ".join(relic_names)
+	var balance: Dictionary = state.get("balance_snapshot", {})
+	var evaluation: Dictionary = balance.get("evaluation", {})
+	var deck_profile: Dictionary = evaluation.get("deck", {})
+	var encounter_profile: Dictionary = evaluation.get("encounter", {})
+	var fast_run: Dictionary = balance.get("fast_run", {})
+	var playtest_batch: Dictionary = balance.get("playtest_batch", {})
+	_refresh_run_header(state, evaluation)
+
 	run_state_label.clear()
-	run_state_label.append_text("Prototype Run %d/%d: %s [%s]\n" % [
+	run_state_label.append_text("Table %d/%d: %s [%s]\n" % [
 		min(node_index, node_count),
 		node_count,
 		state.get("current_node_name", "Complete"),
@@ -1156,12 +1222,6 @@ func _refresh_run_panel(state: Dictionary) -> void:
 	])
 	run_state_label.append_text("Run: %s" % state.get("run_outcome", "running"))
 
-	var balance: Dictionary = state.get("balance_snapshot", {})
-	var evaluation: Dictionary = balance.get("evaluation", {})
-	var deck_profile: Dictionary = evaluation.get("deck", {})
-	var encounter_profile: Dictionary = evaluation.get("encounter", {})
-	var fast_run: Dictionary = balance.get("fast_run", {})
-	var playtest_batch: Dictionary = balance.get("playtest_batch", {})
 	if balance_report_label != null:
 		var rating := String(evaluation.get("rating", "unknown"))
 		var band_label := _get_balance_band_label(rating)
@@ -1183,6 +1243,7 @@ func _refresh_run_panel(state: Dictionary) -> void:
 			fast_run.get("total_nodes", 0),
 			fast_run.get("ending_hp", 0)
 		])
+		balance_report_label.append_text("\nResponse: %s" % evaluation.get("recommendation", "Read the table before committing."))
 
 	_refresh_playtest_report(playtest_batch)
 
@@ -1211,6 +1272,8 @@ func _refresh_run_panel(state: Dictionary) -> void:
 			])
 
 	var card_rewards: Array = state.get("pending_card_rewards", [])
+	var relic_rewards: Array = state.get("pending_relic_rewards", [])
+	_refresh_reward_prompt(state, card_rewards, relic_rewards)
 	for index in range(card_reward_buttons.size()):
 		var button := card_reward_buttons[index]
 		if index < card_rewards.size():
@@ -1227,7 +1290,6 @@ func _refresh_run_panel(state: Dictionary) -> void:
 			button.disabled = true
 			button.visible = false
 
-	var relic_rewards: Array = state.get("pending_relic_rewards", [])
 	for index in range(relic_reward_buttons.size()):
 		var button := relic_reward_buttons[index]
 		if index < relic_rewards.size():
@@ -1263,6 +1325,143 @@ func _refresh_playtest_report(batch: Dictionary) -> void:
 		batch.get("worst_margin", 0.0),
 		batch.get("summary", "")
 	])
+	var danger_nodes: Array = batch.get("danger_nodes", [])
+	if danger_nodes.is_empty():
+		playtest_report_label.append_text("\nWatch: no repeated danger nodes in the current sims.")
+	else:
+		playtest_report_label.append_text("\nWatch: %s" % ", ".join(danger_nodes))
+
+
+func _refresh_run_header(state: Dictionary, evaluation: Dictionary) -> void:
+	if run_header_label == null:
+		return
+
+	var node_index := int(state.get("current_node_index", 0)) + 1
+	var node_count := int(state.get("current_node_count", 0))
+	var clamped_index: int = min(node_index, node_count)
+	var rating := String(evaluation.get("rating", "unknown"))
+	run_header_label.modulate = _get_balance_band_color(rating)
+	run_header_label.clear()
+	run_header_label.append_text("%s | Table %d/%d | %s\n" % [
+		_get_balance_band_label(rating),
+		clamped_index,
+		node_count,
+		state.get("current_node_name", "Complete")
+	])
+	run_header_label.append_text("Blood %d/%d | Deck %d | Run %s" % [
+		state.get("player_hp", 0),
+		state.get("player_max_hp", 0),
+		state.get("deck_size", 0),
+		state.get("run_outcome", "running")
+	])
+
+
+func _refresh_reward_prompt(state: Dictionary, card_rewards: Array, relic_rewards: Array) -> void:
+	if reward_prompt_label == null:
+		return
+
+	var waiting_for_reward := bool(state.get("waiting_for_reward", false))
+	reward_prompt_label.visible = waiting_for_reward
+	reward_prompt_label.clear()
+	if not waiting_for_reward:
+		return
+
+	reward_prompt_label.append_text("Reward choice: top picks are sorted by current deck gap and table tags.\n")
+	if not card_rewards.is_empty() and typeof(card_rewards[0]) == TYPE_DICTIONARY:
+		var best_card: Dictionary = card_rewards[0]
+		reward_prompt_label.append_text("Best card: %s -> %s" % [
+			best_card.get("name", "Card"),
+			best_card.get("explanation", "Solid reward option.")
+		])
+	else:
+		reward_prompt_label.append_text("No card reward is pending.")
+
+	if not relic_rewards.is_empty():
+		reward_prompt_label.append_text("\nElite relic pending after the card pick.")
+
+
+func _build_threat_summary(previews: Array[Dictionary]) -> String:
+	if previews.is_empty():
+		return "Threat: no active enemy previews.\nResponse: advance to read the table."
+
+	var best_preview: Dictionary = {}
+	var best_option: Dictionary = {}
+	var best_score := -1
+	for preview in previews:
+		var options: Array = preview.get("options", [])
+		var option: Dictionary = _get_top_intent_option(options)
+		if option.is_empty():
+			continue
+		var score: int = _get_intent_threat_score(option)
+		if score > best_score:
+			best_score = score
+			best_preview = preview
+			best_option = option
+
+	if best_option.is_empty():
+		return "Threat: no weighted intent options.\nResponse: press Continue to roll a fresh read."
+
+	return "Threat: %s %s %d%% %s\nResponse: %s" % [
+		best_preview.get("enemy_name", "Enemy"),
+		_get_threat_level(best_option),
+		best_option.get("percentage", 0),
+		best_option.get("intent_name", "Intent"),
+		_get_threat_response(best_option)
+	]
+
+
+func _get_top_intent_option(options: Array) -> Dictionary:
+	var best_option: Dictionary = {}
+	var best_score := -1
+	for option in options:
+		if typeof(option) != TYPE_DICTIONARY:
+			continue
+		var option_data: Dictionary = option
+		var score: int = _get_intent_threat_score(option_data)
+		if score > best_score:
+			best_score = score
+			best_option = option_data
+	return best_option
+
+
+func _get_intent_threat_score(option: Dictionary) -> int:
+	var percentage := int(option.get("percentage", 0))
+	var intent_type := int(option.get("intent_type", -1))
+	var target_lane := int(option.get("target_lane", -1))
+	var score := percentage
+	if intent_type == INTENT_TYPE_ATTACK:
+		score += 35
+		if target_lane < 0:
+			score += 10
+	return score
+
+
+func _get_threat_level(option: Dictionary) -> String:
+	if option.is_empty():
+		return "LOW"
+
+	var percentage := int(option.get("percentage", 0))
+	var intent_type := int(option.get("intent_type", -1))
+	if intent_type == INTENT_TYPE_ATTACK and percentage >= 40:
+		return "HIGH"
+	if intent_type == INTENT_TYPE_ATTACK:
+		return "MED"
+	if percentage >= 45:
+		return "SETUP"
+	return "LOW"
+
+
+func _get_threat_response(option: Dictionary) -> String:
+	if option.is_empty():
+		return "keep reading before committing."
+
+	var intent_type := int(option.get("intent_type", -1))
+	var target_lane := int(option.get("target_lane", -1))
+	if intent_type != INTENT_TYPE_ATTACK:
+		return "use the safer turn to attack, trap, or build Guard."
+	if target_lane >= 0:
+		return "leave %s, add Guard, or call it." % _get_lane_name(target_lane)
+	return "Guard or call it; movement will not dodge tracking."
 
 
 func _get_balance_band_label(rating: String) -> String:
@@ -1449,9 +1648,9 @@ func _refresh_guidance() -> void:
 	var state: Dictionary = combat_session.call("get_state")
 	var phase_key: String = String(state.get("current_phase_key", "START_TURN"))
 	var guidance = PHASE_GUIDANCE.get(phase_key, PHASE_GUIDANCE.get("START_TURN", {}))
+	var run_state: Dictionary = run_manager.call("get_state") if run_manager != null else {}
 
 	if bool(state.get("combat_over", false)):
-		var run_state: Dictionary = run_manager.call("get_state") if run_manager != null else {}
 		if bool(run_state.get("waiting_for_reward", false)):
 			phase_guidance_label.text = "Choose Reward"
 			phase_detail_label.text = "Pick one reward to advance to the next table."
@@ -1465,7 +1664,43 @@ func _refresh_guidance() -> void:
 		phase_guidance_label.text = String(guidance.get("title", "Turn"))
 		phase_detail_label.text = String(guidance.get("detail", "Continue the combat loop."))
 
+	if action_prompt_label != null:
+		action_prompt_label.text = _get_action_prompt(state, run_state)
+
 	_refresh_recipe_label()
+
+
+func _get_action_prompt(session_state: Dictionary, run_state: Dictionary) -> String:
+	if bool(session_state.get("combat_over", false)):
+		if bool(run_state.get("waiting_for_reward", false)):
+			return "Next: choose one reward and move to the next table."
+		var run_outcome := String(run_state.get("run_outcome", "running"))
+		if run_outcome == "victory":
+			return "Next: review the run result or start a new run."
+		if run_outcome == "defeat":
+			return "Next: review the loss, export a summary, or start a new run."
+		return "Next: start the next combat."
+
+	var phase_key := String(session_state.get("current_phase_key", "START_TURN"))
+	match phase_key:
+		"START_TURN":
+			return "Next: refill Energy and draw up."
+		"DRAW":
+			return "Next: read enemy intent odds."
+		"ENEMY_INTENT_PREVIEW":
+			return "Next: choose a target and commit your plan."
+		"PLAYER_COMMIT":
+			return "Next: spend Energy on damage, Guard, movement, or a face-down commit."
+		"BLUFF_WAGER":
+			return "Next: call the biggest threat, raise if confident, or fold."
+		"REVEAL":
+			return "Next: reveal resolves attacks, calls, traps, and committed cards."
+		"RESOLVE":
+			return "Next: check Blood, enemy HP, and the log."
+		"CLEANUP":
+			return "Next: discard leftovers and start the next turn."
+		_:
+			return "Next: continue the combat loop."
 
 
 func _reset_recipe_progress() -> void:
@@ -1580,6 +1815,18 @@ func _get_card_name(card: Resource) -> String:
 	if card.has_method("get_display_name"):
 		return String(card.call("get_display_name"))
 	return String(card.get("display_name"))
+
+
+func _get_lane_name(lane: int) -> String:
+	match lane:
+		0:
+			return "Left"
+		1:
+			return "Center"
+		2:
+			return "Right"
+		_:
+			return "Unknown"
 
 
 func _get_trap_cells_text(cells: Array) -> String:

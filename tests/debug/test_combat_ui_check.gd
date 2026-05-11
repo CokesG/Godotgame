@@ -21,9 +21,24 @@ func _ready() -> void:
 		_fail("Expected RecipePanel.")
 		return
 
+	var run_header := combat_scene.find_child("RunHeader", true, false)
+	if run_header == null:
+		_fail("Expected RunHeader for Phase 14 run readability.")
+		return
+
+	var action_prompt := combat_scene.find_child("ActionPrompt", true, false)
+	if action_prompt == null:
+		_fail("Expected ActionPrompt for Phase 14 next-action clarity.")
+		return
+
 	var run_panel := combat_scene.find_child("RunPanel", true, false)
 	if run_panel == null:
 		_fail("Expected RunPanel for the Phase 11 prototype path.")
+		return
+
+	var reward_prompt := combat_scene.find_child("RewardPrompt", true, false)
+	if reward_prompt == null:
+		_fail("Expected RewardPrompt for Phase 14 reward readability.")
 		return
 
 	var balance_report := combat_scene.find_child("BalanceReport", true, false)
@@ -59,6 +74,11 @@ func _ready() -> void:
 	var movement_cell_option := combat_scene.find_child("MovementCellOption", true, false)
 	if movement_cell_option == null:
 		_fail("Expected MovementCellOption.")
+		return
+
+	var threat_summary := combat_scene.find_child("ThreatSummary", true, false)
+	if threat_summary == null:
+		_fail("Expected ThreatSummary for Phase 14 intent readability.")
 		return
 
 	var continue_button := combat_scene.find_child("ContinueButton", true, false)
