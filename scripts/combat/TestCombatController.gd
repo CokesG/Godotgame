@@ -153,6 +153,7 @@ var recipe_label: RichTextLabel
 var run_state_label: RichTextLabel
 var balance_report_label: RichTextLabel
 var run_results_label: RichTextLabel
+var run_export_readback_label: RichTextLabel
 var playtest_report_label: RichTextLabel
 var reward_prompt_label: RichTextLabel
 var reward_impact_label: RichTextLabel
@@ -212,6 +213,8 @@ var selected_run_path_index: int = -1
 var last_run_path_current_index: int = -1
 var last_run_path_transition_text: String = ""
 var last_results_ceremony_outcome: String = ""
+var last_export_path: String = ""
+var last_export_readback: Dictionary = {}
 
 
 func _ready() -> void:
@@ -579,6 +582,15 @@ func _build_ui() -> void:
 	run_results_label.scroll_active = false
 	run_results_label.custom_minimum_size = Vector2(0, 74)
 	run_layout.add_child(run_results_label)
+
+	run_export_readback_label = RichTextLabel.new()
+	run_export_readback_label.name = "RunExportReadback"
+	run_export_readback_label.bbcode_enabled = false
+	run_export_readback_label.fit_content = true
+	run_export_readback_label.scroll_active = false
+	run_export_readback_label.visible = false
+	run_export_readback_label.custom_minimum_size = Vector2(0, 92)
+	run_layout.add_child(run_export_readback_label)
 
 	playtest_report_label = RichTextLabel.new()
 	playtest_report_label.name = "PlaytestReport"
@@ -1344,6 +1356,8 @@ func _reset_run_slice() -> void:
 	last_run_path_current_index = -1
 	last_run_path_transition_text = ""
 	last_results_ceremony_outcome = ""
+	last_export_path = ""
+	last_export_readback.clear()
 	run_manager.call("reset_run")
 	_reset_playable_combat()
 
@@ -1622,8 +1636,111 @@ func _on_export_summary_pressed() -> void:
 	var path: String = String(run_manager.call("export_run_summary"))
 	if path.is_empty():
 		_append_log("Run summary export failed.")
+		last_export_path = ""
+		last_export_readback = {"ok": false, "error": "export returned no path"}
+		_refresh_export_readback_label()
+		return
+
+	last_export_path = path
+	last_export_readback = _read_export_summary(path)
+	if bool(last_export_readback.get("ok", false)):
+		var summary_line: String = String(last_export_readback.get("summary_line", "Summary ready."))
+		_append_log("Run summary exported and read back: %s." % summary_line)
+		_record_run_ceremony("Export: summary read back for comparison.", FEEDBACK_PHASE_COLOR, run_results_label)
 	else:
-		_append_log("Run summary exported to %s." % path)
+		_append_log("Run summary exported to %s, but readback failed: %s." % [
+			path,
+			last_export_readback.get("error", "unknown error")
+		])
+	_refresh_export_readback_label()
+
+
+func _read_export_summary(path: String) -> Dictionary:
+	if path.is_empty():
+		return {"ok": false, "error": "missing export path", "path": path}
+	if not FileAccess.file_exists(path):
+		return {"ok": false, "error": "file does not exist", "path": path}
+
+	var text := FileAccess.get_file_as_string(path)
+	if text.is_empty():
+		return {"ok": false, "error": "file is empty", "path": path}
+
+	var parsed = JSON.parse_string(text)
+	if typeof(parsed) != TYPE_DICTIONARY:
+		return {"ok": false, "error": "invalid JSON", "path": path}
+
+	var data: Dictionary = Dictionary(parsed)
+	var comparison: Dictionary = {}
+	var comparison_value: Variant = data.get("comparison_summary", {})
+	if typeof(comparison_value) == TYPE_DICTIONARY:
+		comparison = Dictionary(comparison_value)
+
+	var results: Dictionary = {}
+	var results_value: Variant = data.get("run_results", {})
+	if typeof(results_value) == TYPE_DICTIONARY:
+		results = Dictionary(results_value)
+
+	var route_summary: Array = []
+	var route_value: Variant = data.get("route_summary", [])
+	if typeof(route_value) == TYPE_ARRAY:
+		route_summary = Array(route_value)
+
+	return {
+		"ok": true,
+		"path": path,
+		"result_key": String(comparison.get("result_key", "unkeyed_run")),
+		"summary_line": String(comparison.get("summary_line", "Summary unavailable.")),
+		"comparison_summary": comparison,
+		"run_results": results,
+		"route_summary": route_summary
+	}
+
+
+func _refresh_export_readback_label() -> void:
+	if run_export_readback_label == null:
+		return
+
+	run_export_readback_label.clear()
+	if last_export_path.is_empty() and last_export_readback.is_empty():
+		run_export_readback_label.visible = false
+		run_export_readback_label.modulate = Color.WHITE
+		return
+
+	run_export_readback_label.visible = true
+	if not bool(last_export_readback.get("ok", false)):
+		run_export_readback_label.modulate = FEEDBACK_DAMAGE_COLOR
+		run_export_readback_label.append_text("Export Readback\nFailed: %s\nFile: %s" % [
+			last_export_readback.get("error", "unknown error"),
+			last_export_path
+		])
+		return
+
+	run_export_readback_label.modulate = FEEDBACK_PHASE_COLOR
+	var route_summary: Array = last_export_readback.get("route_summary", [])
+	run_export_readback_label.append_text("Export Readback\n")
+	run_export_readback_label.append_text("Compare: %s\n" % last_export_readback.get("summary_line", "Summary unavailable."))
+	run_export_readback_label.append_text("Key: %s\n" % last_export_readback.get("result_key", "unkeyed_run"))
+	run_export_readback_label.append_text("Route: %s\n" % _get_export_route_readback_text(route_summary))
+	run_export_readback_label.append_text("File: %s" % last_export_path.get_file())
+
+
+func _get_export_route_readback_text(route_summary: Array) -> String:
+	if route_summary.is_empty():
+		return "route unavailable"
+
+	var entries := PackedStringArray()
+	for entry_value in route_summary:
+		if typeof(entry_value) != TYPE_DICTIONARY:
+			continue
+		var entry: Dictionary = Dictionary(entry_value)
+		entries.append("%d:%s" % [
+			int(entry.get("table_number", 0)),
+			String(entry.get("status_label", "UPCOMING"))
+		])
+
+	if entries.is_empty():
+		return "route unavailable"
+	return " -> ".join(entries)
 
 
 func _on_grid_unit_moved(unit_id: StringName, from_cell: Vector2i, to_cell: Vector2i) -> void:
@@ -1920,6 +2037,8 @@ func _refresh_run_panel(state: Dictionary) -> void:
 				results.get("cards_claimed", 0),
 				results.get("relics_claimed", 0)
 			])
+
+	_refresh_export_readback_label()
 
 	var card_rewards: Array = state.get("pending_card_rewards", [])
 	var relic_rewards: Array = state.get("pending_relic_rewards", [])
@@ -2291,9 +2410,11 @@ func _refresh_run_finale(state: Dictionary) -> void:
 
 func _get_run_finale_text(state: Dictionary) -> String:
 	var results: Dictionary = state.get("run_results", {})
+	var comparison: Dictionary = state.get("comparison_summary", {})
+	var compare_key: String = String(comparison.get("result_key", "run_key_pending"))
 	var outcome: String = String(results.get("outcome", state.get("run_outcome", "running")))
 	if outcome == "victory":
-		return "Boss Victory Finale\nHouse Champion folded. Prototype path cleared with %s.\nTables: %d/%d | Blood %d/%d | Lowest Blood %d | Damage Taken %d\nDeck: %d cards | Rewards: +%d cards / +%d relics\nNext: Export Summary to compare the run, or start a fresh run." % [
+		return "Boss Victory Finale\nHouse Champion folded. Prototype path cleared with %s.\nTables: %d/%d | Blood %d/%d | Lowest Blood %d | Damage Taken %d\nDeck: %d cards | Rewards: +%d cards / +%d relics\nCompare Key: %s\nNext: Export Summary to compare the run, or start a fresh run." % [
 			results.get("grade", "Table Stakes"),
 			results.get("combats_won", 0),
 			results.get("total_combats", 0),
@@ -2303,11 +2424,12 @@ func _get_run_finale_text(state: Dictionary) -> String:
 			results.get("damage_taken_total", 0),
 			results.get("deck_size", 0),
 			results.get("cards_claimed", 0),
-			results.get("relics_claimed", 0)
+			results.get("relics_claimed", 0),
+			compare_key
 		]
 
 	var fallen_table: String = String(state.get("current_node_name", results.get("last_completed_node_name", "this table")))
-	return "Defeat Finale\nThe House takes %s. %s.\nTables Cleared: %d/%d | Blood 0/%d | Lowest Blood %d | Damage Taken %d\nDeck: %d cards | Rewards: +%d cards / +%d relics\nNext: Export Summary to inspect the loss, or start a fresh run." % [
+	return "Defeat Finale\nThe House takes %s. %s.\nTables Cleared: %d/%d | Blood 0/%d | Lowest Blood %d | Damage Taken %d\nDeck: %d cards | Rewards: +%d cards / +%d relics\nCompare Key: %s\nNext: Export Summary to inspect the loss, or start a fresh run." % [
 		fallen_table,
 		results.get("grade", "House Win"),
 		results.get("combats_won", 0),
@@ -2317,7 +2439,8 @@ func _get_run_finale_text(state: Dictionary) -> String:
 		results.get("damage_taken_total", 0),
 		results.get("deck_size", 0),
 		results.get("cards_claimed", 0),
-		results.get("relics_claimed", 0)
+		results.get("relics_claimed", 0),
+		compare_key
 	]
 
 

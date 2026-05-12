@@ -172,6 +172,14 @@ func _ready() -> void:
 		_fail("Expected RunResults for Phase 12 outcomes.")
 		return
 
+	var run_export_readback := combat_scene.find_child("RunExportReadback", true, false)
+	if run_export_readback == null:
+		_fail("Expected RunExportReadback for Phase 30 export readback.")
+		return
+	if bool(run_export_readback.get("visible")):
+		_fail("RunExportReadback should stay hidden until an export is read back.")
+		return
+
 	var playtest_report := combat_scene.find_child("PlaytestReport", true, false)
 	if playtest_report == null:
 		_fail("Expected PlaytestReport for Phase 13 run comparisons.")

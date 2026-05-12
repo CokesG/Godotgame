@@ -469,6 +469,75 @@ func get_run_results() -> Dictionary:
 	}
 
 
+func get_export_comparison_summary() -> Dictionary:
+	var results := get_run_results()
+	var outcome: String = String(results.get("outcome", run_outcome))
+	var grade: String = String(results.get("grade", "Table Stakes"))
+	var cleared_tables: int = int(results.get("combats_won", combats_won))
+	var total_tables: int = int(results.get("total_combats", RUN_NODES.size()))
+	var blood: int = int(results.get("blood", player_current_hp))
+	var max_blood: int = int(results.get("max_blood", PLAYER_MAX_HP))
+	var lowest: int = int(results.get("lowest_blood", lowest_blood))
+	var damage: int = int(results.get("damage_taken_total", damage_taken_total))
+	var deck_size: int = int(results.get("deck_size", deck_paths.size()))
+	var cards_added: int = int(results.get("cards_claimed", cards_claimed))
+	var relics_added: int = int(results.get("relics_claimed", relics_claimed))
+	var current_node := get_current_node()
+	var current_table: String = String(current_node.get("name", "Complete"))
+	var final_table: String = last_completed_node_name if not last_completed_node_name.is_empty() else current_table
+	var result_key := _build_export_result_key(outcome, cleared_tables, total_tables, blood, lowest, damage, deck_size)
+
+	return {
+		"result_key": result_key,
+		"summary_line": "%s | %s | Tables %d/%d | Blood %d/%d | Low %d | Damage %d | Deck %d | Rewards +%d cards/+%d relics" % [
+			outcome.capitalize(),
+			grade,
+			cleared_tables,
+			total_tables,
+			blood,
+			max_blood,
+			lowest,
+			damage,
+			deck_size,
+			cards_added,
+			relics_added
+		],
+		"compare_columns": {
+			"outcome": outcome,
+			"grade": grade,
+			"cleared_tables": cleared_tables,
+			"total_tables": total_tables,
+			"blood": blood,
+			"max_blood": max_blood,
+			"lowest_blood": lowest,
+			"damage_taken_total": damage,
+			"deck_size": deck_size,
+			"cards_claimed": cards_added,
+			"relics_claimed": relics_added
+		},
+		"final_table": final_table,
+		"current_table": current_table,
+		"deck_names": _get_deck_card_names(),
+		"relic_names": _get_relic_names()
+	}
+
+
+func get_export_route_summary() -> Array[Dictionary]:
+	var summary: Array[Dictionary] = []
+	for entry in get_run_path():
+		summary.append({
+			"table_number": int(entry.get("table_number", 0)),
+			"name": String(entry.get("name", "Table")),
+			"kind": String(entry.get("kind", "combat")),
+			"status": String(entry.get("status", "upcoming")),
+			"status_label": String(entry.get("status_label", "UPCOMING")),
+			"enemy_names": entry.get("enemy_names", []),
+			"table_modifier_name": String(entry.get("table_modifier_name", "House Rules")),
+			"reward_stakes": String(entry.get("reward_stakes", "Clear the table to improve the run."))
+		})
+	return summary
+
+
 func get_playtest_batch() -> Dictionary:
 	var simulator = BALANCE_SIMULATOR_SCRIPT.new()
 	return simulator.call("simulate_playtest_batch", RUN_NODES, deck_paths, RELIC_POOL, get_relic_modifiers(), player_current_hp, 5)
@@ -477,7 +546,11 @@ func get_playtest_batch() -> Dictionary:
 func get_run_export_data() -> Dictionary:
 	return {
 		"version": 1,
+		"export_version": 2,
+		"exported_at_unix": Time.get_unix_time_from_system(),
 		"run_results": get_run_results(),
+		"comparison_summary": get_export_comparison_summary(),
+		"route_summary": get_export_route_summary(),
 		"balance_snapshot": get_balance_snapshot(),
 		"playtest_batch": get_playtest_batch(),
 		"deck": _describe_paths(deck_paths),
@@ -488,7 +561,10 @@ func get_run_export_data() -> Dictionary:
 
 
 func export_run_summary() -> String:
-	var path := "user://dead_mans_ante_run_summary_%d.json" % Time.get_unix_time_from_system()
+	var path := "user://dead_mans_ante_run_summary_%d_%d.json" % [
+		Time.get_unix_time_from_system(),
+		Time.get_ticks_msec()
+	]
 	var file := FileAccess.open(path, FileAccess.WRITE)
 	if file == null:
 		log_requested.emit("Could not export run summary.")
@@ -523,6 +599,7 @@ func get_state() -> Dictionary:
 		"pending_relic_rewards": _describe_paths(pending_relic_reward_paths),
 		"balance_snapshot": get_balance_snapshot(),
 		"run_results": get_run_results(),
+		"comparison_summary": get_export_comparison_summary(),
 		"last_completed_node_name": last_completed_node_name,
 		"next_node_name_after_reward": get_next_node_name_after_reward(),
 		"current_enemy_names": get_current_enemy_names(),
@@ -747,6 +824,28 @@ func _get_relic_names() -> Array[String]:
 		if relic != null:
 			names.append(_get_resource_name(relic))
 	return names
+
+
+func _get_deck_card_names() -> Array[String]:
+	var names: Array[String] = []
+	for path in deck_paths:
+		var card: Resource = load(path)
+		if card != null:
+			names.append(_get_resource_name(card))
+	return names
+
+
+func _build_export_result_key(outcome: String, cleared: int, total: int, blood: int, lowest: int, damage: int, deck_size: int) -> String:
+	var safe_outcome := outcome.to_lower().replace(" ", "_")
+	return "%s_%dof%d_hp%d_low%d_dmg%d_deck%d" % [
+		safe_outcome,
+		cleared,
+		total,
+		blood,
+		lowest,
+		damage,
+		deck_size
+	]
 
 
 func _describe_paths(paths: Array[String]) -> Array[Dictionary]:
