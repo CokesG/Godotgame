@@ -41,6 +41,7 @@ var floating_text_layer: Control
 var board_background: TextureRect
 var focus_unit_id: StringName = &""
 var focus_cell: Vector2i = Vector2i(-1, -1)
+var compact_mode: bool = false
 
 
 func _ready() -> void:
@@ -308,6 +309,25 @@ func clear_focus() -> void:
 	focus_unit_id = &""
 	focus_cell = Vector2i(-1, -1)
 	_refresh_cells()
+
+
+func set_compact_mode(value: bool) -> void:
+	if compact_mode == value:
+		return
+	compact_mode = value
+	custom_minimum_size = Vector2(330, 212) if compact_mode else Vector2(410, 320)
+	if grid_container != null:
+		grid_container.add_theme_constant_override("h_separation", 5 if compact_mode else 8)
+		grid_container.add_theme_constant_override("v_separation", 5 if compact_mode else 8)
+	for cell in cells_by_position.values():
+		if cell is Control:
+			(cell as Control).custom_minimum_size = Vector2(84, 62) if compact_mode else Vector2(116, 116)
+	if status_label != null:
+		status_label.visible = not compact_mode
+	var title := find_child("TableTitle", true, false)
+	if title is Label:
+		(title as Label).add_theme_font_size_override("font_size", 16 if compact_mode else 18)
+	update_minimum_size()
 
 
 func get_focus_snapshot() -> Dictionary:

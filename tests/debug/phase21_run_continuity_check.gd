@@ -112,8 +112,8 @@ func _verify_reward_to_next_table_flow(combat_scene: Node) -> void:
 	if bool(next_encounter.get("visible")):
 		_fail("NextEncounterButton should hide once combat resumes.")
 		return
-	if _get_phase_key(combat_scene) != "START_TURN":
-		_fail("Next encounter should reset combat to Start Turn.")
+	if _get_phase_key(combat_scene) != "PLAYER_COMMIT":
+		_fail("Next encounter should deal directly into Player Commit.")
 		return
 
 

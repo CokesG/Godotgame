@@ -38,8 +38,8 @@ func _verify_opening_chips(combat_scene: Node) -> void:
 	if chip_row == null or step_row == null or open_step == null or rule_chip == null:
 		_fail("Expected compact state chips and first-play step buttons.")
 		return
-	if not bool(chip_row.get("visible")) or not bool(step_row.get("visible")):
-		_fail("Compact chips and step buttons should be visible from the opening screen.")
+	if bool(chip_row.get("visible")) or bool(step_row.get("visible")):
+		_fail("Opening screen should keep compact combat chips hidden until the table opens.")
 		return
 	if not open_step.tooltip_text.contains("Active step"):
 		_fail("Opening step button should identify the active first action.")

@@ -14,10 +14,11 @@ var is_playable: bool = true
 var disabled_reason: String = ""
 var hover_tween: Tween
 var feedback_tween: Tween
+var compact_mode: bool = false
 
 
 func _ready() -> void:
-	custom_minimum_size = Vector2(168, 188)
+	_apply_compact_metrics()
 	focus_mode = Control.FOCUS_NONE
 	autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	pressed.connect(_on_pressed)
@@ -31,6 +32,14 @@ func _ready() -> void:
 func set_card(card: Resource, index: int) -> void:
 	card_resource = card
 	hand_index = index
+	_refresh()
+
+
+func set_compact_mode(value: bool) -> void:
+	if compact_mode == value:
+		return
+	compact_mode = value
+	_apply_compact_metrics()
 	_refresh()
 
 
@@ -72,6 +81,7 @@ func _on_focus_exited() -> void:
 
 
 func _refresh() -> void:
+	_apply_compact_metrics()
 	if card_resource == null:
 		text = "Empty"
 		icon = null
@@ -114,11 +124,15 @@ func _refresh() -> void:
 	add_theme_stylebox_override("hover", DEAD_MANS_ANTE_SKIN_SCRIPT.make_card_style(true, Color(1.0, 0.86, 0.42), false, true))
 	add_theme_stylebox_override("pressed", style)
 	add_theme_stylebox_override("disabled", DEAD_MANS_ANTE_SKIN_SCRIPT.make_card_style(false, card_color, true, false))
-	add_theme_font_size_override("font_size", 14)
+	add_theme_font_size_override("font_size", 12 if compact_mode else 14)
 	add_theme_color_override("font_color", Color(1.0, 0.94, 0.74) if is_playable else Color(0.96, 0.91, 0.82))
 	add_theme_color_override("font_hover_color", Color(1.0, 0.94, 0.78))
 	add_theme_color_override("font_disabled_color", Color(0.62, 0.60, 0.56))
 	modulate = Color.WHITE if is_playable else Color(1.0, 1.0, 1.0, 0.66)
+
+
+func _apply_compact_metrics() -> void:
+	custom_minimum_size = Vector2(150, 146) if compact_mode else Vector2(168, 188)
 
 
 func play_feedback(color: Color) -> void:

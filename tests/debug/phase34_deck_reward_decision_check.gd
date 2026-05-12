@@ -128,8 +128,8 @@ func _verify_reward_decision_and_deck_filter(combat_scene: Node) -> void:
 		_fail("Expected first card reward after victory.")
 		return
 	var reward_text := String(card_reward.get("text"))
-	if not reward_text.contains("#1 Recommended") or not reward_text.contains("Reasons:") or not reward_text.contains("Impact:"):
-		_fail("Reward cards should explain recommendation and before/after impact.")
+	if not reward_text.contains("#1 Recommended") or not card_reward.tooltip_text.contains("Reasons:") or not card_reward.tooltip_text.contains("Impact:"):
+		_fail("Reward cards should keep recommendation and before/after impact available without bloating the button.")
 		return
 	if not bool(reward_impact.get("visible")) or not _get_text(reward_impact).contains("Before/after deck impact"):
 		_fail("Reward impact panel should show before/after deck data before picking.")

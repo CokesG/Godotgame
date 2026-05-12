@@ -46,7 +46,7 @@ static func apply_to(root: Control) -> void:
 	theme.set_stylebox("disabled", "Button", make_button_style(false, false, true))
 	theme.set_color("font_color", "Button", TEXT_PRIMARY)
 	theme.set_color("font_hover_color", "Button", Color(1.0, 0.94, 0.76))
-	theme.set_color("font_pressed_color", "Button", Color(0.12, 0.075, 0.03))
+	theme.set_color("font_pressed_color", "Button", Color(1.0, 0.95, 0.82))
 	theme.set_color("font_disabled_color", "Button", Color(0.48, 0.46, 0.42))
 	theme.set_font_size("font_size", "Button", 15)
 	theme.set_constant("h_separation", "Button", 6)

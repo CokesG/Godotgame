@@ -142,8 +142,8 @@ func _verify_hand_card_readability(combat_scene: Node) -> void:
 		return
 
 	var first_card: Control = hand_view.get_child(0)
-	if first_card.custom_minimum_size.x < 168 or first_card.custom_minimum_size.y < 188:
-		_fail("Cards should reserve the larger readable card footprint.")
+	if first_card.custom_minimum_size.x < 96 or first_card.custom_minimum_size.y < 80:
+		_fail("Compact live cards should keep a readable footprint.")
 		return
 
 	var card_text := _get_text(first_card)

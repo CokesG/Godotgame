@@ -34,8 +34,8 @@ func _verify_opening_coach(combat_scene: Node) -> void:
 	if coach_panel == null or coach == null or hand_status == null:
 		_fail("Expected first-play coach and hand status.")
 		return
-	if not bool(coach_panel.get("visible")):
-		_fail("First-play coach should be visible before the first table opens.")
+	if bool(coach_panel.get("visible")):
+		_fail("Opening screen should keep the first-play coach hidden until combat/debug needs it.")
 		return
 	var coach_text := _get_text(coach)
 	if not coach_text.contains("OPEN") or not coach_text.contains("TARGET") or not coach_text.contains("CARD") or not coach_text.contains("RESOLVE"):

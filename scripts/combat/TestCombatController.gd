@@ -889,7 +889,8 @@ func _build_ui() -> void:
 		reward_button.text = "Card Reward"
 		reward_button.disabled = true
 		reward_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		reward_button.custom_minimum_size = Vector2(0, 136)
+		reward_button.custom_minimum_size = Vector2(0, 96)
+		reward_button.clip_text = true
 		reward_button.pressed.connect(_on_card_reward_pressed.bind(index))
 		card_reward_buttons.append(reward_button)
 		card_rewards_row.add_child(reward_button)
@@ -1169,6 +1170,7 @@ func _build_ui() -> void:
 	intent_column.add_child(debug_truth_label)
 
 	var bluff_title := Label.new()
+	bluff_title.name = "BluffTitle"
 	bluff_title.text = "Commit / Bluff / Reveal"
 	bluff_title.add_theme_font_size_override("font_size", 18)
 	intent_column.add_child(bluff_title)
@@ -3232,11 +3234,13 @@ func _refresh_run_panel(state: Dictionary) -> void:
 		if index < card_rewards.size():
 			var reward: Dictionary = card_rewards[index]
 			button.text = _get_card_reward_button_text(reward, index)
+			button.tooltip_text = _get_card_reward_tooltip_text(reward, index)
 			button.disabled = false
 			button.visible = true
 			button.modulate = Color(1.0, 0.95, 0.72) if index == 0 else Color.WHITE
 		else:
 			button.text = "Card Reward"
+			button.tooltip_text = "No card reward in this slot."
 			button.disabled = true
 			button.visible = false
 			button.modulate = Color.WHITE
@@ -4104,10 +4108,19 @@ func _get_card_reward_button_text(reward: Dictionary, index: int) -> String:
 	var rank_label: String = String(reward.get("recommendation_label", "Option %d" % (index + 1)))
 	if index == 0:
 		rank_label = "#1 Recommended"
-	return "%s\nTake %s\n%s\nReasons: %s\nImpact: %s" % [
+	return "%s\nTake %s\n%s" % [
 		rank_label,
 		reward.get("name", "Card"),
-		reward.get("text", ""),
+		reward.get("text", "")
+	]
+
+
+func _get_card_reward_tooltip_text(reward: Dictionary, index: int) -> String:
+	var rank_label: String = String(reward.get("recommendation_label", "Option %d" % (index + 1)))
+	if index == 0:
+		rank_label = "#1 Recommended"
+	return "%s | Reasons: %s | Impact: %s" % [
+		rank_label,
 		_join_reward_reasons(reward.get("top_reasons", [])),
 		reward.get("impact_summary", "Impact unavailable.")
 	]
@@ -4776,7 +4789,10 @@ func _sync_live_text_density() -> void:
 		run_header_label.visible = not compact_live
 	var body := find_child("CombatBody", true, false)
 	if body is Control:
-		(body as Control).visible = run_flow_state == RUN_FLOW_START or run_flow_state == RUN_FLOW_COMBAT
+		(body as Control).visible = run_flow_state == RUN_FLOW_COMBAT
+	var deck_panel_node := find_child("DeckPanel", true, false)
+	if deck_panel_node is Control:
+		(deck_panel_node as Control).visible = run_flow_state == RUN_FLOW_COMBAT
 	var run_path_panel := find_child("RunPathPanel", true, false)
 	if run_path_panel is Control:
 		(run_path_panel as Control).visible = not compact_live and run_flow_state != RUN_FLOW_REWARD
@@ -4797,53 +4813,121 @@ func _sync_live_text_density() -> void:
 	if run_shell_actions is Control:
 		(run_shell_actions as Control).visible = not compact_live
 	if action_cue_panel != null:
+		action_cue_panel.visible = not compact_live and not route_decision_shell
 		action_cue_panel.custom_minimum_size = Vector2(0, 62) if compact_live else Vector2(0, 72)
+	if combat_grid != null and combat_grid.has_method("set_compact_mode"):
+		combat_grid.call("set_compact_mode", compact_live)
+	_sync_compact_live_layout(compact_live)
+	if toggle_debug_button != null:
+		toggle_debug_button.visible = run_flow_state == RUN_FLOW_COMBAT or debug_controls_visible
 	if live_state_chip_row != null:
-		live_state_chip_row.visible = true
+		live_state_chip_row.visible = run_flow_state == RUN_FLOW_COMBAT
 	if first_play_step_row != null:
-		first_play_step_row.visible = true
+		first_play_step_row.visible = run_flow_state == RUN_FLOW_COMBAT and not compact_live
 	if first_play_coach_panel != null:
-		first_play_coach_panel.visible = _is_first_table_coach_active() and not first_play_coach_complete
+		first_play_coach_panel.visible = run_flow_state == RUN_FLOW_COMBAT and _is_first_table_coach_active() and not first_play_coach_complete and not compact_live
+	var compact_reward := run_flow_state == RUN_FLOW_REWARD and not debug_controls_visible
+	var show_expanded_combat_detail := run_flow_state == RUN_FLOW_COMBAT and not compact_live
+	_sync_reward_panel_priority(compact_reward)
 	if run_shell_detail_label != null:
-		run_shell_detail_label.visible = not compact_live
+		run_shell_detail_label.visible = not compact_live and not compact_reward
 	if run_continuity_label != null:
-		run_continuity_label.visible = not compact_live
+		run_continuity_label.visible = not compact_live and not compact_reward
 	if encounter_preview_label != null and compact_live:
 		encounter_preview_label.visible = false
+	var turn_status_panel := find_child("TurnStatusPanel", true, false)
+	if turn_status_panel is Control:
+		(turn_status_panel as Control).visible = show_expanded_combat_detail
+	var table_rule_panel := find_child("TableRulePanel", true, false)
+	if table_rule_panel is Control:
+		(table_rule_panel as Control).visible = show_expanded_combat_detail
+	var turn_guidance_panel := find_child("TurnGuidance", true, false)
+	if turn_guidance_panel is Control:
+		(turn_guidance_panel as Control).visible = run_flow_state == RUN_FLOW_COMBAT
+	var combat_feedback_panel := find_child("CombatFeedbackPanel", true, false)
+	if combat_feedback_panel is Control:
+		(combat_feedback_panel as Control).visible = show_expanded_combat_detail
 	if phase_guidance_label != null:
-		phase_guidance_label.visible = not compact_live
+		phase_guidance_label.visible = show_expanded_combat_detail
 	if phase_detail_label != null:
-		phase_detail_label.visible = not compact_live
+		phase_detail_label.visible = show_expanded_combat_detail
 	if action_prompt_label != null:
-		action_prompt_label.visible = not compact_live
+		action_prompt_label.visible = show_expanded_combat_detail
 	if first_play_path_label != null:
-		first_play_path_label.visible = not compact_live
+		first_play_path_label.visible = show_expanded_combat_detail
 	if turn_status_label != null:
-		turn_status_label.visible = not compact_live
+		turn_status_label.visible = show_expanded_combat_detail
 	if table_rule_status_label != null:
-		table_rule_status_label.visible = not compact_live
+		table_rule_status_label.visible = show_expanded_combat_detail
+	if enemy_status_label != null:
+		enemy_status_label.visible = show_expanded_combat_detail
+	if intent_icon_strip_label != null:
+		intent_icon_strip_label.visible = show_expanded_combat_detail
 	if threat_summary_label != null:
-		threat_summary_label.visible = not compact_live
+		threat_summary_label.visible = show_expanded_combat_detail
+	var bluff_title := find_child("BluffTitle", true, false)
+	if bluff_title is Control:
+		(bluff_title as Control).visible = show_expanded_combat_detail
 	if intent_preview_label != null:
-		intent_preview_label.visible = not compact_live
+		intent_preview_label.visible = show_expanded_combat_detail
 	if bluff_state_label != null:
-		bluff_state_label.visible = not compact_live
+		bluff_state_label.visible = show_expanded_combat_detail
 	if enemy_call_option != null:
-		enemy_call_option.visible = not compact_live
+		enemy_call_option.visible = show_expanded_combat_detail
 	if intent_call_option != null:
-		intent_call_option.visible = not compact_live
+		intent_call_option.visible = show_expanded_combat_detail
 	if lane_call_option != null:
-		lane_call_option.visible = not compact_live
+		lane_call_option.visible = show_expanded_combat_detail
 	if commit_first_card_button != null and commit_first_card_button.get_parent() is Control:
-		(commit_first_card_button.get_parent() as Control).visible = not compact_live
+		(commit_first_card_button.get_parent() as Control).visible = show_expanded_combat_detail
 	if reset_bluff_button != null:
-		reset_bluff_button.visible = not compact_live
+		reset_bluff_button.visible = show_expanded_combat_detail
 	if card_action_hint_label != null:
-		card_action_hint_label.visible = not compact_live
+		card_action_hint_label.visible = show_expanded_combat_detail
 	if card_target_preview_label != null:
-		card_target_preview_label.visible = not compact_live
+		card_target_preview_label.visible = show_expanded_combat_detail
 	if combat_feedback_label != null:
-		combat_feedback_label.visible = not compact_live
+		combat_feedback_label.visible = show_expanded_combat_detail
+
+
+func _sync_compact_live_layout(compact_live: bool) -> void:
+	var body := find_child("CombatBody", true, false)
+	if body is Control:
+		(body as Control).custom_minimum_size = Vector2(0, 352) if compact_live else Vector2(0, 430)
+		if body is BoxContainer:
+			(body as BoxContainer).add_theme_constant_override("separation", 4 if compact_live else 8)
+
+	var table_row := find_child("TableRow", true, false)
+	if table_row is Control:
+		(table_row as Control).custom_minimum_size = Vector2(0, 202) if compact_live else Vector2(0, 258)
+
+	if hand_action_status_label != null:
+		hand_action_status_label.custom_minimum_size = Vector2(0, 22) if compact_live else Vector2(0, 28)
+		hand_action_status_label.add_theme_font_size_override("font_size", 13 if compact_live else 15)
+
+	if hand_view != null and hand_view.has_method("set_compact_mode"):
+		hand_view.call("set_compact_mode", compact_live)
+
+	var hand_scroll := find_child("HandScroll", true, false)
+	if hand_scroll is Control:
+		(hand_scroll as Control).custom_minimum_size = Vector2(0, 146) if compact_live else Vector2(0, 176)
+
+
+func _sync_reward_panel_priority(compact_reward: bool) -> void:
+	var layout_node := find_child("Layout", true, false)
+	var run_panel_node := find_child("RunPanel", true, false)
+	if not (layout_node is BoxContainer) or run_panel_node == null:
+		return
+
+	var layout_box := layout_node as BoxContainer
+	var run_shell_node := find_child("RunShellPanel", true, false)
+	if compact_reward and run_shell_node != null and run_shell_node.get_parent() == layout_box:
+		layout_box.move_child(run_panel_node, run_shell_node.get_index())
+		return
+
+	var debug_drawer_node := find_child("DebugDrawer", true, false)
+	if debug_drawer_node != null and debug_drawer_node.get_parent() == layout_box:
+		layout_box.move_child(run_panel_node, max(0, debug_drawer_node.get_index() - 1))
 
 
 func _get_target_chip_text() -> String:
