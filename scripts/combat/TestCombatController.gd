@@ -127,6 +127,8 @@ var run_shell_panel: PanelContainer
 var run_shell_title_label: Label
 var run_shell_detail_label: RichTextLabel
 var run_continuity_label: RichTextLabel
+var run_ceremony_panel: PanelContainer
+var run_ceremony_label: RichTextLabel
 var encounter_preview_label: RichTextLabel
 var encounter_approach_panel: PanelContainer
 var approach_title_label: Label
@@ -200,6 +202,7 @@ var recipe_progress: Dictionary = {}
 var pending_card_context: Dictionary = {}
 var committed_card_context: Dictionary = {}
 var feedback_history: Array[String] = []
+var run_ceremony_history: Array[String] = []
 var table_rule_effect_history: Array[String] = []
 var last_combat_feedback_state: Dictionary = {}
 var previewed_hand_index: int = -1
@@ -328,6 +331,19 @@ func _build_ui() -> void:
 	run_continuity_label.scroll_active = false
 	run_continuity_label.custom_minimum_size = Vector2(0, 48)
 	run_shell_layout.add_child(run_continuity_label)
+
+	run_ceremony_panel = PanelContainer.new()
+	run_ceremony_panel.name = "RunCeremonyPanel"
+	run_ceremony_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	run_shell_layout.add_child(run_ceremony_panel)
+
+	run_ceremony_label = RichTextLabel.new()
+	run_ceremony_label.name = "RunCeremony"
+	run_ceremony_label.bbcode_enabled = false
+	run_ceremony_label.fit_content = true
+	run_ceremony_label.scroll_active = false
+	run_ceremony_label.custom_minimum_size = Vector2(0, 96)
+	run_ceremony_panel.add_child(run_ceremony_label)
 
 	encounter_preview_label = RichTextLabel.new()
 	encounter_preview_label.name = "EncounterPreview"
@@ -1099,6 +1115,7 @@ func _on_next_encounter_pressed() -> void:
 	_set_run_flow_state(RUN_FLOW_COMBAT)
 	_append_log("%s is live." % node_name)
 	_append_log("Approach complete: %s dealt from the run map into combat." % node_name)
+	_record_run_ceremony("Approach: %s dealt into combat. The ceremony hands back to turn play." % node_name, FEEDBACK_PHASE_COLOR, run_shell_panel)
 	_reset_playable_combat()
 	_push_feedback("Run map: moving to Table %d/%d - %s." % [
 		table_number,
@@ -1306,6 +1323,7 @@ func _on_piles_changed(counts: Dictionary) -> void:
 
 func _reset_run_slice() -> void:
 	_set_run_flow_state(RUN_FLOW_START)
+	run_ceremony_history.clear()
 	selected_run_path_index = -1
 	last_run_path_current_index = -1
 	last_run_path_transition_text = ""
@@ -1479,9 +1497,16 @@ func _on_combat_ended(outcome: String) -> void:
 	_append_log("Combat ended: %s." % outcome)
 	combat_session.call("mark_combat_ended", outcome)
 	if outcome == "victory":
+		var pre_victory_state: Dictionary = run_manager.call("get_state") if run_manager != null else {}
+		var cleared_table_name: String = String(pre_victory_state.get("current_node_name", "Table"))
 		run_manager.call("mark_combat_victory", combat_resolver.call("get_state"))
+		var post_victory_state: Dictionary = run_manager.call("get_state")
+		_record_run_ceremony("Victory: %s cleared. Reward choice opens the route forward." % cleared_table_name, FEEDBACK_PHASE_COLOR, run_shell_panel)
+		if String(post_victory_state.get("run_outcome", "running")) == "victory":
+			_record_run_ceremony("Run complete: final table cleared. Results are ready.", FEEDBACK_PHASE_COLOR, run_shell_panel)
 	else:
 		run_manager.call("mark_combat_defeat")
+		_record_run_ceremony("Defeat: the route ends at this table. Results are ready.", FEEDBACK_DAMAGE_COLOR, run_shell_panel)
 	_refresh_action_controls()
 
 
@@ -1552,17 +1577,20 @@ func _on_run_path_table_hovered(index: int) -> void:
 func _on_card_reward_pressed(index: int) -> void:
 	var claimed_path: String = String(run_manager.call("claim_card_reward", index))
 	if not claimed_path.is_empty():
+		_record_run_ceremony("Reward: card added to the deck. The map marker can advance when rewards are clear.", FEEDBACK_CARD_COLOR, reward_prompt_label)
 		_show_next_encounter_if_ready()
 
 
 func _on_relic_reward_pressed(index: int) -> void:
 	var claimed_path: String = String(run_manager.call("claim_relic_reward", index))
 	if not claimed_path.is_empty():
+		_record_run_ceremony("Reward: relic claimed. The route is ready to continue when rewards are clear.", FEEDBACK_CARD_COLOR, reward_prompt_label)
 		_show_next_encounter_if_ready()
 
 
 func _on_skip_rewards_pressed() -> void:
 	run_manager.call("skip_rewards")
+	_record_run_ceremony("Reward: skipped to keep the deck lean. The route marker advances.", FEEDBACK_CARD_COLOR, reward_prompt_label)
 	_show_next_encounter_if_ready()
 
 
@@ -1629,6 +1657,11 @@ func _show_next_encounter_if_ready() -> void:
 		var table_number: int = min(int(run_state.get("current_node_index", 0)) + 1, int(run_state.get("current_node_count", 0)))
 		var table_count: int = int(run_state.get("current_node_count", 0))
 		_push_feedback("Run map: rewards clear. Marker moves to Table %d/%d - %s." % [
+			table_number,
+			table_count,
+			run_state.get("current_node_name", "Encounter")
+		], FEEDBACK_PHASE_COLOR, run_path_label)
+		_record_run_ceremony("Map: marker moves to Table %d/%d - %s. Approach preview is staged." % [
 			table_number,
 			table_count,
 			run_state.get("current_node_name", "Encounter")
@@ -1988,6 +2021,7 @@ func _refresh_run_shell(state: Dictionary) -> void:
 	if run_continuity_label != null:
 		run_continuity_label.clear()
 		run_continuity_label.append_text(_get_run_continuity_text(state))
+	_refresh_run_ceremony(state)
 	if encounter_preview_label != null:
 		encounter_preview_label.visible = _should_show_encounter_preview()
 		encounter_preview_label.clear()
@@ -2112,6 +2146,88 @@ func _get_run_continuity_text(state: Dictionary) -> String:
 			return "Final result: %s. Export the summary or start a fresh run." % results.get("grade", "Table Stakes")
 		_:
 			return "Run continuity is waiting for the next state."
+
+
+func _refresh_run_ceremony(state: Dictionary) -> void:
+	if run_ceremony_panel == null or run_ceremony_label == null:
+		return
+
+	var should_show: bool = _should_show_run_ceremony(state)
+	run_ceremony_panel.visible = should_show
+	if not should_show:
+		return
+
+	run_ceremony_label.clear()
+	run_ceremony_label.append_text("Run Ceremony\n")
+	run_ceremony_label.append_text("%s\n" % _get_run_ceremony_steps_text(state))
+	if run_ceremony_history.is_empty():
+		run_ceremony_label.append_text("Latest: ceremony waiting for the next combat result.")
+		return
+
+	run_ceremony_label.append_text("Latest: %s\n" % run_ceremony_history[0])
+	run_ceremony_label.append_text("Thread: %s" % _get_run_ceremony_thread_text())
+
+
+func _should_show_run_ceremony(state: Dictionary) -> bool:
+	if String(state.get("run_outcome", "running")) != "running":
+		return not run_ceremony_history.is_empty()
+	if run_flow_state == RUN_FLOW_REWARD or run_flow_state == RUN_FLOW_NEXT_ENCOUNTER:
+		return true
+	if run_flow_state == RUN_FLOW_COMBAT and not run_ceremony_history.is_empty():
+		return true
+	return false
+
+
+func _get_run_ceremony_steps_text(state: Dictionary) -> String:
+	var steps := PackedStringArray()
+	match run_flow_state:
+		RUN_FLOW_REWARD:
+			steps.append("[DONE] Victory")
+			steps.append("[ACTIVE] Reward")
+			steps.append("[WAIT] Map Move")
+			steps.append("[WAIT] Approach")
+		RUN_FLOW_NEXT_ENCOUNTER:
+			steps.append("[DONE] Victory")
+			steps.append("[DONE] Reward")
+			steps.append("[DONE] Map Move")
+			steps.append("[ACTIVE] Approach")
+		RUN_FLOW_RESULTS:
+			steps.append("[DONE] Victory")
+			steps.append("[DONE] Reward")
+			steps.append("[DONE] Map Move")
+			steps.append("[DONE] Results")
+		_:
+			if String(state.get("run_outcome", "running")) == "defeat":
+				steps.append("[DONE] Combat")
+				steps.append("[ACTIVE] Results")
+			else:
+				steps.append("[DONE] Victory")
+				steps.append("[DONE] Reward")
+				steps.append("[DONE] Approach")
+				steps.append("[ACTIVE] Combat")
+	return " -> ".join(steps)
+
+
+func _get_run_ceremony_thread_text() -> String:
+	var entries := PackedStringArray()
+	var limit: int = min(3, run_ceremony_history.size())
+	for index in range(limit):
+		entries.append(run_ceremony_history[index])
+	return " | ".join(entries)
+
+
+func _record_run_ceremony(message: String, color: Color = FEEDBACK_PHASE_COLOR, pulse_node: Node = null) -> void:
+	if message.is_empty():
+		return
+
+	run_ceremony_history.push_front(message)
+	while run_ceremony_history.size() > 6:
+		run_ceremony_history.pop_back()
+	if run_manager != null:
+		_refresh_run_ceremony(run_manager.call("get_state"))
+	if run_ceremony_panel != null:
+		_pulse_canvas_item(run_ceremony_panel, color)
+	_push_feedback(message, color, pulse_node if pulse_node != null else run_ceremony_panel)
 
 
 func _should_show_encounter_preview() -> bool:

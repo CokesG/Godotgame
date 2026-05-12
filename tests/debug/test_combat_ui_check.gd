@@ -49,6 +49,16 @@ func _ready() -> void:
 		_fail("Expected RunContinuity for Phase 21 run continuity.")
 		return
 
+	var run_ceremony := combat_scene.find_child("RunCeremony", true, false)
+	if run_ceremony == null:
+		_fail("Expected RunCeremony for Phase 28 combat-to-run pacing.")
+		return
+
+	var run_ceremony_panel := combat_scene.find_child("RunCeremonyPanel", true, false)
+	if run_ceremony_panel == null:
+		_fail("Expected RunCeremonyPanel for Phase 28 combat-to-run pacing.")
+		return
+
 	var next_encounter_button := combat_scene.find_child("NextEncounterButton", true, false)
 	if next_encounter_button == null:
 		_fail("Expected NextEncounterButton for Phase 21 next-table flow.")
