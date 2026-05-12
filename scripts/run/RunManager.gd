@@ -387,20 +387,29 @@ func get_reward_tuning_report() -> Array[Dictionary]:
 	var node := get_current_node()
 	var reward_tags: Array = node.get("reward_tags", [])
 	var rewards: Array[String] = pending_card_reward_paths if not pending_card_reward_paths.is_empty() else _build_card_rewards(node)
+	var rank := 1
 
 	for path in rewards:
 		var card: Resource = load(path)
 		if card == null:
 			continue
 		var details: Dictionary = simulator.call("score_card_reward_details", path, reward_tags, deck_profile, "balanced")
+		var impact: Dictionary = _build_card_reward_impact(path, deck_profile, simulator)
+		var reasons: Array = details.get("reasons", [])
 		report.append({
 			"path": path,
 			"name": _get_resource_name(card),
+			"rank": rank,
+			"recommendation_label": "Recommended" if rank == 1 else "Option %d" % rank,
 			"score": details.get("score", 0.0),
 			"text": String(card.get("rules_text")),
 			"explanation": details.get("explanation", "Solid reward option."),
-			"reasons": details.get("reasons", [])
+			"reasons": reasons,
+			"top_reasons": _get_top_reward_reasons(reasons),
+			"impact": impact,
+			"impact_summary": impact.get("summary", "Deck impact unavailable.")
 		})
+		rank += 1
 
 	return report
 
@@ -637,11 +646,84 @@ func _describe_card_rewards(paths: Array[String]) -> Array[Dictionary]:
 				"path": path,
 				"name": _get_resource_name(resource),
 				"text": String(resource.get("rules_text")),
+				"rank": descriptions.size() + 1,
+				"recommendation_label": "Option",
 				"score": 0.0,
 				"explanation": "Solid reward option.",
-				"reasons": []
+				"reasons": [],
+				"top_reasons": [],
+				"impact": {},
+				"impact_summary": "Deck impact unavailable."
 			})
 	return descriptions
+
+
+func _build_card_reward_impact(card_path: String, before_profile: Dictionary, simulator: RefCounted) -> Dictionary:
+	var after_deck_paths: Array[String] = deck_paths.duplicate()
+	after_deck_paths.append(card_path)
+	var after_profile: Dictionary = simulator.call("build_deck_profile", after_deck_paths, get_relic_modifiers())
+	var added_label: String = _get_added_card_role_label(card_path)
+	var damage_delta: float = snappedf(float(after_profile.get("projected_damage_per_turn", 0.0)) - float(before_profile.get("projected_damage_per_turn", 0.0)), 0.01)
+	var guard_delta: float = snappedf(float(after_profile.get("projected_guard_per_turn", 0.0)) - float(before_profile.get("projected_guard_per_turn", 0.0)), 0.01)
+	var control_delta: float = snappedf(float(after_profile.get("control_score", 0.0)) - float(before_profile.get("control_score", 0.0)), 0.01)
+	var power_delta: float = snappedf(float(after_profile.get("deck_power", 0.0)) - float(before_profile.get("deck_power", 0.0)), 0.01)
+
+	return {
+		"before_size": int(before_profile.get("deck_size", deck_paths.size())),
+		"after_size": int(after_profile.get("deck_size", after_deck_paths.size())),
+		"added_role": added_label,
+		"damage_delta": damage_delta,
+		"guard_delta": guard_delta,
+		"control_delta": control_delta,
+		"power_delta": power_delta,
+		"summary": "Deck %d -> %d | Adds %s | Damage %s/turn | Guard %s/turn | Control %s" % [
+			int(before_profile.get("deck_size", deck_paths.size())),
+			int(after_profile.get("deck_size", after_deck_paths.size())),
+			added_label,
+			_format_signed_float(damage_delta),
+			_format_signed_float(guard_delta),
+			_format_signed_float(control_delta)
+		]
+	}
+
+
+func _get_added_card_role_label(card_path: String) -> String:
+	var card: Resource = load(card_path)
+	if card == null:
+		return "Card"
+
+	match int(card.get("card_type")):
+		0:
+			return "Attack"
+		1:
+			return "Guard"
+		2:
+			return "Movement"
+		3:
+			return "Bluff"
+		4:
+			return "Read"
+		5:
+			return "Trap"
+		6:
+			return "Ritual"
+		_:
+			return "Card"
+
+
+func _get_top_reward_reasons(reasons: Array) -> Array[String]:
+	var top_reasons: Array[String] = []
+	for reason in reasons:
+		if top_reasons.size() >= 3:
+			break
+		top_reasons.append(String(reason))
+	return top_reasons
+
+
+func _format_signed_float(value: float) -> String:
+	if value > 0.0:
+		return "+%.2f" % value
+	return "%.2f" % value
 
 
 func _get_resource_name(resource: Resource) -> String:

@@ -143,6 +143,7 @@ var balance_report_label: RichTextLabel
 var run_results_label: RichTextLabel
 var playtest_report_label: RichTextLabel
 var reward_prompt_label: RichTextLabel
+var reward_impact_label: RichTextLabel
 var card_reward_buttons: Array[Button] = []
 var relic_reward_buttons: Array[Button] = []
 var skip_rewards_button: Button
@@ -468,6 +469,15 @@ func _build_ui() -> void:
 	reward_prompt_label.custom_minimum_size = Vector2(0, 60)
 	run_layout.add_child(reward_prompt_label)
 
+	reward_impact_label = RichTextLabel.new()
+	reward_impact_label.name = "RewardImpact"
+	reward_impact_label.bbcode_enabled = false
+	reward_impact_label.fit_content = true
+	reward_impact_label.scroll_active = false
+	reward_impact_label.visible = false
+	reward_impact_label.custom_minimum_size = Vector2(0, 84)
+	run_layout.add_child(reward_impact_label)
+
 	var card_rewards_row := HBoxContainer.new()
 	card_rewards_row.name = "CardRewards"
 	card_rewards_row.add_theme_constant_override("separation", 6)
@@ -479,7 +489,7 @@ func _build_ui() -> void:
 		reward_button.text = "Card Reward"
 		reward_button.disabled = true
 		reward_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		reward_button.custom_minimum_size = Vector2(0, 108)
+		reward_button.custom_minimum_size = Vector2(0, 136)
 		reward_button.pressed.connect(_on_card_reward_pressed.bind(index))
 		card_reward_buttons.append(reward_button)
 		card_rewards_row.add_child(reward_button)
@@ -1725,27 +1735,26 @@ func _refresh_run_panel(state: Dictionary) -> void:
 	var card_rewards: Array = state.get("pending_card_rewards", [])
 	var relic_rewards: Array = state.get("pending_relic_rewards", [])
 	_refresh_reward_prompt(state, card_rewards, relic_rewards)
+	_refresh_reward_impact(state, card_rewards, relic_rewards)
 	for index in range(card_reward_buttons.size()):
 		var button := card_reward_buttons[index]
 		if index < card_rewards.size():
 			var reward: Dictionary = card_rewards[index]
-			button.text = "%s\n%s\nWhy: %s" % [
-				reward.get("name", "Card"),
-				reward.get("text", ""),
-				reward.get("explanation", "Solid reward option.")
-			]
+			button.text = _get_card_reward_button_text(reward, index)
 			button.disabled = false
 			button.visible = true
+			button.modulate = Color(1.0, 0.95, 0.72) if index == 0 else Color.WHITE
 		else:
 			button.text = "Card Reward"
 			button.disabled = true
 			button.visible = false
+			button.modulate = Color.WHITE
 
 	for index in range(relic_reward_buttons.size()):
 		var button := relic_reward_buttons[index]
 		if index < relic_rewards.size():
 			var reward: Dictionary = relic_rewards[index]
-			button.text = "%s\n%s" % [reward.get("name", "Relic"), reward.get("text", "")]
+			button.text = "Take Relic\n%s\n%s" % [reward.get("name", "Relic"), reward.get("text", "")]
 			button.disabled = false
 			button.visible = true
 		else:
@@ -1756,6 +1765,7 @@ func _refresh_run_panel(state: Dictionary) -> void:
 	if skip_rewards_button != null:
 		skip_rewards_button.disabled = not bool(state.get("waiting_for_reward", false))
 		skip_rewards_button.visible = bool(state.get("waiting_for_reward", false))
+		skip_rewards_button.text = "Skip Reward - keep deck lean" if bool(state.get("waiting_for_reward", false)) else "Skip Rewards"
 
 
 func _refresh_playtest_report(batch: Dictionary) -> void:
@@ -2038,18 +2048,73 @@ func _refresh_reward_prompt(state: Dictionary, card_rewards: Array, relic_reward
 	if not waiting_for_reward:
 		return
 
-	reward_prompt_label.append_text("Reward choice: top picks are sorted by current deck gap and table tags.\n")
+	reward_prompt_label.append_text("Reward choice: take one card to fill a deck gap, or skip to keep it lean.\n")
 	if not card_rewards.is_empty() and typeof(card_rewards[0]) == TYPE_DICTIONARY:
 		var best_card: Dictionary = card_rewards[0]
-		reward_prompt_label.append_text("Best card: %s -> %s" % [
+		reward_prompt_label.append_text("Best card: %s -> %s\n" % [
 			best_card.get("name", "Card"),
 			best_card.get("explanation", "Solid reward option.")
 		])
+		reward_prompt_label.append_text("Deck impact: %s" % best_card.get("impact_summary", "Impact unavailable."))
 	else:
 		reward_prompt_label.append_text("No card reward is pending.")
 
 	if not relic_rewards.is_empty():
 		reward_prompt_label.append_text("\nElite relic pending after the card pick.")
+
+
+func _refresh_reward_impact(state: Dictionary, card_rewards: Array, relic_rewards: Array) -> void:
+	if reward_impact_label == null:
+		return
+
+	var waiting_for_reward := bool(state.get("waiting_for_reward", false))
+	reward_impact_label.visible = waiting_for_reward
+	reward_impact_label.clear()
+	if not waiting_for_reward:
+		return
+
+	reward_impact_label.append_text("Before/after deck impact\n")
+	reward_impact_label.append_text("Current deck: %d cards | Reward stakes: %s\n" % [
+		state.get("deck_size", 0),
+		state.get("reward_stakes", "Improve the run.")
+	])
+	if not card_rewards.is_empty() and typeof(card_rewards[0]) == TYPE_DICTIONARY:
+		var best_card: Dictionary = card_rewards[0]
+		reward_impact_label.append_text("Best pick: %s | Score %.1f\n" % [
+			best_card.get("name", "Card"),
+			float(best_card.get("score", 0.0))
+		])
+		reward_impact_label.append_text("Impact: %s\n" % best_card.get("impact_summary", "Impact unavailable."))
+		reward_impact_label.append_text("Reasons: %s" % _join_reward_reasons(best_card.get("top_reasons", [])))
+	else:
+		reward_impact_label.append_text("No card impact pending.")
+
+	if not relic_rewards.is_empty():
+		reward_impact_label.append_text("\nRelic pick follows the card choice.")
+
+
+func _get_card_reward_button_text(reward: Dictionary, index: int) -> String:
+	var rank_label: String = String(reward.get("recommendation_label", "Option %d" % (index + 1)))
+	if index == 0:
+		rank_label = "#1 Recommended"
+	return "%s\nTake %s\n%s\nReasons: %s\nImpact: %s" % [
+		rank_label,
+		reward.get("name", "Card"),
+		reward.get("text", ""),
+		_join_reward_reasons(reward.get("top_reasons", [])),
+		reward.get("impact_summary", "Impact unavailable.")
+	]
+
+
+func _join_reward_reasons(reasons: Array) -> String:
+	var clean_reasons: Array[String] = []
+	for reason in reasons:
+		var text := String(reason)
+		if not text.is_empty():
+			clean_reasons.append(text)
+	if clean_reasons.is_empty():
+		return "solid deck fit"
+	return ", ".join(clean_reasons)
 
 
 func _build_threat_summary(previews: Array[Dictionary]) -> String:

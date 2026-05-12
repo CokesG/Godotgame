@@ -94,6 +94,11 @@ func _ready() -> void:
 		_fail("Expected RewardPrompt for Phase 14 reward readability.")
 		return
 
+	var reward_impact := combat_scene.find_child("RewardImpact", true, false)
+	if reward_impact == null:
+		_fail("Expected RewardImpact for Phase 24 reward screen polish.")
+		return
+
 	var balance_report := combat_scene.find_child("BalanceReport", true, false)
 	if balance_report == null:
 		_fail("Expected BalanceReport for Phase 12 tuning.")
