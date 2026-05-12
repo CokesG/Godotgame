@@ -35,12 +35,30 @@ func _verify_initial_interactive_map(combat_scene: Node) -> void:
 		_fail("Expected interactive run-map preview and table buttons.")
 		return
 
-	var preview_text: String = _get_text(preview)
-	if not preview_text.contains("Selected Table 1: Opening Table") or not preview_text.contains("House Rules"):
-		_fail("Initial preview should select Opening Table and show its table rule.")
+	var buttons_row: Node = table_0.get_parent()
+	if bool(preview.get("visible")) or bool(buttons_row.get("visible")):
+		_fail("Detailed map controls should start hidden on the focused first screen.")
+
+
+func _verify_selected_table_preview(combat_scene: Node) -> void:
+	var start_button: Button = combat_scene.find_child("StartRunButton", true, false)
+	var preview: Node = combat_scene.find_child("RunPathPreview", true, false)
+	var table_0: Button = combat_scene.find_child("RunPathTable0", true, false)
+	var table_1: Button = combat_scene.find_child("RunPathTable1", true, false)
+	var elite_button: Button = combat_scene.find_child("RunPathTable3", true, false)
+	if start_button == null or preview == null or table_0 == null or table_1 == null or elite_button == null:
+		_fail("Expected start button, preview, and map table buttons.")
 		return
-	if not preview_text.contains("Enemies: Skulker, Shieldbearer"):
-		_fail("Initial preview should show Opening Table enemies.")
+
+	start_button.emit_signal("pressed")
+	await get_tree().process_frame
+
+	var opening_preview: String = _get_text(preview)
+	if not opening_preview.contains("Selected Table 1: Opening Table") or not opening_preview.contains("House Rules"):
+		_fail("After opening the table, map preview should show its current-table details.")
+		return
+	if not opening_preview.contains("Enemies: Skulker, Shieldbearer"):
+		_fail("After opening the table, map preview should show Opening Table enemies.")
 		return
 
 	var first_text: String = String(table_0.get("text"))
@@ -50,13 +68,6 @@ func _verify_initial_interactive_map(combat_scene: Node) -> void:
 		return
 	if not second_text.contains("UPCOMING"):
 		_fail("Upcoming table button should show its status.")
-
-
-func _verify_selected_table_preview(combat_scene: Node) -> void:
-	var preview: Node = combat_scene.find_child("RunPathPreview", true, false)
-	var elite_button: Button = combat_scene.find_child("RunPathTable3", true, false)
-	if preview == null or elite_button == null:
-		_fail("Expected preview and elite table button.")
 		return
 
 	elite_button.emit_signal("pressed")
@@ -74,14 +85,10 @@ func _verify_selected_table_preview(combat_scene: Node) -> void:
 
 
 func _verify_marker_movement_preview(combat_scene: Node) -> void:
-	var start_button: Button = combat_scene.find_child("StartRunButton", true, false)
 	var run_manager: Node = combat_scene.find_child("RunManager", true, false)
-	if start_button == null or run_manager == null:
-		_fail("Expected StartRunButton and RunManager.")
+	if run_manager == null:
+		_fail("Expected RunManager.")
 		return
-
-	start_button.emit_signal("pressed")
-	await get_tree().process_frame
 
 	run_manager.call("mark_combat_victory", {"player": {"hp": 24}})
 	await get_tree().process_frame

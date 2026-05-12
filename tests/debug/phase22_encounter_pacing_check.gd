@@ -16,7 +16,7 @@ func _ready() -> void:
 	_verify_all_tables_have_identity()
 	if failed:
 		return
-	_verify_start_preview(combat_scene)
+	await _verify_start_preview(combat_scene)
 	if failed:
 		return
 	await _verify_next_table_preview_and_modifier(combat_scene)
@@ -74,10 +74,17 @@ func _verify_all_tables_have_identity() -> void:
 
 
 func _verify_start_preview(combat_scene: Node) -> void:
+	var start_button: Button = combat_scene.find_child("StartRunButton", true, false)
 	var preview: Node = combat_scene.find_child("EncounterPreview", true, false)
-	if preview == null:
-		_fail("Expected EncounterPreview.")
+	if start_button == null or preview == null:
+		_fail("Expected StartRunButton and EncounterPreview.")
 		return
+	if bool(preview.get("visible")):
+		_fail("Opening preview should stay hidden until the table opens.")
+		return
+
+	start_button.emit_signal("pressed")
+	await get_tree().process_frame
 
 	var preview_text: String = _get_text(preview)
 	if not preview_text.contains("Opening Table") or not preview_text.contains("Skulker") or not preview_text.contains("Shieldbearer"):
@@ -97,14 +104,10 @@ func _verify_start_preview(combat_scene: Node) -> void:
 
 
 func _verify_next_table_preview_and_modifier(combat_scene: Node) -> void:
-	var start_button: Button = combat_scene.find_child("StartRunButton", true, false)
 	var run_manager: Node = combat_scene.find_child("RunManager", true, false)
-	if start_button == null or run_manager == null:
-		_fail("Expected StartRunButton and RunManager.")
+	if run_manager == null:
+		_fail("Expected RunManager.")
 		return
-
-	start_button.emit_signal("pressed")
-	await get_tree().process_frame
 
 	run_manager.call("mark_combat_victory", {"player": {"hp": 24}})
 	await get_tree().process_frame

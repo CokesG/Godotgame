@@ -58,37 +58,17 @@ func _verify_run_path_enemy_card_data() -> void:
 
 func _verify_opening_approach(combat_scene: Node) -> void:
 	var approach_panel: Node = combat_scene.find_child("EncounterApproachPanel", true, false)
-	var title: Node = combat_scene.find_child("ApproachTitle", true, false)
-	var enemy_cards: Node = combat_scene.find_child("ApproachEnemyCards", true, false)
-	var rule: Node = combat_scene.find_child("ApproachTableRule", true, false)
-	var stakes: Node = combat_scene.find_child("ApproachStakes", true, false)
-	if approach_panel == null or title == null or enemy_cards == null or rule == null or stakes == null:
+	var detail: Node = combat_scene.find_child("RunShellDetail", true, false)
+	var start_button: Button = combat_scene.find_child("StartRunButton", true, false)
+	if approach_panel == null or detail == null or start_button == null:
 		_fail("Expected complete encounter approach panel.")
 		return
-	if not bool(approach_panel.get("visible")):
-		_fail("Approach panel should be visible before starting the run.")
+	if bool(approach_panel.get("visible")):
+		_fail("Opening approach details should stay hidden on the focused first screen.")
 		return
-
-	if not _get_text(title).contains("Approach Table 1/5: Opening Table"):
-		_fail("Opening approach title should name table position and name.")
+	if not _get_text(detail).contains("Open Opening Table") or not bool(start_button.get("visible")):
+		_fail("Opening screen should point at the single open-table action.")
 		return
-
-	var enemy_text: String = _get_text(enemy_cards)
-	if not enemy_text.contains("[Enemy Card] Skulker") or not enemy_text.contains("HP 14"):
-		_fail("Opening approach should show Skulker as an enemy card with HP.")
-		return
-	if not enemy_text.contains("[Enemy Card] Shieldbearer") or not enemy_text.contains("Tell:"):
-		_fail("Opening approach should show both enemy cards with tells.")
-		return
-	if not enemy_text.contains("Counter:"):
-		_fail("Enemy cards should include counterplay notes.")
-		return
-
-	if not _get_text(rule).contains("Table Rule Card: House Rules") or not _get_text(rule).contains("2 Guard"):
-		_fail("Approach table-rule card should frame House Rules.")
-		return
-	if not _get_text(stakes).contains("Reward Stakes") or not _get_text(stakes).contains("Movement"):
-		_fail("Approach stakes should explain favored reward gaps.")
 
 
 func _verify_next_table_approach(combat_scene: Node) -> void:

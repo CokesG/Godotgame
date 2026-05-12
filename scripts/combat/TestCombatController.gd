@@ -103,6 +103,15 @@ const RECIPE_STEPS := [
 		"label": "Clean up and start the next turn"
 	}
 ]
+const RUN_INSPECTOR_FILTERS := [
+	{"id": "all", "label": "All"},
+	{"id": "attack", "label": "Attack"},
+	{"id": "guard", "label": "Guard"},
+	{"id": "movement", "label": "Move"},
+	{"id": "read", "label": "Read"},
+	{"id": "trap", "label": "Trap"},
+	{"id": "ritual", "label": "Ritual"}
+]
 
 @onready var turn_manager: Node = $TurnManager
 
@@ -160,6 +169,7 @@ var run_results_label: RichTextLabel
 var run_export_readback_label: RichTextLabel
 var run_history_label: RichTextLabel
 var run_inspector_panel: PanelContainer
+var run_inspector_filter_row: HBoxContainer
 var run_inspector_label: RichTextLabel
 var playtest_report_label: RichTextLabel
 var reward_prompt_label: RichTextLabel
@@ -229,6 +239,8 @@ var last_history_archive_report: Dictionary = {}
 var run_history_requested: bool = false
 var last_run_inspection_report: Dictionary = {}
 var run_inspector_requested: bool = false
+var run_inspector_card_filter: String = "all"
+var run_inspector_filter_buttons: Array[Button] = []
 
 
 func _ready() -> void:
@@ -434,13 +446,17 @@ func _build_ui() -> void:
 
 	start_run_button = Button.new()
 	start_run_button.name = "StartRunButton"
-	start_run_button.text = "Start Run"
+	start_run_button.text = "Open Opening Table"
+	start_run_button.custom_minimum_size = Vector2(220, 44)
+	start_run_button.add_theme_font_size_override("font_size", 18)
+	start_run_button.tooltip_text = "Begin the first fight."
 	start_run_button.pressed.connect(_on_start_run_pressed)
 	run_shell_actions.add_child(start_run_button)
 
 	next_encounter_button = Button.new()
 	next_encounter_button.name = "NextEncounterButton"
-	next_encounter_button.text = "Deal Next Table"
+	next_encounter_button.text = "Open Next Table"
+	next_encounter_button.custom_minimum_size = Vector2(180, 40)
 	next_encounter_button.pressed.connect(_on_next_encounter_pressed)
 	run_shell_actions.add_child(next_encounter_button)
 
@@ -479,6 +495,7 @@ func _build_ui() -> void:
 	shell_archive_history_button.text = "Archive Old Summaries"
 	shell_archive_history_button.pressed.connect(_on_archive_history_pressed)
 	run_shell_actions.add_child(shell_archive_history_button)
+	run_shell_layout.move_child(run_shell_actions, 1)
 
 	turn_label = Label.new()
 	turn_label.text = "Turn: -"
@@ -638,6 +655,22 @@ func _build_ui() -> void:
 	run_history_label.visible = false
 	run_history_label.custom_minimum_size = Vector2(0, 148)
 	run_layout.add_child(run_history_label)
+
+	run_inspector_filter_row = HBoxContainer.new()
+	run_inspector_filter_row.name = "RunInspectorFilters"
+	run_inspector_filter_row.visible = false
+	run_inspector_filter_row.add_theme_constant_override("separation", 6)
+	run_layout.add_child(run_inspector_filter_row)
+
+	for filter in RUN_INSPECTOR_FILTERS:
+		var filter_button := Button.new()
+		var filter_id := String(filter.get("id", "all"))
+		filter_button.name = "RunInspectorFilter%s" % filter_id.capitalize()
+		filter_button.text = String(filter.get("label", filter_id.capitalize()))
+		filter_button.custom_minimum_size = Vector2(76, 32)
+		filter_button.pressed.connect(_on_run_inspector_filter_pressed.bind(filter_id))
+		run_inspector_filter_buttons.append(filter_button)
+		run_inspector_filter_row.add_child(filter_button)
 
 	run_inspector_panel = PanelContainer.new()
 	run_inspector_panel.name = "RunInspectorPanel"
@@ -1180,7 +1213,7 @@ func _on_start_run_pressed() -> void:
 	if run_flow_state != RUN_FLOW_START:
 		return
 	_set_run_flow_state(RUN_FLOW_COMBAT)
-	_append_log("Run started: Opening Table is live.")
+	_append_log("Opening Table opened: combat is live.")
 	_push_feedback("Run map: Opening Table is live.", FEEDBACK_PHASE_COLOR, run_path_label)
 	_refresh_action_controls()
 
@@ -1426,6 +1459,7 @@ func _reset_run_slice() -> void:
 	run_history_requested = false
 	last_run_inspection_report.clear()
 	run_inspector_requested = false
+	run_inspector_card_filter = "all"
 	run_manager.call("reset_run")
 	_reset_playable_combat()
 
@@ -1652,6 +1686,9 @@ func _on_run_state_changed(state: Dictionary) -> void:
 
 
 func _on_run_path_table_pressed(index: int) -> void:
+	if run_flow_state == RUN_FLOW_START:
+		_push_feedback("Open Opening Table first; route previews unlock after the deal-in.", FEEDBACK_PHASE_COLOR, run_path_label)
+		return
 	selected_run_path_index = index
 	if run_manager == null:
 		return
@@ -1668,6 +1705,8 @@ func _on_run_path_table_pressed(index: int) -> void:
 
 
 func _on_run_path_table_hovered(index: int) -> void:
+	if run_flow_state == RUN_FLOW_START:
+		return
 	selected_run_path_index = index
 	if run_manager == null:
 		return
@@ -1678,6 +1717,7 @@ func _on_card_reward_pressed(index: int) -> void:
 	var claimed_path: String = String(run_manager.call("claim_card_reward", index))
 	if not claimed_path.is_empty():
 		_record_run_ceremony("Reward: card added to the deck. The map marker can advance when rewards are clear.", FEEDBACK_CARD_COLOR, reward_prompt_label)
+		_refresh_run_inspector_label(false)
 		_show_next_encounter_if_ready()
 
 
@@ -1685,12 +1725,14 @@ func _on_relic_reward_pressed(index: int) -> void:
 	var claimed_path: String = String(run_manager.call("claim_relic_reward", index))
 	if not claimed_path.is_empty():
 		_record_run_ceremony("Reward: relic claimed. The route is ready to continue when rewards are clear.", FEEDBACK_CARD_COLOR, reward_prompt_label)
+		_refresh_run_inspector_label(false)
 		_show_next_encounter_if_ready()
 
 
 func _on_skip_rewards_pressed() -> void:
 	run_manager.call("skip_rewards")
 	_record_run_ceremony("Reward: skipped to keep the deck lean. The route marker advances.", FEEDBACK_CARD_COLOR, reward_prompt_label)
+	_refresh_run_inspector_label(false)
 	_show_next_encounter_if_ready()
 
 
@@ -1706,6 +1748,13 @@ func _on_inspect_run_pressed() -> void:
 	_append_log("Run inspector loaded.")
 	_push_feedback("Inspector: deck, relics, rewards, and history refreshed.", FEEDBACK_REVEAL_COLOR, run_inspector_panel)
 	_refresh_action_controls()
+
+
+func _on_run_inspector_filter_pressed(filter_id: String) -> void:
+	run_inspector_card_filter = filter_id
+	run_inspector_requested = true
+	_refresh_run_inspector_label(true)
+	_push_feedback("Inspector filter: %s cards." % filter_id.capitalize(), FEEDBACK_REVEAL_COLOR, run_inspector_panel)
 
 
 func _on_view_history_pressed() -> void:
@@ -1921,13 +1970,20 @@ func _refresh_run_inspector_label(force_show: bool = false) -> void:
 	run_inspector_label.clear()
 	if run_manager == null:
 		run_inspector_panel.visible = false
+		if run_inspector_filter_row != null:
+			run_inspector_filter_row.visible = false
 		return
 	if not force_show and not run_inspector_requested:
 		run_inspector_panel.visible = false
+		if run_inspector_filter_row != null:
+			run_inspector_filter_row.visible = false
 		return
 
 	last_run_inspection_report = run_manager.call("get_run_inspection_report", 5)
 	run_inspector_panel.visible = true
+	if run_inspector_filter_row != null:
+		run_inspector_filter_row.visible = true
+	_refresh_run_inspector_filter_buttons()
 	run_inspector_label.append_text("Run/Deck Inspector\n")
 	run_inspector_label.append_text("%s | Table: %s | Blood %d/%d\n" % [
 		last_run_inspection_report.get("summary", "Inspection ready."),
@@ -1950,12 +2006,66 @@ func _refresh_run_inspector_label(force_show: bool = false) -> void:
 		deck_profile.get("control_score", 0.0),
 		deck.get("tag_summary", "None")
 	])
+	_append_run_inspector_card_rows(deck.get("cards", []))
 
 	var relics: Dictionary = last_run_inspection_report.get("relics", {})
 	run_inspector_label.append_text("Relics: %s\n" % relics.get("summary", "No relics claimed yet."))
 	_append_run_inspector_reward_rows(last_run_inspection_report.get("recent_rewards", []))
 	_append_run_inspector_pending_rows(last_run_inspection_report.get("pending_rewards", []))
 	_append_run_inspector_history_rows(last_run_inspection_report.get("history_rows", []))
+
+
+func _refresh_run_inspector_filter_buttons() -> void:
+	for button in run_inspector_filter_buttons:
+		if button == null:
+			continue
+		var filter_id := _get_filter_id_from_button(button)
+		var selected := filter_id == run_inspector_card_filter
+		button.modulate = Color(1.0, 0.92, 0.48) if selected else Color.WHITE
+		button.tooltip_text = "Show %s deck cards." % filter_id.capitalize()
+
+
+func _get_filter_id_from_button(button: Button) -> String:
+	for filter in RUN_INSPECTOR_FILTERS:
+		var filter_id := String(filter.get("id", "all"))
+		if button.name == "RunInspectorFilter%s" % filter_id.capitalize():
+			return filter_id
+	return "all"
+
+
+func _append_run_inspector_card_rows(cards: Array) -> void:
+	var filtered_cards: Array[Dictionary] = []
+	for value in cards:
+		if typeof(value) != TYPE_DICTIONARY:
+			continue
+		var card: Dictionary = Dictionary(value)
+		var type_label := String(card.get("type", "Card"))
+		var type_key := type_label.to_lower()
+		var matches_filter := run_inspector_card_filter == "all" or type_key == run_inspector_card_filter
+		if run_inspector_card_filter == "guard" and type_key == "defense":
+			matches_filter = true
+		if matches_filter:
+			filtered_cards.append(card)
+
+	run_inspector_label.append_text("Deck cards (%s): %d shown\n" % [
+		run_inspector_card_filter.capitalize(),
+		filtered_cards.size()
+	])
+	if filtered_cards.is_empty():
+		run_inspector_label.append_text("- No cards match this filter.\n")
+		return
+
+	var limit: int = min(8, filtered_cards.size())
+	for index in range(limit):
+		var card: Dictionary = filtered_cards[index]
+		run_inspector_label.append_text("- %s | Cost %d | %s | %s\n" % [
+			card.get("name", "Card"),
+			card.get("cost", 0),
+			card.get("type", "Card"),
+			_join_text_array(card.get("tags", []), "No tags")
+		])
+	if filtered_cards.size() > limit:
+		run_inspector_label.append_text("- +%d more matching cards.\n" % (filtered_cards.size() - limit))
 
 
 func _append_run_inspector_reward_rows(reward_rows: Array) -> void:
@@ -1972,8 +2082,11 @@ func _append_run_inspector_reward_rows(reward_rows: Array) -> void:
 		run_inspector_label.append_text("- %s | %s\n  %s\n" % [
 			row.get("kind", "Reward"),
 			row.get("summary", row.get("name", "Reward")),
-			row.get("impact", "")
+			row.get("deck_change", row.get("impact", ""))
 		])
+		var after_snapshot := String(row.get("after_deck_snapshot", ""))
+		if not after_snapshot.is_empty():
+			run_inspector_label.append_text("  After: %s\n" % after_snapshot)
 
 
 func _append_run_inspector_pending_rows(pending_rows: Array) -> void:
@@ -2213,9 +2326,9 @@ func _refresh_action_controls() -> void:
 
 	next_phase_button.disabled = shell_blocks_combat or not can_debug_adjust
 	if run_flow_state == RUN_FLOW_START:
-		next_phase_button.text = "Start Run"
+		next_phase_button.text = "Open Opening Table"
 	elif run_flow_state == RUN_FLOW_NEXT_ENCOUNTER:
-		next_phase_button.text = "Deal Next Table"
+		next_phase_button.text = "Open Next Table"
 	elif run_outcome == "victory":
 		next_phase_button.text = "Run Complete"
 	elif run_outcome == "defeat":
@@ -2463,20 +2576,23 @@ func _refresh_run_shell(state: Dictionary) -> void:
 	if start_run_button != null:
 		start_run_button.visible = run_flow_state == RUN_FLOW_START
 		start_run_button.disabled = run_flow_state != RUN_FLOW_START
+		start_run_button.text = "Open Opening Table"
 	if next_encounter_button != null:
 		next_encounter_button.visible = run_flow_state == RUN_FLOW_NEXT_ENCOUNTER
 		next_encounter_button.disabled = run_flow_state != RUN_FLOW_NEXT_ENCOUNTER
+		next_encounter_button.text = "Open Next Table"
 	if shell_new_run_button != null:
 		shell_new_run_button.visible = run_flow_state == RUN_FLOW_RESULTS
 		shell_new_run_button.disabled = run_flow_state != RUN_FLOW_RESULTS
 	if shell_export_button != null:
 		shell_export_button.visible = run_flow_state == RUN_FLOW_RESULTS
 		shell_export_button.disabled = run_flow_state != RUN_FLOW_RESULTS
+	var optional_shell_tools_visible: bool = run_flow_state != RUN_FLOW_START
 	if shell_inspect_run_button != null:
-		shell_inspect_run_button.visible = true
+		shell_inspect_run_button.visible = optional_shell_tools_visible
 		shell_inspect_run_button.disabled = run_manager == null
 	if shell_view_history_button != null:
-		shell_view_history_button.visible = true
+		shell_view_history_button.visible = optional_shell_tools_visible
 		shell_view_history_button.disabled = run_manager == null
 	var history_tools_visible: bool = run_history_requested or run_flow_state == RUN_FLOW_RESULTS
 	if shell_export_history_csv_button != null:
@@ -2507,8 +2623,7 @@ func _get_run_shell_detail(state: Dictionary) -> String:
 	var node_count := int(state.get("current_node_count", 0))
 	match run_flow_state:
 		RUN_FLOW_START:
-			return "The Gambler-Knight enters a five-table prototype run.\nStart when ready: %s begins at %d/%d Blood with a %d-card deck." % [
-				state.get("current_node_name", "Opening Table"),
+			return "Opening Table is ready in the five-table run.\nPress Open Opening Table to deal in. You begin at %d/%d Blood with a %d-card deck." % [
 				state.get("player_hp", 0),
 				state.get("player_max_hp", 0),
 				state.get("deck_size", 0)
@@ -2568,7 +2683,7 @@ func _get_run_continuity_text(state: Dictionary) -> String:
 	var current_index: int = mini(int(state.get("current_node_index", 0)) + 1, node_count)
 	match run_flow_state:
 		RUN_FLOW_START:
-			return "Run map: Opening Table is the current stop; %d upcoming tables are visible." % max(0, node_count - 1)
+			return "Current stop: Opening Table. Future table details unlock after the first deal-in."
 		RUN_FLOW_COMBAT:
 			return "Run map: marker is on Table %d/%d, %s. Clear the table to open rewards or results." % [
 				current_index,
@@ -2582,7 +2697,7 @@ func _get_run_continuity_text(state: Dictionary) -> String:
 				next_table
 			]
 		RUN_FLOW_NEXT_ENCOUNTER:
-			return "Run map: marker has moved to %s (%d/%d). Deal Next Table to continue the same run." % [
+			return "Run map: marker has moved to %s (%d/%d). Open Next Table to continue the same run." % [
 				state.get("current_node_name", "Encounter"),
 				current_index,
 				node_count
@@ -2751,7 +2866,7 @@ func _get_run_finale_text(state: Dictionary) -> String:
 
 
 func _should_show_encounter_preview() -> bool:
-	return run_flow_state == RUN_FLOW_START or run_flow_state == RUN_FLOW_NEXT_ENCOUNTER or run_flow_state == RUN_FLOW_COMBAT
+	return run_flow_state == RUN_FLOW_NEXT_ENCOUNTER or run_flow_state == RUN_FLOW_COMBAT
 
 
 func _get_encounter_preview_text(state: Dictionary) -> String:
@@ -2811,7 +2926,7 @@ func _refresh_encounter_approach(state: Dictionary) -> void:
 
 
 func _should_show_encounter_approach() -> bool:
-	return run_flow_state == RUN_FLOW_START or run_flow_state == RUN_FLOW_NEXT_ENCOUNTER
+	return run_flow_state == RUN_FLOW_NEXT_ENCOUNTER
 
 
 func _get_current_run_path_entry(state: Dictionary) -> Dictionary:
@@ -2945,6 +3060,23 @@ func _refresh_run_path(state: Dictionary) -> void:
 	if marker_moved:
 		_play_run_path_marker_transition(last_run_path_current_index, current_index, path_entries)
 	last_run_path_current_index = current_index
+
+	if run_flow_state == RUN_FLOW_START:
+		selected_run_path_index = current_index
+		run_path_label.append_text("Opening Table ready | Route 1/%d\n" % node_count)
+		run_path_label.append_text("Current: %s. Press Open Opening Table to deal in.\n" % state.get("current_node_name", "Opening Table"))
+		run_path_label.append_text("Route ahead: %d more tables unlock after combat begins." % max(0, node_count - 1))
+		if run_path_buttons_row != null:
+			run_path_buttons_row.visible = false
+		if run_path_preview_label != null:
+			run_path_preview_label.visible = false
+			run_path_preview_label.clear()
+		return
+
+	if run_path_buttons_row != null:
+		run_path_buttons_row.visible = true
+	if run_path_preview_label != null:
+		run_path_preview_label.visible = true
 
 	var segments := PackedStringArray()
 	for value in path_entries:
@@ -3114,7 +3246,7 @@ func _get_run_map_caption(state: Dictionary) -> String:
 				state.get("next_node_name_after_reward", "Next Table")
 			]
 		RUN_FLOW_NEXT_ENCOUNTER:
-			return "Reward resolved. The marker has moved to %s; Deal Next Table to enter combat." % state.get("current_node_name", "Encounter")
+			return "Reward resolved. The marker has moved to %s; Open Next Table to enter combat." % state.get("current_node_name", "Encounter")
 		RUN_FLOW_RESULTS:
 			var results: Dictionary = state.get("run_results", {})
 			return "Route complete: %s." % results.get("grade", "Table Stakes")
@@ -3155,6 +3287,17 @@ func _refresh_reward_impact(state: Dictionary, card_rewards: Array, relic_reward
 	reward_impact_label.visible = waiting_for_reward
 	reward_impact_label.clear()
 	if not waiting_for_reward:
+		var last_decision: Dictionary = state.get("last_reward_decision", {})
+		var show_last_decision := not last_decision.is_empty() and run_flow_state == RUN_FLOW_NEXT_ENCOUNTER
+		reward_impact_label.visible = show_last_decision
+		if show_last_decision:
+			reward_impact_label.append_text("Last reward change\n")
+			reward_impact_label.append_text("%s | %s\n" % [
+				last_decision.get("summary", last_decision.get("name", "Reward")),
+				last_decision.get("deck_change", "Deck change unavailable.")
+			])
+			reward_impact_label.append_text("Before: %s\n" % last_decision.get("before_deck_snapshot", "Deck snapshot unavailable."))
+			reward_impact_label.append_text("After: %s" % last_decision.get("after_deck_snapshot", "Deck snapshot unavailable."))
 		return
 
 	reward_impact_label.append_text("Before/after deck impact\n")
@@ -3524,7 +3667,7 @@ func _refresh_guidance() -> void:
 
 	if run_flow_state == RUN_FLOW_START:
 		phase_guidance_label.text = "Run Start"
-		phase_detail_label.text = "Press Start Run when you are ready to sit at the first table."
+		phase_detail_label.text = "Press Open Opening Table when you are ready to sit at the first table."
 	elif run_flow_state == RUN_FLOW_REWARD:
 		phase_guidance_label.text = "Choose Reward"
 		phase_detail_label.text = "Pick a card, then claim a relic if one is pending."
@@ -3556,11 +3699,11 @@ func _refresh_guidance() -> void:
 
 func _get_action_prompt(session_state: Dictionary, run_state: Dictionary) -> String:
 	if run_flow_state == RUN_FLOW_START:
-		return "Next: press Start Run to begin the five-table path."
+		return "Next: press Open Opening Table to begin the five-table path."
 	if run_flow_state == RUN_FLOW_REWARD:
 		return "Next: choose one reward; the next table starts when rewards are clear."
 	if run_flow_state == RUN_FLOW_NEXT_ENCOUNTER:
-		return "Next: deal the next table when you are ready to continue the run."
+		return "Next: open the next table when you are ready to continue the run."
 	if run_flow_state == RUN_FLOW_RESULTS:
 		return "Next: export the run summary or start a new run."
 
@@ -3667,7 +3810,7 @@ func _get_table_rule_active_effect_text(table_modifiers: Dictionary, session_sta
 
 func _get_turn_state_feedback(session_state: Dictionary, run_state: Dictionary) -> String:
 	if run_flow_state == RUN_FLOW_START:
-		return "State: Start Run is live. Combat buttons and card clicks wait until the table opens."
+		return "State: Open Opening Table is live. Combat buttons and card clicks wait until the table opens."
 	if run_flow_state == RUN_FLOW_REWARD:
 		return "State: rewards are live. Pick the card that closes the shown deck gap."
 	if run_flow_state == RUN_FLOW_NEXT_ENCOUNTER:
@@ -3823,11 +3966,11 @@ func _get_move_affordance_text() -> String:
 
 func _get_card_affordance_text(session_state: Dictionary) -> String:
 	if run_flow_state == RUN_FLOW_START:
-		return "Cards wait: press Start Run before committing actions."
+		return "Cards wait: press Open Opening Table before committing actions."
 	if run_flow_state == RUN_FLOW_REWARD:
 		return "Cards wait: choose rewards before the next table."
 	if run_flow_state == RUN_FLOW_NEXT_ENCOUNTER:
-		return "Cards wait: deal the next table to draw the new opening hand."
+		return "Cards wait: open the next table to draw the new opening hand."
 	if run_flow_state == RUN_FLOW_RESULTS:
 		return "Cards wait: the run is over until New Run."
 	if bool(session_state.get("combat_over", false)):

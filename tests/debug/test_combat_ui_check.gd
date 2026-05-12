@@ -38,6 +38,9 @@ func _ready() -> void:
 	if start_run_button == null:
 		_fail("Expected StartRunButton for Phase 15 run start.")
 		return
+	if String(start_run_button.get("text")) != "Open Opening Table":
+		_fail("StartRunButton should clearly open the first table.")
+		return
 
 	var shell_export_button := combat_scene.find_child("ShellExportButton", true, false)
 	if shell_export_button == null:
@@ -48,16 +51,16 @@ func _ready() -> void:
 	if shell_inspect_run_button == null:
 		_fail("Expected ShellInspectRunButton for Phase 33 run inspection.")
 		return
-	if not bool(shell_inspect_run_button.get("visible")):
-		_fail("Inspect Run should be available from the run shell.")
+	if bool(shell_inspect_run_button.get("visible")):
+		_fail("Inspect Run should stay hidden on the first decision screen.")
 		return
 
 	var shell_view_history_button := combat_scene.find_child("ShellViewHistoryButton", true, false)
 	if shell_view_history_button == null:
 		_fail("Expected ShellViewHistoryButton for Phase 32 history management.")
 		return
-	if not bool(shell_view_history_button.get("visible")):
-		_fail("View History should be available from the run shell.")
+	if bool(shell_view_history_button.get("visible")):
+		_fail("View History should stay hidden on the first decision screen.")
 		return
 
 	var shell_export_history_csv_button := combat_scene.find_child("ShellExportHistoryCsvButton", true, false)
@@ -180,6 +183,9 @@ func _ready() -> void:
 	if run_path_preview == null:
 		_fail("Expected RunPathPreview for Phase 26 selected-table preview.")
 		return
+	if bool(run_path_buttons.get("visible")) or bool(run_path_preview.get("visible")):
+		_fail("Detailed map controls should stay hidden until the first table opens.")
+		return
 
 	var reward_prompt := combat_scene.find_child("RewardPrompt", true, false)
 	if reward_prompt == null:
@@ -225,8 +231,15 @@ func _ready() -> void:
 	if run_inspector_panel == null or run_inspector == null:
 		_fail("Expected RunInspectorPanel and RunInspector for Phase 33 run inspection.")
 		return
+	var run_inspector_filters := combat_scene.find_child("RunInspectorFilters", true, false)
+	if run_inspector_filters == null:
+		_fail("Expected RunInspectorFilters for Phase 34 deck filtering.")
+		return
 	if bool(run_inspector_panel.get("visible")):
 		_fail("RunInspectorPanel should stay hidden until Inspect Run is requested.")
+		return
+	if bool(run_inspector_filters.get("visible")):
+		_fail("RunInspectorFilters should stay hidden until Inspect Run is requested.")
 		return
 
 	var playtest_report := combat_scene.find_child("PlaytestReport", true, false)

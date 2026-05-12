@@ -25,17 +25,29 @@ func _ready() -> void:
 
 
 func _verify_initial_inspector(combat_scene: Node) -> void:
+	var start_button: Button = combat_scene.find_child("StartRunButton", true, false)
 	var inspect_button: Button = combat_scene.find_child("ShellInspectRunButton", true, false)
 	var inspector_panel: Node = combat_scene.find_child("RunInspectorPanel", true, false)
 	var inspector: Node = combat_scene.find_child("RunInspector", true, false)
-	if inspect_button == null or inspector_panel == null or inspector == null:
+	var filters: Node = combat_scene.find_child("RunInspectorFilters", true, false)
+	if start_button == null or inspect_button == null or inspector_panel == null or inspector == null or filters == null:
 		_fail("Expected Inspect Run controls and inspector panel.")
 		return
-	if not bool(inspect_button.get("visible")):
-		_fail("Inspect Run should be visible from the run shell.")
+	if bool(inspect_button.get("visible")):
+		_fail("Inspect Run should stay hidden on the first open-table screen.")
 		return
 	if bool(inspector_panel.get("visible")):
 		_fail("Run inspector should start hidden.")
+		return
+	if bool(filters.get("visible")):
+		_fail("Inspector filters should start hidden.")
+		return
+
+	start_button.emit_signal("pressed")
+	await get_tree().process_frame
+
+	if not bool(inspect_button.get("visible")):
+		_fail("Inspect Run should appear after the opening table starts.")
 		return
 
 	inspect_button.emit_signal("pressed")
@@ -45,13 +57,16 @@ func _verify_initial_inspector(combat_scene: Node) -> void:
 	if not bool(inspector_panel.get("visible")):
 		_fail("Inspect Run should reveal the inspector panel.")
 		return
+	if not bool(filters.get("visible")):
+		_fail("Inspect Run should reveal deck filter controls.")
+		return
 
 	var text := _get_text(inspector)
 	if not text.contains("Run/Deck Inspector") or not text.contains("Deck:") or not text.contains("Relics:"):
 		_fail("Inspector should combine deck and relic inspection.")
 		return
-	if not text.contains("Recent rewards:") or not text.contains("Recent history:"):
-		_fail("Inspector should include rewards and run history sections.")
+	if not text.contains("Deck cards (All):") or not text.contains("Recent rewards:") or not text.contains("Recent history:"):
+		_fail("Inspector should include filtered deck cards, rewards, and run history sections.")
 
 
 func _verify_rewards_relics_and_history(combat_scene: Node) -> void:

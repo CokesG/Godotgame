@@ -155,6 +155,7 @@ var relics_claimed: int = 0
 var damage_taken_total: int = 0
 var lowest_blood: int = PLAYER_MAX_HP
 var reward_history: Array[Dictionary] = []
+var last_reward_decision: Dictionary = {}
 
 
 func reset_run() -> void:
@@ -174,6 +175,7 @@ func reset_run() -> void:
 	damage_taken_total = 0
 	lowest_blood = PLAYER_MAX_HP
 	reward_history.clear()
+	last_reward_decision.clear()
 	log_requested.emit("Run reset: Gambler-Knight antes into a five-fight prototype path.")
 	_emit_state()
 
@@ -351,11 +353,12 @@ func claim_relic_reward(index: int) -> String:
 		return ""
 
 	var relic_path := pending_relic_reward_paths[index]
+	var history_entry := _build_relic_reward_history_entry(relic_path, index)
 	relic_paths.append(relic_path)
 	relics_claimed += 1
 	pending_relic_reward_paths.clear()
 	var relic: Resource = load(relic_path)
-	_record_reward_history(_build_relic_reward_history_entry(relic_path, index))
+	_record_reward_history(history_entry)
 	log_requested.emit("Claimed relic: %s." % _get_resource_name(relic))
 	_advance_if_rewards_clear()
 	_emit_state()
@@ -589,6 +592,7 @@ func get_run_inspection_report(history_limit: int = 5) -> Dictionary:
 		"deck": deck_report,
 		"relics": relic_report,
 		"recent_rewards": reward_rows,
+		"last_reward_decision": last_reward_decision.duplicate(true),
 		"pending_rewards": pending_rewards,
 		"history_rows": history_rows,
 		"run_results": results,
@@ -749,6 +753,7 @@ func get_state() -> Dictionary:
 		"pending_card_rewards": _describe_card_rewards(pending_card_reward_paths),
 		"pending_relic_rewards": _describe_paths(pending_relic_reward_paths),
 		"reward_history": reward_history.duplicate(true),
+		"last_reward_decision": last_reward_decision.duplicate(true),
 		"balance_snapshot": get_balance_snapshot(),
 		"run_results": get_run_results(),
 		"comparison_summary": get_export_comparison_summary(),
@@ -816,6 +821,8 @@ func _record_reward_history(entry: Dictionary) -> void:
 	if entry.is_empty():
 		return
 
+	_finalize_reward_history_entry(entry)
+	last_reward_decision = entry.duplicate(true)
 	reward_history.push_front(entry)
 	while reward_history.size() > 12:
 		reward_history.pop_back()
@@ -827,19 +834,24 @@ func _build_card_reward_history_entry(card_path: String, index: int) -> Dictiona
 		return {}
 
 	var reward_entry := _get_reward_tuning_entry_for_path(card_path)
+	var impact_text := String(reward_entry.get("impact_summary", "Deck impact unavailable."))
 	return {
 		"kind": "Card",
 		"name": _get_resource_name(card),
 		"path": card_path,
 		"choice": index + 1,
 		"table": last_completed_node_name,
+		"before_deck_size": deck_paths.size(),
+		"before_deck_snapshot": _build_deck_snapshot_summary(deck_paths),
+		"before_relic_count": relic_paths.size(),
 		"summary": "Card reward #%d from %s: %s" % [
 			index + 1,
 			last_completed_node_name,
 			_get_resource_name(card)
 		],
 		"reason": String(reward_entry.get("explanation", "Added to fill a run need.")),
-		"impact": String(reward_entry.get("impact_summary", "Deck impact unavailable."))
+		"impact": impact_text,
+		"deck_change": impact_text
 	}
 
 
@@ -854,13 +866,17 @@ func _build_relic_reward_history_entry(relic_path: String, index: int) -> Dictio
 		"path": relic_path,
 		"choice": index + 1,
 		"table": last_completed_node_name,
+		"before_deck_size": deck_paths.size(),
+		"before_deck_snapshot": _build_deck_snapshot_summary(deck_paths),
+		"before_relic_count": relic_paths.size(),
 		"summary": "Relic reward #%d from %s: %s" % [
 			index + 1,
 			last_completed_node_name,
 			_get_resource_name(relic)
 		],
 		"reason": String(relic.get("rules_text")),
-		"impact": _format_relic_modifiers(relic.get("modifiers"))
+		"impact": _format_relic_modifiers(relic.get("modifiers")),
+		"deck_change": "Deck size stayed at %d while relic count changes." % deck_paths.size()
 	}
 
 
@@ -881,10 +897,79 @@ func _build_skip_reward_history_entry() -> Dictionary:
 		"path": "",
 		"choice": 0,
 		"table": last_completed_node_name,
+		"before_deck_size": deck_paths.size(),
+		"before_deck_snapshot": _build_deck_snapshot_summary(deck_paths),
+		"before_relic_count": relic_paths.size(),
 		"summary": "Skipped rewards from %s." % last_completed_node_name,
 		"reason": "Kept the deck lean instead of adding %s." % _join_or_none(skipped_names),
-		"impact": "Deck size stayed at %d." % deck_paths.size()
+		"impact": "Deck size stayed at %d." % deck_paths.size(),
+		"deck_change": "Deck %d -> %d | No card added." % [deck_paths.size(), deck_paths.size()]
 	}
+
+
+func _finalize_reward_history_entry(entry: Dictionary) -> void:
+	if not entry.has("before_deck_size"):
+		entry["before_deck_size"] = deck_paths.size()
+	if not entry.has("before_deck_snapshot"):
+		entry["before_deck_snapshot"] = _build_deck_snapshot_summary(deck_paths)
+	if not entry.has("before_relic_count"):
+		entry["before_relic_count"] = relic_paths.size()
+
+	var before_deck_size := int(entry.get("before_deck_size", deck_paths.size()))
+	var before_relic_count := int(entry.get("before_relic_count", relic_paths.size()))
+	entry["after_deck_size"] = deck_paths.size()
+	entry["after_deck_snapshot"] = _build_deck_snapshot_summary(deck_paths)
+	entry["after_relic_count"] = relic_paths.size()
+
+	match String(entry.get("kind", "")):
+		"Relic":
+			entry["deck_change"] = "Deck %d -> %d | Relics %d -> %d" % [
+				before_deck_size,
+				deck_paths.size(),
+				before_relic_count,
+				relic_paths.size()
+			]
+		"Skip":
+			entry["deck_change"] = "Deck %d -> %d | No card added." % [
+				before_deck_size,
+				deck_paths.size()
+			]
+		_:
+			if String(entry.get("deck_change", "")).is_empty():
+				entry["deck_change"] = "Deck %d -> %d" % [before_deck_size, deck_paths.size()]
+
+	entry["decision_summary"] = "%s\nBefore: %s\nAfter: %s" % [
+		String(entry.get("deck_change", "Deck change unavailable.")),
+		String(entry.get("before_deck_snapshot", "")),
+		String(entry.get("after_deck_snapshot", ""))
+	]
+
+
+func _build_deck_snapshot_summary(paths: Array[String]) -> String:
+	var type_counts: Dictionary = {}
+	var tag_counts: Dictionary = {}
+	var total_cost := 0
+	var card_count := 0
+
+	for path in paths:
+		var card: Resource = load(path)
+		if card == null:
+			continue
+
+		card_count += 1
+		total_cost += int(card.get("cost"))
+		var type_label := _get_card_type_label(int(card.get("card_type")))
+		type_counts[type_label] = int(type_counts.get(type_label, 0)) + 1
+		for tag in _format_reward_tags(card.get("tags")):
+			tag_counts[tag] = int(tag_counts.get(tag, 0)) + 1
+
+	var average_cost: float = 0.0 if card_count == 0 else snappedf(float(total_cost) / float(card_count), 0.01)
+	return "%d cards | Avg cost %.2f | Types %s | Tags %s" % [
+		paths.size(),
+		average_cost,
+		_format_counts(type_counts),
+		_format_counts(tag_counts)
+	]
 
 
 func _get_reward_tuning_entry_for_path(card_path: String) -> Dictionary:

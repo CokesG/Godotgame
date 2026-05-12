@@ -28,15 +28,23 @@ func _ready() -> void:
 
 
 func _verify_view_history_flow(combat_scene: Node) -> void:
+	var start_button: Button = combat_scene.find_child("StartRunButton", true, false)
 	var view_history: Button = combat_scene.find_child("ShellViewHistoryButton", true, false)
 	var csv_button: Button = combat_scene.find_child("ShellExportHistoryCsvButton", true, false)
 	var archive_button: Button = combat_scene.find_child("ShellArchiveHistoryButton", true, false)
 	var history_label: Node = combat_scene.find_child("RunHistoryComparison", true, false)
-	if view_history == null or csv_button == null or archive_button == null or history_label == null:
+	if start_button == null or view_history == null or csv_button == null or archive_button == null or history_label == null:
 		_fail("Expected history management controls and label.")
 		return
+	if bool(view_history.get("visible")):
+		_fail("View History should not compete with the first open-table action.")
+		return
+
+	start_button.emit_signal("pressed")
+	await get_tree().process_frame
+
 	if not bool(view_history.get("visible")) or bool(csv_button.get("visible")) or bool(archive_button.get("visible")):
-		_fail("Only View History should be visible before history is requested.")
+		_fail("Only View History should be visible after the table opens and before history is requested.")
 		return
 
 	view_history.emit_signal("pressed")

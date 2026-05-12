@@ -88,7 +88,7 @@ func _verify_reward_to_next_table_flow(combat_scene: Node) -> void:
 	if not _get_text(detail).contains("Up next: Raised Stakes"):
 		_fail("Next Table detail should preview the upcoming encounter.")
 		return
-	if not _get_text(continuity).contains("Deal Next Table"):
+	if not _get_text(continuity).contains("Open Next Table"):
 		_fail("RunContinuity should explain how to continue the same run.")
 		return
 
@@ -96,7 +96,7 @@ func _verify_reward_to_next_table_flow(combat_scene: Node) -> void:
 	if next_encounter == null or not bool(next_encounter.get("visible")) or bool(next_encounter.get("disabled")):
 		_fail("NextEncounterButton should be visible and enabled on the Next Table screen.")
 		return
-	if String(continue_button.get("text")) != "Deal Next Table" or not bool(continue_button.get("disabled")):
+	if String(continue_button.get("text")) != "Open Next Table" or not bool(continue_button.get("disabled")):
 		_fail("ContinueButton should label but not duplicate the next-table shell action.")
 		return
 
@@ -104,7 +104,7 @@ func _verify_reward_to_next_table_flow(combat_scene: Node) -> void:
 	await get_tree().process_frame
 
 	if _get_text(title) != "Current Table":
-		_fail("Deal Next Table should return to live combat shell.")
+		_fail("Open Next Table should return to live combat shell.")
 		return
 	if not _get_text(detail).contains("Table 2/5 is live"):
 		_fail("The second table should be live after dealing the next table.")
