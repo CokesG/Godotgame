@@ -444,6 +444,7 @@ func _build_ui() -> void:
 	run_ceremony_label.bbcode_enabled = false
 	run_ceremony_label.fit_content = true
 	run_ceremony_label.scroll_active = false
+	run_ceremony_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	run_ceremony_label.custom_minimum_size = Vector2(0, 96)
 	run_ceremony_panel.add_child(run_ceremony_label)
 
@@ -3497,7 +3498,7 @@ func _refresh_run_ceremony(state: Dictionary) -> void:
 		return
 
 	run_ceremony_label.append_text("Latest: %s\n" % run_ceremony_history[0])
-	run_ceremony_label.append_text("Thread: %s" % _get_run_ceremony_thread_text())
+	run_ceremony_label.append_text("Thread:\n%s" % _get_run_ceremony_thread_text())
 
 
 func _should_show_run_ceremony(state: Dictionary) -> bool:
@@ -3552,8 +3553,8 @@ func _get_run_ceremony_thread_text() -> String:
 	var entries := PackedStringArray()
 	var limit: int = min(3, run_ceremony_history.size())
 	for index in range(limit):
-		entries.append(run_ceremony_history[index])
-	return " | ".join(entries)
+		entries.append("- %s" % run_ceremony_history[index])
+	return "\n".join(entries)
 
 
 func _record_run_ceremony(message: String, color: Color = FEEDBACK_PHASE_COLOR, pulse_node: Node = null) -> void:
@@ -5036,6 +5037,11 @@ func _refresh_enemy_target_cards(state: Dictionary) -> void:
 	for child in enemy_target_cards_row.get_children():
 		child.queue_free()
 	enemy_target_card_buttons.clear()
+
+	var show_live_targets := run_flow_state == RUN_FLOW_COMBAT and not bool(state.get("combat_over", false))
+	enemy_target_cards_row.visible = show_live_targets
+	if not show_live_targets:
+		return
 
 	var enemies: Array = state.get("enemies", [])
 	if enemies.is_empty():
