@@ -72,6 +72,7 @@ func _verify_live_opponent_and_target_hierarchy(combat_scene: Node) -> void:
 	var continue_button: Button = combat_scene.find_child("ContinueButton", true, false)
 	var opponent_panel: Node = combat_scene.find_child("OpponentCardsPanel", true, false)
 	var target_panel: Node = combat_scene.find_child("TargetControlsPanel", true, false)
+	var target_cards: Node = combat_scene.find_child("EnemyTargetCards", true, false)
 	var target_enemy: OptionButton = combat_scene.find_child("TargetEnemyOption", true, false)
 	var move_target: OptionButton = combat_scene.find_child("MovementCellOption", true, false)
 	var enemy_status: Node = combat_scene.find_child("EnemyStatus", true, false)
@@ -81,8 +82,8 @@ func _verify_live_opponent_and_target_hierarchy(combat_scene: Node) -> void:
 	if start_button == null or continue_button == null:
 		_fail("Expected start and smart action buttons.")
 		return
-	if opponent_panel == null or target_panel == null or target_enemy == null or move_target == null:
-		_fail("Expected opponent and target control panels.")
+	if opponent_panel == null or target_panel == null or target_cards == null or target_enemy == null or move_target == null:
+		_fail("Expected opponent, direct target cards, and target control nodes.")
 		return
 	if enemy_status == null or intent_icons == null or threat_summary == null or intent_preview == null:
 		_fail("Expected opponent readout labels.")
@@ -91,8 +92,14 @@ func _verify_live_opponent_and_target_hierarchy(combat_scene: Node) -> void:
 	start_button.emit_signal("pressed")
 	await get_tree().process_frame
 
-	if not bool(opponent_panel.get("visible")) or not bool(target_panel.get("visible")):
-		_fail("Opponent and target panels should be visible in live combat.")
+	if not bool(opponent_panel.get("visible")) or not bool(target_cards.get("visible")):
+		_fail("Opponent panel and direct target cards should be visible in compact live combat.")
+		return
+	if target_cards.get_child_count() <= 0:
+		_fail("Compact live combat should expose clickable enemy target cards.")
+		return
+	if bool(target_panel.get("visible")):
+		_fail("Detailed target dropdown controls should stay collapsed in compact live combat.")
 		return
 	if not _get_text(enemy_status).contains("Opponent Cards") or not _get_text(enemy_status).contains("[Enemy Card]"):
 		_fail("Enemy status should read as opponent cards.")

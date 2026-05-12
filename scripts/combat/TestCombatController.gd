@@ -916,6 +916,11 @@ func _build_ui() -> void:
 	skip_rewards_button.disabled = true
 	skip_rewards_button.pressed.connect(_on_skip_rewards_pressed)
 	run_layout.add_child(skip_rewards_button)
+	var reward_prompt_index := reward_prompt_label.get_index()
+	run_layout.move_child(card_rewards_row, reward_prompt_index + 1)
+	run_layout.move_child(relic_rewards_row, reward_prompt_index + 2)
+	run_layout.move_child(skip_rewards_button, reward_prompt_index + 3)
+	run_layout.move_child(reward_impact_label, reward_prompt_index + 4)
 
 	var primary_controls := HBoxContainer.new()
 	primary_controls.name = "PrimaryControls"
@@ -1473,6 +1478,7 @@ func _apply_phase35_default_layout(
 	var table_row: Node = body.find_child("TableRow", true, false)
 	if table_row is Control:
 		(table_row as Control).custom_minimum_size = Vector2(0, 258)
+		(table_row as Control).size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 	combat_grid.custom_minimum_size = Vector2(410, 258)
 	enemy_status_label.custom_minimum_size = Vector2(360, 92)
 	intent_icon_strip_label.custom_minimum_size = Vector2(360, 58)
@@ -3498,6 +3504,8 @@ func _refresh_run_ceremony(state: Dictionary) -> void:
 		return
 
 	run_ceremony_label.append_text("Latest: %s\n" % run_ceremony_history[0])
+	if run_flow_state == RUN_FLOW_COMBAT:
+		return
 	run_ceremony_label.append_text("Thread:\n%s" % _get_run_ceremony_thread_text())
 
 
@@ -4289,11 +4297,7 @@ func _refresh_targeting_options() -> void:
 			target.get("hp", 0),
 			target.get("max_hp", 0)
 		]
-		var sprite_value: Texture2D = _load_runtime_art_texture(String(target.get("sprite_path", "")))
-		if sprite_value != null:
-			target_enemy_option.add_icon_item(sprite_value, target_label)
-		else:
-			target_enemy_option.add_item(target_label)
+		target_enemy_option.add_item(target_label)
 		target_enemy_option.set_item_metadata(target_enemy_option.item_count - 1, target)
 		if StringName(target.get("id", &"")) == selected_enemy_id:
 			target_enemy_option.select(target_enemy_option.item_count - 1)
@@ -4765,6 +4769,35 @@ func _get_active_first_play_step_indices(session_state: Dictionary, _run_state: 
 
 func _sync_live_text_density() -> void:
 	var compact_live := run_flow_state == RUN_FLOW_COMBAT and not debug_controls_visible
+	var title_plate := find_child("TitlePlaque", true, false)
+	if title_plate is Control:
+		(title_plate as Control).visible = not compact_live
+	if run_header_label != null:
+		run_header_label.visible = not compact_live
+	var body := find_child("CombatBody", true, false)
+	if body is Control:
+		(body as Control).visible = run_flow_state == RUN_FLOW_START or run_flow_state == RUN_FLOW_COMBAT
+	var run_path_panel := find_child("RunPathPanel", true, false)
+	if run_path_panel is Control:
+		(run_path_panel as Control).visible = not compact_live and run_flow_state != RUN_FLOW_REWARD
+	var route_decision_shell := run_flow_state == RUN_FLOW_REWARD or run_flow_state == RUN_FLOW_NEXT_ENCOUNTER or run_flow_state == RUN_FLOW_RESULTS
+	for panel_name in ["TurnGuidance", "TurnStatusPanel", "TableRulePanel", "CombatFeedbackPanel"]:
+		var panel := find_child(panel_name, true, false)
+		if panel is Control:
+			(panel as Control).visible = not route_decision_shell
+	var target_controls_panel := find_child("TargetControlsPanel", true, false)
+	if target_controls_panel is Control:
+		(target_controls_panel as Control).visible = not compact_live
+	if run_shell_panel != null:
+		var show_shell_in_live := run_ceremony_panel != null and bool(run_ceremony_panel.get("visible"))
+		run_shell_panel.visible = not compact_live or show_shell_in_live
+	if run_shell_title_label != null:
+		run_shell_title_label.visible = not compact_live
+	var run_shell_actions := find_child("RunShellActions", true, false)
+	if run_shell_actions is Control:
+		(run_shell_actions as Control).visible = not compact_live
+	if action_cue_panel != null:
+		action_cue_panel.custom_minimum_size = Vector2(0, 62) if compact_live else Vector2(0, 72)
 	if live_state_chip_row != null:
 		live_state_chip_row.visible = true
 	if first_play_step_row != null:
@@ -4791,8 +4824,24 @@ func _sync_live_text_density() -> void:
 		table_rule_status_label.visible = not compact_live
 	if threat_summary_label != null:
 		threat_summary_label.visible = not compact_live
+	if intent_preview_label != null:
+		intent_preview_label.visible = not compact_live
+	if bluff_state_label != null:
+		bluff_state_label.visible = not compact_live
+	if enemy_call_option != null:
+		enemy_call_option.visible = not compact_live
+	if intent_call_option != null:
+		intent_call_option.visible = not compact_live
+	if lane_call_option != null:
+		lane_call_option.visible = not compact_live
+	if commit_first_card_button != null and commit_first_card_button.get_parent() is Control:
+		(commit_first_card_button.get_parent() as Control).visible = not compact_live
+	if reset_bluff_button != null:
+		reset_bluff_button.visible = not compact_live
 	if card_action_hint_label != null:
 		card_action_hint_label.visible = not compact_live
+	if card_target_preview_label != null:
+		card_target_preview_label.visible = not compact_live
 	if combat_feedback_label != null:
 		combat_feedback_label.visible = not compact_live
 
