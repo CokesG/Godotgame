@@ -154,6 +154,7 @@ var cards_claimed: int = 0
 var relics_claimed: int = 0
 var damage_taken_total: int = 0
 var lowest_blood: int = PLAYER_MAX_HP
+var reward_history: Array[Dictionary] = []
 
 
 func reset_run() -> void:
@@ -172,6 +173,7 @@ func reset_run() -> void:
 	relics_claimed = 0
 	damage_taken_total = 0
 	lowest_blood = PLAYER_MAX_HP
+	reward_history.clear()
 	log_requested.emit("Run reset: Gambler-Knight antes into a five-fight prototype path.")
 	_emit_state()
 
@@ -331,10 +333,12 @@ func claim_card_reward(index: int) -> String:
 		return ""
 
 	var card_path := pending_card_reward_paths[index]
+	var history_entry := _build_card_reward_history_entry(card_path, index)
 	deck_paths.append(card_path)
 	cards_claimed += 1
 	pending_card_reward_paths.clear()
 	var card: Resource = load(card_path)
+	_record_reward_history(history_entry)
 	log_requested.emit("Added %s to the run deck." % _get_resource_name(card))
 	_advance_if_rewards_clear()
 	_emit_state()
@@ -351,6 +355,7 @@ func claim_relic_reward(index: int) -> String:
 	relics_claimed += 1
 	pending_relic_reward_paths.clear()
 	var relic: Resource = load(relic_path)
+	_record_reward_history(_build_relic_reward_history_entry(relic_path, index))
 	log_requested.emit("Claimed relic: %s." % _get_resource_name(relic))
 	_advance_if_rewards_clear()
 	_emit_state()
@@ -361,6 +366,7 @@ func skip_rewards() -> void:
 	if pending_card_reward_paths.is_empty() and pending_relic_reward_paths.is_empty():
 		log_requested.emit("No pending rewards to skip.")
 	else:
+		_record_reward_history(_build_skip_reward_history_entry())
 		log_requested.emit("Skipped pending rewards.")
 	pending_card_reward_paths.clear()
 	pending_relic_reward_paths.clear()
@@ -566,6 +572,35 @@ func get_run_history_comparison(limit: int = 6) -> Dictionary:
 	}
 
 
+func get_run_inspection_report(history_limit: int = 5) -> Dictionary:
+	var history_rows := get_recent_run_history(history_limit)
+	var deck_report := _build_deck_inspection_report()
+	var relic_report := _build_relic_inspection_report()
+	var reward_rows := reward_history.duplicate(true)
+	var pending_rewards := get_reward_tuning_report()
+	var results := get_run_results()
+
+	return {
+		"title": "Run/Deck Inspector",
+		"current_table": String(get_current_node().get("name", "Complete")),
+		"run_outcome": run_outcome,
+		"blood": player_current_hp,
+		"max_blood": PLAYER_MAX_HP,
+		"deck": deck_report,
+		"relics": relic_report,
+		"recent_rewards": reward_rows,
+		"pending_rewards": pending_rewards,
+		"history_rows": history_rows,
+		"run_results": results,
+		"summary": "Deck %d | Relics %d | Rewards logged %d | History rows %d" % [
+			int(deck_report.get("size", deck_paths.size())),
+			int(relic_report.get("count", relic_paths.size())),
+			reward_rows.size(),
+			history_rows.size()
+		]
+	}
+
+
 func get_recent_run_history(limit: int = 6) -> Array[Dictionary]:
 	var records := _collect_run_history_records()
 	var rows: Array[Dictionary] = []
@@ -713,6 +748,7 @@ func get_state() -> Dictionary:
 		"relic_names": _get_relic_names(),
 		"pending_card_rewards": _describe_card_rewards(pending_card_reward_paths),
 		"pending_relic_rewards": _describe_paths(pending_relic_reward_paths),
+		"reward_history": reward_history.duplicate(true),
 		"balance_snapshot": get_balance_snapshot(),
 		"run_results": get_run_results(),
 		"comparison_summary": get_export_comparison_summary(),
@@ -774,6 +810,88 @@ func _build_relic_rewards() -> Array[String]:
 		if not relic_paths.has(path):
 			chosen.append(path)
 	return chosen
+
+
+func _record_reward_history(entry: Dictionary) -> void:
+	if entry.is_empty():
+		return
+
+	reward_history.push_front(entry)
+	while reward_history.size() > 12:
+		reward_history.pop_back()
+
+
+func _build_card_reward_history_entry(card_path: String, index: int) -> Dictionary:
+	var card: Resource = load(card_path)
+	if card == null:
+		return {}
+
+	var reward_entry := _get_reward_tuning_entry_for_path(card_path)
+	return {
+		"kind": "Card",
+		"name": _get_resource_name(card),
+		"path": card_path,
+		"choice": index + 1,
+		"table": last_completed_node_name,
+		"summary": "Card reward #%d from %s: %s" % [
+			index + 1,
+			last_completed_node_name,
+			_get_resource_name(card)
+		],
+		"reason": String(reward_entry.get("explanation", "Added to fill a run need.")),
+		"impact": String(reward_entry.get("impact_summary", "Deck impact unavailable."))
+	}
+
+
+func _build_relic_reward_history_entry(relic_path: String, index: int) -> Dictionary:
+	var relic: Resource = load(relic_path)
+	if relic == null:
+		return {}
+
+	return {
+		"kind": "Relic",
+		"name": _get_resource_name(relic),
+		"path": relic_path,
+		"choice": index + 1,
+		"table": last_completed_node_name,
+		"summary": "Relic reward #%d from %s: %s" % [
+			index + 1,
+			last_completed_node_name,
+			_get_resource_name(relic)
+		],
+		"reason": String(relic.get("rules_text")),
+		"impact": _format_relic_modifiers(relic.get("modifiers"))
+	}
+
+
+func _build_skip_reward_history_entry() -> Dictionary:
+	var skipped_names: Array[String] = []
+	for path in pending_card_reward_paths:
+		var card: Resource = load(path)
+		if card != null:
+			skipped_names.append(_get_resource_name(card))
+	for path in pending_relic_reward_paths:
+		var relic: Resource = load(path)
+		if relic != null:
+			skipped_names.append(_get_resource_name(relic))
+
+	return {
+		"kind": "Skip",
+		"name": "Skipped Rewards",
+		"path": "",
+		"choice": 0,
+		"table": last_completed_node_name,
+		"summary": "Skipped rewards from %s." % last_completed_node_name,
+		"reason": "Kept the deck lean instead of adding %s." % _join_or_none(skipped_names),
+		"impact": "Deck size stayed at %d." % deck_paths.size()
+	}
+
+
+func _get_reward_tuning_entry_for_path(card_path: String) -> Dictionary:
+	for entry in get_reward_tuning_report():
+		if String(entry.get("path", "")) == card_path:
+			return entry
+	return {}
 
 
 func _advance_if_rewards_clear() -> void:
@@ -1009,6 +1127,89 @@ func _get_archive_target_name(file_name: String) -> String:
 	]
 
 
+func _build_deck_inspection_report() -> Dictionary:
+	var simulator = BALANCE_SIMULATOR_SCRIPT.new()
+	var profile: Dictionary = simulator.call("build_deck_profile", deck_paths, get_relic_modifiers())
+	var cards: Array[Dictionary] = []
+	var type_counts: Dictionary = {}
+	var tag_counts: Dictionary = {}
+	var total_cost := 0
+
+	for path in deck_paths:
+		var card: Resource = load(path)
+		if card == null:
+			continue
+
+		var type_label := _get_card_type_label(int(card.get("card_type")))
+		var tags := _format_reward_tags(card.get("tags"))
+		type_counts[type_label] = int(type_counts.get(type_label, 0)) + 1
+		for tag in tags:
+			tag_counts[tag] = int(tag_counts.get(tag, 0)) + 1
+		total_cost += int(card.get("cost"))
+		cards.append({
+			"name": _get_resource_name(card),
+			"path": path,
+			"type": type_label,
+			"cost": int(card.get("cost")),
+			"tags": tags,
+			"text": String(card.get("rules_text"))
+		})
+
+	var average_cost: float = 0.0 if cards.is_empty() else snappedf(float(total_cost) / float(cards.size()), 0.01)
+	return {
+		"size": deck_paths.size(),
+		"average_cost": average_cost,
+		"type_counts": type_counts,
+		"type_summary": _format_counts(type_counts),
+		"tag_counts": tag_counts,
+		"tag_summary": _format_counts(tag_counts),
+		"profile": profile,
+		"gap_summary": _build_deck_gap_summary(profile),
+		"cards": cards
+	}
+
+
+func _build_relic_inspection_report() -> Dictionary:
+	var rows: Array[Dictionary] = []
+	for path in relic_paths:
+		var relic: Resource = load(path)
+		if relic == null:
+			continue
+
+		rows.append({
+			"name": _get_resource_name(relic),
+			"path": path,
+			"text": String(relic.get("rules_text")),
+			"tags": _format_reward_tags(relic.get("tags")),
+			"modifiers": relic.get("modifiers"),
+			"modifier_summary": _format_relic_modifiers(relic.get("modifiers"))
+		})
+
+	return {
+		"count": rows.size(),
+		"names": _get_relic_names(),
+		"summary": "No relics claimed yet." if rows.is_empty() else _join_or_none(_get_relic_names()),
+		"rows": rows
+	}
+
+
+func _build_deck_gap_summary(profile: Dictionary) -> String:
+	var gaps: Array[String] = []
+	if int(profile.get("attack_cards", 0)) < 4:
+		gaps.append("needs more attacks")
+	if int(profile.get("defense_cards", 0)) < 2:
+		gaps.append("needs more Guard")
+	if int(profile.get("movement_cards", 0)) < 2:
+		gaps.append("needs movement")
+	if int(profile.get("read_cards", 0)) < 1:
+		gaps.append("needs reads")
+	if int(profile.get("trap_cards", 0)) < 1:
+		gaps.append("could use trap control")
+	if gaps.is_empty():
+		return "Core deck lanes are covered."
+	return ", ".join(gaps).capitalize()
+
+
 func _read_run_history_row(file_name: String, path: String) -> Dictionary:
 	var text := FileAccess.get_file_as_string(path)
 	if text.is_empty():
@@ -1147,6 +1348,55 @@ func _get_dictionary_value(value: Variant) -> Dictionary:
 	if typeof(value) == TYPE_DICTIONARY:
 		return Dictionary(value)
 	return {}
+
+
+func _get_card_type_label(card_type: int) -> String:
+	var labels := [
+		"Attack",
+		"Defense",
+		"Movement",
+		"Bluff",
+		"Read",
+		"Trap",
+		"Ritual"
+	]
+	if card_type >= 0 and card_type < labels.size():
+		return labels[card_type]
+	return "Card"
+
+
+func _format_counts(counts: Dictionary) -> String:
+	if counts.is_empty():
+		return "None"
+
+	var parts := PackedStringArray()
+	var keys := counts.keys()
+	keys.sort()
+	for key in keys:
+		parts.append("%s %d" % [String(key), int(counts[key])])
+	return " | ".join(parts)
+
+
+func _format_relic_modifiers(modifiers_value: Variant) -> String:
+	if typeof(modifiers_value) != TYPE_DICTIONARY:
+		return "No modifiers"
+
+	var modifiers: Dictionary = Dictionary(modifiers_value)
+	if modifiers.is_empty():
+		return "No modifiers"
+
+	var parts := PackedStringArray()
+	var keys := modifiers.keys()
+	keys.sort()
+	for key in keys:
+		parts.append("%s %s" % [String(key), _format_signed_int(int(modifiers[key]))])
+	return " | ".join(parts)
+
+
+func _join_or_none(values: Array[String]) -> String:
+	if values.is_empty():
+		return "None"
+	return ", ".join(values)
 
 
 func _get_run_history_csv_columns() -> Array[String]:

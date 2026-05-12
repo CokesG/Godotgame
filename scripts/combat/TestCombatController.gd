@@ -141,6 +141,7 @@ var start_run_button: Button
 var next_encounter_button: Button
 var shell_new_run_button: Button
 var shell_export_button: Button
+var shell_inspect_run_button: Button
 var shell_view_history_button: Button
 var shell_export_history_csv_button: Button
 var shell_archive_history_button: Button
@@ -158,6 +159,8 @@ var balance_report_label: RichTextLabel
 var run_results_label: RichTextLabel
 var run_export_readback_label: RichTextLabel
 var run_history_label: RichTextLabel
+var run_inspector_panel: PanelContainer
+var run_inspector_label: RichTextLabel
 var playtest_report_label: RichTextLabel
 var reward_prompt_label: RichTextLabel
 var reward_impact_label: RichTextLabel
@@ -224,6 +227,8 @@ var last_run_history_rows: Array[Dictionary] = []
 var last_history_csv_path: String = ""
 var last_history_archive_report: Dictionary = {}
 var run_history_requested: bool = false
+var last_run_inspection_report: Dictionary = {}
+var run_inspector_requested: bool = false
 
 
 func _ready() -> void:
@@ -451,6 +456,12 @@ func _build_ui() -> void:
 	shell_export_button.pressed.connect(_on_export_summary_pressed)
 	run_shell_actions.add_child(shell_export_button)
 
+	shell_inspect_run_button = Button.new()
+	shell_inspect_run_button.name = "ShellInspectRunButton"
+	shell_inspect_run_button.text = "Inspect Run"
+	shell_inspect_run_button.pressed.connect(_on_inspect_run_pressed)
+	run_shell_actions.add_child(shell_inspect_run_button)
+
 	shell_view_history_button = Button.new()
 	shell_view_history_button.name = "ShellViewHistoryButton"
 	shell_view_history_button.text = "View History"
@@ -627,6 +638,20 @@ func _build_ui() -> void:
 	run_history_label.visible = false
 	run_history_label.custom_minimum_size = Vector2(0, 148)
 	run_layout.add_child(run_history_label)
+
+	run_inspector_panel = PanelContainer.new()
+	run_inspector_panel.name = "RunInspectorPanel"
+	run_inspector_panel.visible = false
+	run_inspector_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	run_layout.add_child(run_inspector_panel)
+
+	run_inspector_label = RichTextLabel.new()
+	run_inspector_label.name = "RunInspector"
+	run_inspector_label.bbcode_enabled = false
+	run_inspector_label.fit_content = true
+	run_inspector_label.scroll_active = false
+	run_inspector_label.custom_minimum_size = Vector2(0, 220)
+	run_inspector_panel.add_child(run_inspector_label)
 
 	playtest_report_label = RichTextLabel.new()
 	playtest_report_label.name = "PlaytestReport"
@@ -1399,6 +1424,8 @@ func _reset_run_slice() -> void:
 	last_history_csv_path = ""
 	last_history_archive_report.clear()
 	run_history_requested = false
+	last_run_inspection_report.clear()
+	run_inspector_requested = false
 	run_manager.call("reset_run")
 	_reset_playable_combat()
 
@@ -1673,6 +1700,14 @@ func _on_run_playtests_pressed() -> void:
 	_append_log("Playtest sims: %s" % batch.get("summary", "No summary."))
 
 
+func _on_inspect_run_pressed() -> void:
+	run_inspector_requested = true
+	_refresh_run_inspector_label(true)
+	_append_log("Run inspector loaded.")
+	_push_feedback("Inspector: deck, relics, rewards, and history refreshed.", FEEDBACK_REVEAL_COLOR, run_inspector_panel)
+	_refresh_action_controls()
+
+
 func _on_view_history_pressed() -> void:
 	run_history_requested = true
 	_refresh_run_history_label(true)
@@ -1875,6 +1910,109 @@ func _refresh_run_history_label(force_show: bool = false) -> void:
 		var delta_label := String(row.get("delta_label", ""))
 		if not delta_label.is_empty():
 			run_history_label.append_text("   Change: %s\n" % delta_label)
+
+
+func _refresh_run_inspector_label(force_show: bool = false) -> void:
+	if run_inspector_panel == null or run_inspector_label == null:
+		return
+
+	if force_show:
+		run_inspector_requested = true
+	run_inspector_label.clear()
+	if run_manager == null:
+		run_inspector_panel.visible = false
+		return
+	if not force_show and not run_inspector_requested:
+		run_inspector_panel.visible = false
+		return
+
+	last_run_inspection_report = run_manager.call("get_run_inspection_report", 5)
+	run_inspector_panel.visible = true
+	run_inspector_label.append_text("Run/Deck Inspector\n")
+	run_inspector_label.append_text("%s | Table: %s | Blood %d/%d\n" % [
+		last_run_inspection_report.get("summary", "Inspection ready."),
+		last_run_inspection_report.get("current_table", "Table"),
+		last_run_inspection_report.get("blood", 0),
+		last_run_inspection_report.get("max_blood", 0)
+	])
+
+	var deck: Dictionary = last_run_inspection_report.get("deck", {})
+	var deck_profile: Dictionary = deck.get("profile", {})
+	run_inspector_label.append_text("Deck: %d cards | Avg cost %.2f | %s\n" % [
+		deck.get("size", 0),
+		deck.get("average_cost", 0.0),
+		deck.get("type_summary", "None")
+	])
+	run_inspector_label.append_text("Deck gaps: %s\n" % deck.get("gap_summary", "No deck notes."))
+	run_inspector_label.append_text("Tuning: %.1f damage/turn | %.1f guard/turn | %.1f control | Tags: %s\n" % [
+		deck_profile.get("projected_damage_per_turn", 0.0),
+		deck_profile.get("projected_guard_per_turn", 0.0),
+		deck_profile.get("control_score", 0.0),
+		deck.get("tag_summary", "None")
+	])
+
+	var relics: Dictionary = last_run_inspection_report.get("relics", {})
+	run_inspector_label.append_text("Relics: %s\n" % relics.get("summary", "No relics claimed yet."))
+	_append_run_inspector_reward_rows(last_run_inspection_report.get("recent_rewards", []))
+	_append_run_inspector_pending_rows(last_run_inspection_report.get("pending_rewards", []))
+	_append_run_inspector_history_rows(last_run_inspection_report.get("history_rows", []))
+
+
+func _append_run_inspector_reward_rows(reward_rows: Array) -> void:
+	run_inspector_label.append_text("Recent rewards:\n")
+	if reward_rows.is_empty():
+		run_inspector_label.append_text("- No reward decisions logged this run yet.\n")
+		return
+
+	var limit: int = min(4, reward_rows.size())
+	for index in range(limit):
+		if typeof(reward_rows[index]) != TYPE_DICTIONARY:
+			continue
+		var row: Dictionary = Dictionary(reward_rows[index])
+		run_inspector_label.append_text("- %s | %s\n  %s\n" % [
+			row.get("kind", "Reward"),
+			row.get("summary", row.get("name", "Reward")),
+			row.get("impact", "")
+		])
+
+
+func _append_run_inspector_pending_rows(pending_rows: Array) -> void:
+	run_inspector_label.append_text("Pending/recommended rewards:\n")
+	if pending_rows.is_empty():
+		run_inspector_label.append_text("- No card reward offer is pending.\n")
+		return
+
+	var limit: int = min(2, pending_rows.size())
+	for index in range(limit):
+		if typeof(pending_rows[index]) != TYPE_DICTIONARY:
+			continue
+		var row: Dictionary = Dictionary(pending_rows[index])
+		run_inspector_label.append_text("- #%d %s | %s\n  %s\n" % [
+			row.get("rank", index + 1),
+			row.get("name", "Card"),
+			row.get("explanation", "Reward option."),
+			row.get("impact_summary", "Deck impact unavailable.")
+		])
+
+
+func _append_run_inspector_history_rows(history_rows: Array) -> void:
+	run_inspector_label.append_text("Recent history:\n")
+	if history_rows.is_empty():
+		run_inspector_label.append_text("- No exported summaries in the active history folder.\n")
+		return
+
+	var limit: int = min(3, history_rows.size())
+	for index in range(limit):
+		if typeof(history_rows[index]) != TYPE_DICTIONARY:
+			continue
+		var row: Dictionary = Dictionary(history_rows[index])
+		run_inspector_label.append_text("- %s | Tables %d/%d | Blood %d | %s\n" % [
+			row.get("outcome", "unknown"),
+			row.get("cleared_tables", 0),
+			row.get("total_tables", 0),
+			row.get("blood", 0),
+			row.get("delta_label", "No delta")
+		])
 
 
 func _get_export_route_readback_text(route_summary: Array) -> String:
@@ -2193,6 +2331,7 @@ func _refresh_run_panel(state: Dictionary) -> void:
 
 	_refresh_export_readback_label()
 	_refresh_run_history_label(false)
+	_refresh_run_inspector_label(false)
 
 	var card_rewards: Array = state.get("pending_card_rewards", [])
 	var relic_rewards: Array = state.get("pending_relic_rewards", [])
@@ -2333,6 +2472,9 @@ func _refresh_run_shell(state: Dictionary) -> void:
 	if shell_export_button != null:
 		shell_export_button.visible = run_flow_state == RUN_FLOW_RESULTS
 		shell_export_button.disabled = run_flow_state != RUN_FLOW_RESULTS
+	if shell_inspect_run_button != null:
+		shell_inspect_run_button.visible = true
+		shell_inspect_run_button.disabled = run_manager == null
 	if shell_view_history_button != null:
 		shell_view_history_button.visible = true
 		shell_view_history_button.disabled = run_manager == null

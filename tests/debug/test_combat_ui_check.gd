@@ -44,6 +44,14 @@ func _ready() -> void:
 		_fail("Expected ShellExportButton for Phase 15 run results export.")
 		return
 
+	var shell_inspect_run_button := combat_scene.find_child("ShellInspectRunButton", true, false)
+	if shell_inspect_run_button == null:
+		_fail("Expected ShellInspectRunButton for Phase 33 run inspection.")
+		return
+	if not bool(shell_inspect_run_button.get("visible")):
+		_fail("Inspect Run should be available from the run shell.")
+		return
+
 	var shell_view_history_button := combat_scene.find_child("ShellViewHistoryButton", true, false)
 	if shell_view_history_button == null:
 		_fail("Expected ShellViewHistoryButton for Phase 32 history management.")
@@ -210,6 +218,15 @@ func _ready() -> void:
 		return
 	if bool(run_history.get("visible")):
 		_fail("RunHistoryComparison should stay hidden until export history is requested.")
+		return
+
+	var run_inspector_panel := combat_scene.find_child("RunInspectorPanel", true, false)
+	var run_inspector := combat_scene.find_child("RunInspector", true, false)
+	if run_inspector_panel == null or run_inspector == null:
+		_fail("Expected RunInspectorPanel and RunInspector for Phase 33 run inspection.")
+		return
+	if bool(run_inspector_panel.get("visible")):
+		_fail("RunInspectorPanel should stay hidden until Inspect Run is requested.")
 		return
 
 	var playtest_report := combat_scene.find_child("PlaytestReport", true, false)
