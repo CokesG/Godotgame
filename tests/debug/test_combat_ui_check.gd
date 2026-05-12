@@ -180,6 +180,14 @@ func _ready() -> void:
 		_fail("RunExportReadback should stay hidden until an export is read back.")
 		return
 
+	var run_history := combat_scene.find_child("RunHistoryComparison", true, false)
+	if run_history == null:
+		_fail("Expected RunHistoryComparison for Phase 31 exported run history.")
+		return
+	if bool(run_history.get("visible")):
+		_fail("RunHistoryComparison should stay hidden until export history is requested.")
+		return
+
 	var playtest_report := combat_scene.find_child("PlaytestReport", true, false)
 	if playtest_report == null:
 		_fail("Expected PlaytestReport for Phase 13 run comparisons.")

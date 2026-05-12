@@ -7,6 +7,8 @@ signal state_changed(state: Dictionary)
 const BALANCE_SIMULATOR_SCRIPT := preload("res://scripts/run/RunBalanceSimulator.gd")
 const PLAYER_MAX_HP := 30
 const VICTORY_HEAL := 3
+const RUN_SUMMARY_PREFIX := "dead_mans_ante_run_summary_"
+const RUN_SUMMARY_SUFFIX := ".json"
 const STARTER_DECK_PATHS := [
 	"res://resources/cards/quick_slash.tres",
 	"res://resources/cards/low_stab.tres",
@@ -538,6 +540,62 @@ func get_export_route_summary() -> Array[Dictionary]:
 	return summary
 
 
+func get_run_history_comparison(limit: int = 6) -> Dictionary:
+	var rows := get_recent_run_history(limit)
+	var headline := "No exported run summaries found yet."
+	var has_outcome_shift := false
+	if not rows.is_empty():
+		var latest: Dictionary = rows[0]
+		headline = "Latest %s | %s" % [
+			latest.get("result_key", "unkeyed_run"),
+			latest.get("summary_line", "summary unavailable")
+		]
+		for row in rows:
+			if bool(row.get("outcome_shift", false)):
+				has_outcome_shift = true
+				break
+
+	return {
+		"count": rows.size(),
+		"rows": rows,
+		"headline": headline,
+		"has_outcome_shift": has_outcome_shift
+	}
+
+
+func get_recent_run_history(limit: int = 6) -> Array[Dictionary]:
+	var dir := DirAccess.open("user://")
+	if dir == null:
+		return []
+
+	var records: Array[Dictionary] = []
+	dir.list_dir_begin()
+	var file_name := dir.get_next()
+	while not file_name.is_empty():
+		if not dir.current_is_dir() and _is_run_summary_file(file_name):
+			var path := "user://%s" % file_name
+			var row := _read_run_history_row(file_name, path)
+			if not row.is_empty():
+				records.append(row)
+		file_name = dir.get_next()
+	dir.list_dir_end()
+
+	records.sort_custom(func(left: Dictionary, right: Dictionary) -> bool:
+		var left_time := int(left.get("sort_time", 0))
+		var right_time := int(right.get("sort_time", 0))
+		if left_time == right_time:
+			return String(left.get("file_name", "")) > String(right.get("file_name", ""))
+		return left_time > right_time
+	)
+
+	var rows: Array[Dictionary] = []
+	var bounded_limit: int = max(1, limit)
+	for index in range(min(bounded_limit, records.size())):
+		rows.append(records[index].duplicate(true))
+	_apply_history_deltas(rows)
+	return rows
+
+
 func get_playtest_batch() -> Dictionary:
 	var simulator = BALANCE_SIMULATOR_SCRIPT.new()
 	return simulator.call("simulate_playtest_batch", RUN_NODES, deck_paths, RELIC_POOL, get_relic_modifiers(), player_current_hp, 5)
@@ -846,6 +904,156 @@ func _build_export_result_key(outcome: String, cleared: int, total: int, blood: 
 		damage,
 		deck_size
 	]
+
+
+func _is_run_summary_file(file_name: String) -> bool:
+	return file_name.begins_with(RUN_SUMMARY_PREFIX) and file_name.ends_with(RUN_SUMMARY_SUFFIX)
+
+
+func _read_run_history_row(file_name: String, path: String) -> Dictionary:
+	var text := FileAccess.get_file_as_string(path)
+	if text.is_empty():
+		return {}
+
+	var parsed = JSON.parse_string(text)
+	if typeof(parsed) != TYPE_DICTIONARY:
+		return {}
+
+	var data: Dictionary = Dictionary(parsed)
+	var comparison := _get_dictionary_value(data.get("comparison_summary", {}))
+	var columns := _get_dictionary_value(comparison.get("compare_columns", {}))
+	var results := _get_dictionary_value(data.get("run_results", {}))
+	if columns.is_empty():
+		columns = _build_compare_columns_from_results(results)
+
+	var route_summary: Array = []
+	var route_value: Variant = data.get("route_summary", [])
+	if typeof(route_value) == TYPE_ARRAY:
+		route_summary = Array(route_value)
+
+	var exported_at: int = int(data.get("exported_at_unix", FileAccess.get_modified_time(path)))
+	var result_key: String = String(comparison.get("result_key", _build_export_result_key(
+		String(columns.get("outcome", results.get("outcome", "unknown"))),
+		int(columns.get("cleared_tables", results.get("combats_won", 0))),
+		int(columns.get("total_tables", results.get("total_combats", RUN_NODES.size()))),
+		int(columns.get("blood", results.get("blood", 0))),
+		int(columns.get("lowest_blood", results.get("lowest_blood", 0))),
+		int(columns.get("damage_taken_total", results.get("damage_taken_total", 0))),
+		int(columns.get("deck_size", results.get("deck_size", 0)))
+	)))
+	var summary_line: String = String(comparison.get("summary_line", _build_history_summary_line(columns)))
+
+	return {
+		"file_name": file_name,
+		"path": path,
+		"global_path": ProjectSettings.globalize_path(path),
+		"modified_time": int(FileAccess.get_modified_time(path)),
+		"exported_at_unix": exported_at,
+		"sort_time": max(exported_at, int(FileAccess.get_modified_time(path))),
+		"result_key": result_key,
+		"summary_line": summary_line,
+		"outcome": String(columns.get("outcome", results.get("outcome", "unknown"))),
+		"grade": String(columns.get("grade", results.get("grade", "Table Stakes"))),
+		"cleared_tables": int(columns.get("cleared_tables", results.get("combats_won", 0))),
+		"total_tables": int(columns.get("total_tables", results.get("total_combats", RUN_NODES.size()))),
+		"blood": int(columns.get("blood", results.get("blood", 0))),
+		"max_blood": int(columns.get("max_blood", results.get("max_blood", PLAYER_MAX_HP))),
+		"lowest_blood": int(columns.get("lowest_blood", results.get("lowest_blood", 0))),
+		"damage_taken_total": int(columns.get("damage_taken_total", results.get("damage_taken_total", 0))),
+		"deck_size": int(columns.get("deck_size", results.get("deck_size", 0))),
+		"cards_claimed": int(columns.get("cards_claimed", results.get("cards_claimed", 0))),
+		"relics_claimed": int(columns.get("relics_claimed", results.get("relics_claimed", 0))),
+		"route_text": _get_history_route_text(route_summary),
+		"delta_label": "",
+		"outcome_shift": false
+	}
+
+
+func _apply_history_deltas(rows: Array[Dictionary]) -> void:
+	for index in range(rows.size()):
+		var row: Dictionary = rows[index]
+		if index + 1 >= rows.size():
+			row["delta_label"] = "First loaded export in this comparison window."
+			row["outcome_shift"] = false
+		else:
+			var previous: Dictionary = rows[index + 1]
+			row["delta_label"] = _build_history_delta_label(row, previous)
+			row["outcome_shift"] = String(row.get("outcome", "")) != String(previous.get("outcome", ""))
+		rows[index] = row
+
+
+func _build_history_delta_label(current: Dictionary, previous: Dictionary) -> String:
+	var parts := PackedStringArray()
+	var current_outcome := String(current.get("outcome", "unknown"))
+	var previous_outcome := String(previous.get("outcome", "unknown"))
+	if current_outcome != previous_outcome:
+		parts.append("Outcome shift %s -> %s" % [previous_outcome, current_outcome])
+	parts.append("Clears %s" % _format_signed_int(int(current.get("cleared_tables", 0)) - int(previous.get("cleared_tables", 0))))
+	parts.append("Blood %s" % _format_signed_int(int(current.get("blood", 0)) - int(previous.get("blood", 0))))
+	parts.append("Low %s" % _format_signed_int(int(current.get("lowest_blood", 0)) - int(previous.get("lowest_blood", 0))))
+	parts.append("Damage %s" % _format_signed_int(int(current.get("damage_taken_total", 0)) - int(previous.get("damage_taken_total", 0))))
+	parts.append("Deck %s" % _format_signed_int(int(current.get("deck_size", 0)) - int(previous.get("deck_size", 0))))
+	return " | ".join(parts)
+
+
+func _build_compare_columns_from_results(results: Dictionary) -> Dictionary:
+	return {
+		"outcome": String(results.get("outcome", "unknown")),
+		"grade": String(results.get("grade", "Table Stakes")),
+		"cleared_tables": int(results.get("combats_won", 0)),
+		"total_tables": int(results.get("total_combats", RUN_NODES.size())),
+		"blood": int(results.get("blood", 0)),
+		"max_blood": int(results.get("max_blood", PLAYER_MAX_HP)),
+		"lowest_blood": int(results.get("lowest_blood", 0)),
+		"damage_taken_total": int(results.get("damage_taken_total", 0)),
+		"deck_size": int(results.get("deck_size", 0)),
+		"cards_claimed": int(results.get("cards_claimed", 0)),
+		"relics_claimed": int(results.get("relics_claimed", 0))
+	}
+
+
+func _build_history_summary_line(columns: Dictionary) -> String:
+	return "%s | %s | Tables %d/%d | Blood %d/%d | Low %d | Damage %d | Deck %d" % [
+		String(columns.get("outcome", "Unknown")).capitalize(),
+		columns.get("grade", "Table Stakes"),
+		columns.get("cleared_tables", 0),
+		columns.get("total_tables", RUN_NODES.size()),
+		columns.get("blood", 0),
+		columns.get("max_blood", PLAYER_MAX_HP),
+		columns.get("lowest_blood", 0),
+		columns.get("damage_taken_total", 0),
+		columns.get("deck_size", 0)
+	]
+
+
+func _get_history_route_text(route_summary: Array) -> String:
+	if route_summary.is_empty():
+		return "route unavailable"
+
+	var entries := PackedStringArray()
+	for entry_value in route_summary:
+		if typeof(entry_value) != TYPE_DICTIONARY:
+			continue
+		var entry: Dictionary = Dictionary(entry_value)
+		entries.append("%d:%s" % [
+			int(entry.get("table_number", 0)),
+			String(entry.get("status_label", "UPCOMING"))
+		])
+	if entries.is_empty():
+		return "route unavailable"
+	return " -> ".join(entries)
+
+
+func _get_dictionary_value(value: Variant) -> Dictionary:
+	if typeof(value) == TYPE_DICTIONARY:
+		return Dictionary(value)
+	return {}
+
+
+func _format_signed_int(value: int) -> String:
+	if value > 0:
+		return "+%d" % value
+	return "%d" % value
 
 
 func _describe_paths(paths: Array[String]) -> Array[Dictionary]:

@@ -154,6 +154,7 @@ var run_state_label: RichTextLabel
 var balance_report_label: RichTextLabel
 var run_results_label: RichTextLabel
 var run_export_readback_label: RichTextLabel
+var run_history_label: RichTextLabel
 var playtest_report_label: RichTextLabel
 var reward_prompt_label: RichTextLabel
 var reward_impact_label: RichTextLabel
@@ -215,6 +216,8 @@ var last_run_path_transition_text: String = ""
 var last_results_ceremony_outcome: String = ""
 var last_export_path: String = ""
 var last_export_readback: Dictionary = {}
+var last_run_history_report: Dictionary = {}
+var last_run_history_rows: Array[Dictionary] = []
 
 
 func _ready() -> void:
@@ -591,6 +594,15 @@ func _build_ui() -> void:
 	run_export_readback_label.visible = false
 	run_export_readback_label.custom_minimum_size = Vector2(0, 92)
 	run_layout.add_child(run_export_readback_label)
+
+	run_history_label = RichTextLabel.new()
+	run_history_label.name = "RunHistoryComparison"
+	run_history_label.bbcode_enabled = false
+	run_history_label.fit_content = true
+	run_history_label.scroll_active = false
+	run_history_label.visible = false
+	run_history_label.custom_minimum_size = Vector2(0, 148)
+	run_layout.add_child(run_history_label)
 
 	playtest_report_label = RichTextLabel.new()
 	playtest_report_label.name = "PlaytestReport"
@@ -1358,6 +1370,8 @@ func _reset_run_slice() -> void:
 	last_results_ceremony_outcome = ""
 	last_export_path = ""
 	last_export_readback.clear()
+	last_run_history_report.clear()
+	last_run_history_rows.clear()
 	run_manager.call("reset_run")
 	_reset_playable_combat()
 
@@ -1639,6 +1653,7 @@ func _on_export_summary_pressed() -> void:
 		last_export_path = ""
 		last_export_readback = {"ok": false, "error": "export returned no path"}
 		_refresh_export_readback_label()
+		_refresh_run_history_label(false)
 		return
 
 	last_export_path = path
@@ -1653,6 +1668,7 @@ func _on_export_summary_pressed() -> void:
 			last_export_readback.get("error", "unknown error")
 		])
 	_refresh_export_readback_label()
+	_refresh_run_history_label(true)
 
 
 func _read_export_summary(path: String) -> Dictionary:
@@ -1722,6 +1738,63 @@ func _refresh_export_readback_label() -> void:
 	run_export_readback_label.append_text("Key: %s\n" % last_export_readback.get("result_key", "unkeyed_run"))
 	run_export_readback_label.append_text("Route: %s\n" % _get_export_route_readback_text(route_summary))
 	run_export_readback_label.append_text("File: %s" % last_export_path.get_file())
+
+
+func _refresh_run_history_label(force_show: bool = false) -> void:
+	if run_history_label == null:
+		return
+
+	run_history_label.clear()
+	if run_manager == null:
+		run_history_label.visible = false
+		return
+	if not force_show and last_run_history_rows.is_empty():
+		run_history_label.visible = false
+		run_history_label.modulate = Color.WHITE
+		return
+
+	last_run_history_report = run_manager.call("get_run_history_comparison", 6)
+	last_run_history_rows.clear()
+	var rows_value: Variant = last_run_history_report.get("rows", [])
+	if typeof(rows_value) == TYPE_ARRAY:
+		for row_value in Array(rows_value):
+			if typeof(row_value) == TYPE_DICTIONARY:
+				last_run_history_rows.append(Dictionary(row_value))
+
+	if last_run_history_rows.is_empty():
+		run_history_label.visible = force_show
+		run_history_label.modulate = Color.WHITE
+		if force_show:
+			run_history_label.append_text("Run History Comparison\nNo exported summaries found yet.")
+		return
+
+	run_history_label.visible = true
+	run_history_label.modulate = FEEDBACK_REVEAL_COLOR if bool(last_run_history_report.get("has_outcome_shift", false)) else FEEDBACK_PHASE_COLOR
+	run_history_label.append_text("Run History Comparison\n")
+	run_history_label.append_text("Rows loaded: %d recent exports | %s\n" % [
+		last_run_history_rows.size(),
+		last_run_history_report.get("headline", "History ready.")
+	])
+
+	var limit: int = min(5, last_run_history_rows.size())
+	for index in range(limit):
+		var row: Dictionary = last_run_history_rows[index]
+		var marker := "!!" if bool(row.get("outcome_shift", false)) else "--"
+		run_history_label.append_text("%s #%d %s | %s | Tables %d/%d | Blood %d | Low %d | Dmg %d | Deck %d\n" % [
+			marker,
+			index + 1,
+			row.get("outcome", "unknown"),
+			row.get("grade", "Table Stakes"),
+			row.get("cleared_tables", 0),
+			row.get("total_tables", 0),
+			row.get("blood", 0),
+			row.get("lowest_blood", 0),
+			row.get("damage_taken_total", 0),
+			row.get("deck_size", 0)
+		])
+		var delta_label := String(row.get("delta_label", ""))
+		if not delta_label.is_empty():
+			run_history_label.append_text("   Change: %s\n" % delta_label)
 
 
 func _get_export_route_readback_text(route_summary: Array) -> String:
@@ -2039,6 +2112,7 @@ func _refresh_run_panel(state: Dictionary) -> void:
 			])
 
 	_refresh_export_readback_label()
+	_refresh_run_history_label(false)
 
 	var card_rewards: Array = state.get("pending_card_rewards", [])
 	var relic_rewards: Array = state.get("pending_relic_rewards", [])
