@@ -1339,9 +1339,9 @@ func _apply_phase35_default_layout(
 
 	layout.move_child(run_header_label, 1)
 	layout.move_child(run_shell_panel, 2)
-	layout.move_child(run_path_panel, 3)
-	layout.move_child(primary_controls, 4)
-	layout.move_child(body, 5)
+	layout.move_child(primary_controls, 3)
+	layout.move_child(body, 4)
+	layout.move_child(run_path_panel, 5)
 	layout.move_child(guidance_panel, 6)
 	layout.move_child(turn_status_panel, 7)
 	layout.move_child(table_rule_panel, 8)
@@ -1511,8 +1511,9 @@ func _on_start_run_pressed() -> void:
 	if run_flow_state != RUN_FLOW_START:
 		return
 	_set_run_flow_state(RUN_FLOW_COMBAT)
-	_append_log("Opening Table opened: combat is live.")
-	_push_feedback("Run map: Opening Table is live.", FEEDBACK_PHASE_COLOR, run_path_label)
+	_advance_to_phase("PLAYER_COMMIT", 4)
+	_append_log("Opening Table dealt: pick a target and play a card.")
+	_push_feedback("Opening Table dealt: pick a target and play a card.", FEEDBACK_PHASE_COLOR, run_path_label)
 	_refresh_action_controls()
 
 
@@ -1537,6 +1538,7 @@ func _on_next_encounter_pressed() -> void:
 	_append_log("Approach complete: %s dealt from the run map into combat." % node_name)
 	_record_run_ceremony("Approach: %s dealt into combat. The ceremony hands back to turn play." % node_name, FEEDBACK_PHASE_COLOR, run_shell_panel)
 	_reset_playable_combat()
+	_advance_to_phase("PLAYER_COMMIT", 4)
 	_push_feedback("Run map: moving to Table %d/%d - %s." % [
 		table_number,
 		table_count,
@@ -3279,7 +3281,7 @@ func _get_run_finale_text(state: Dictionary) -> String:
 
 
 func _should_show_encounter_preview() -> bool:
-	return run_flow_state == RUN_FLOW_NEXT_ENCOUNTER or run_flow_state == RUN_FLOW_COMBAT
+	return run_flow_state == RUN_FLOW_NEXT_ENCOUNTER or (run_flow_state == RUN_FLOW_COMBAT and debug_controls_visible)
 
 
 func _get_encounter_preview_text(state: Dictionary) -> String:
@@ -4315,6 +4317,12 @@ func _sync_live_text_density() -> void:
 		live_state_chip_row.visible = true
 	if first_play_step_row != null:
 		first_play_step_row.visible = true
+	if run_shell_detail_label != null:
+		run_shell_detail_label.visible = not compact_live
+	if run_continuity_label != null:
+		run_continuity_label.visible = not compact_live
+	if encounter_preview_label != null and compact_live:
+		encounter_preview_label.visible = false
 	if phase_guidance_label != null:
 		phase_guidance_label.visible = not compact_live
 	if phase_detail_label != null:

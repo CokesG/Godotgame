@@ -83,8 +83,8 @@ func _verify_focused_first_screen(combat_scene: Node) -> void:
 	if not bool(inspect_button.get("visible")) or not bool(history_button.get("visible")):
 		_fail("Inspector/history tools should appear after the first table opens.")
 		return
-	if not bool(encounter_preview.get("visible")) or bool(approach_panel.get("visible")):
-		_fail("Live combat should show compact encounter context but hide approach cards.")
+	if bool(encounter_preview.get("visible")) or bool(approach_panel.get("visible")):
+		_fail("Live combat should hide report-style encounter panels from the default play surface.")
 
 
 func _verify_reward_decision_and_deck_filter(combat_scene: Node) -> void:

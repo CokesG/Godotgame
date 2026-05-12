@@ -102,8 +102,8 @@ func _verify_live_play_path(combat_scene: Node) -> void:
 	if not bool(continue_button.get("visible")) or bool(continue_button.get("disabled")):
 		_fail("Smart action should become the live combat action.")
 		return
-	if String(continue_button.get("text")) != "Begin Turn":
-		_fail("Live combat action should begin the turn.")
+	if String(continue_button.get("text")) != "Resolve Turn":
+		_fail("Opening the table should deal straight into card play.")
 		return
 	if not bool(combat_body.get("visible")) or not bool(deck_panel.get("visible")):
 		_fail("Combat body and hand should remain visible after opening the table.")

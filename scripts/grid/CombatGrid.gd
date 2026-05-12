@@ -6,6 +6,7 @@ signal unit_moved(unit_id: StringName, from_cell: Vector2i, to_cell: Vector2i)
 signal cell_selected(cell: Vector2i)
 
 const GRID_CELL_VIEW_SCRIPT := preload("res://scripts/grid/GridCellView.gd")
+const BOARD_TEXTURE_PATH := "res://art/game/board/board_cursed_table_3x3.png"
 const PLAYER_ID := &"player"
 const PLAYER_LABEL := "Gambler-Knight"
 const DEFAULT_ENEMY_SPAWNS := [
@@ -37,6 +38,7 @@ var unit_labels: Dictionary = {}
 var selected_unit_id: StringName = &""
 var valid_move_cells: Array[Vector2i] = []
 var floating_text_layer: Control
+var board_background: TextureRect
 var focus_unit_id: StringName = &""
 var focus_cell: Vector2i = Vector2i(-1, -1)
 
@@ -364,9 +366,12 @@ func show_floating_text_at_cell(cell: Vector2i, message: String, color: Color) -
 func _build_ui() -> void:
 	size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	custom_minimum_size = Vector2(410, 320)
+	_build_board_background()
 
 	var frame := VBoxContainer.new()
 	frame.name = "GridFrame"
+	frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	frame.add_theme_constant_override("separation", 8)
 	add_child(frame)
 
@@ -399,6 +404,25 @@ func _build_ui() -> void:
 	frame.add_child(status_label)
 
 	_get_floating_text_layer()
+
+
+func _build_board_background() -> void:
+	if DisplayServer.get_name() == "headless":
+		return
+
+	var texture := load(BOARD_TEXTURE_PATH)
+	if not (texture is Texture2D):
+		return
+
+	board_background = TextureRect.new()
+	board_background.name = "BoardArt"
+	board_background.texture = texture
+	board_background.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	board_background.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	board_background.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	board_background.modulate = Color(0.72, 0.66, 0.58, 0.88)
+	board_background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	add_child(board_background)
 
 
 func _get_floating_text_layer() -> Control:

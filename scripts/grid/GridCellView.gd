@@ -103,19 +103,19 @@ func _refresh() -> void:
 	style.border_width_bottom = 2
 
 	if is_selected:
-		style.bg_color = Color(0.36, 0.48, 0.72)
+		style.bg_color = Color(0.36, 0.48, 0.72, 0.82)
 		style.border_color = Color(0.84, 0.92, 1.0)
 	elif is_valid_target:
-		style.bg_color = Color(0.20, 0.40, 0.30)
+		style.bg_color = Color(0.20, 0.40, 0.30, 0.78)
 		style.border_color = Color(0.58, 0.90, 0.64)
 	elif occupant_id == &"player":
-		style.bg_color = Color(0.16, 0.24, 0.36)
+		style.bg_color = Color(0.16, 0.24, 0.36, 0.82)
 		style.border_color = Color(0.48, 0.66, 0.95)
 	elif not occupant_id.is_empty():
-		style.bg_color = Color(0.36, 0.13, 0.12)
+		style.bg_color = Color(0.36, 0.13, 0.12, 0.82)
 		style.border_color = Color(0.90, 0.48, 0.48)
 	else:
-		style.bg_color = Color(0.10, 0.085, 0.07)
+		style.bg_color = Color(0.10, 0.085, 0.07, 0.66)
 		style.border_color = Color(0.34, 0.28, 0.18)
 
 	if is_focus_target:
@@ -125,11 +125,11 @@ func _refresh() -> void:
 		style.border_width_bottom = 4
 		style.border_color = Color(1.0, 0.82, 0.28)
 		if occupant_id == &"player":
-			style.bg_color = Color(0.22, 0.30, 0.45)
+			style.bg_color = Color(0.22, 0.30, 0.45, 0.86)
 		elif not occupant_id.is_empty():
-			style.bg_color = Color(0.45, 0.18, 0.12)
+			style.bg_color = Color(0.45, 0.18, 0.12, 0.86)
 		elif is_valid_target:
-			style.bg_color = Color(0.25, 0.46, 0.30)
+			style.bg_color = Color(0.25, 0.46, 0.30, 0.82)
 
 	add_theme_stylebox_override("normal", style)
 	add_theme_stylebox_override("hover", style)

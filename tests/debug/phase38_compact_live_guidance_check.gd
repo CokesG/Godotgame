@@ -108,11 +108,12 @@ func _verify_commit_chips(combat_scene: Node) -> void:
 		_fail("Expected first-play step buttons and hidden card hint.")
 		return
 
-	continue_button.emit_signal("pressed")
-	await get_tree().process_frame
+	if _get_phase_key(combat_scene) != "PLAYER_COMMIT":
+		continue_button.emit_signal("pressed")
+		await get_tree().process_frame
 
 	if _get_phase_key(combat_scene) != "PLAYER_COMMIT":
-		_fail("Begin Turn should land on Player Commit.")
+		_fail("Opening or beginning the table should land on Player Commit.")
 		return
 	if not String(target_chip.get("text")).contains("TARGET") or not String(move_chip.get("text")).contains("MOVE"):
 		_fail("Target and move chips should show current target controls.")
