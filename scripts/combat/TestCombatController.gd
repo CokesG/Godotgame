@@ -8,6 +8,7 @@ const COMBAT_VFX_SCRIPT := preload("res://scripts/vfx/CombatVFX.gd")
 const DECK_MANAGER_SCRIPT := preload("res://scripts/cards/DeckManager.gd")
 const ENEMY_INTENT_SYSTEM_SCRIPT := preload("res://scripts/enemies/EnemyIntentSystem.gd")
 const HAND_VIEW_SCRIPT := preload("res://scripts/ui/HandView.gd")
+const DEAD_MANS_ANTE_SKIN_SCRIPT := preload("res://scripts/ui/DeadMansAnteSkin.gd")
 const RUN_MANAGER_SCRIPT := preload("res://scripts/run/RunManager.gd")
 const STARTER_CARD_PATHS := [
 	"res://resources/cards/quick_slash.tres",
@@ -156,6 +157,10 @@ var shell_inspect_run_button: Button
 var shell_view_history_button: Button
 var shell_export_history_csv_button: Button
 var shell_archive_history_button: Button
+var action_cue_panel: PanelContainer
+var action_cue_title_label: Label
+var action_cue_detail_label: Label
+var action_cue_pip_label: Label
 var turn_status_label: RichTextLabel
 var feedback_banner_label: Label
 var combat_feedback_label: RichTextLabel
@@ -255,6 +260,7 @@ var last_run_inspection_report: Dictionary = {}
 var run_inspector_requested: bool = false
 var run_inspector_card_filter: String = "all"
 var run_inspector_filter_buttons: Array[Button] = []
+var last_action_cue_key: String = ""
 
 
 func _ready() -> void:
@@ -273,8 +279,31 @@ func _build_vfx_layer() -> void:
 	combat_vfx.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
 
+func _add_table_backdrop() -> void:
+	var fallback := ColorRect.new()
+	fallback.name = "TableBackdropFallback"
+	fallback.color = Color(0.028, 0.024, 0.022)
+	fallback.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(fallback)
+	fallback.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+
+	var texture := DEAD_MANS_ANTE_SKIN_SCRIPT.load_texture(DEAD_MANS_ANTE_SKIN_SCRIPT.TABLE_BACKDROP_PATH)
+	if texture == null:
+		return
+
+	var backdrop := TextureRect.new()
+	backdrop.name = "TableBackdrop"
+	backdrop.texture = texture
+	backdrop.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	backdrop.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	add_child(backdrop)
+	backdrop.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+
+
 func _build_ui() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	DEAD_MANS_ANTE_SKIN_SCRIPT.apply_to(self)
+	_add_table_backdrop()
 
 	var margin := MarginContainer.new()
 	margin.name = "RootMargin"
@@ -292,17 +321,27 @@ func _build_ui() -> void:
 	layout.add_theme_constant_override("separation", 12)
 	margin.add_child(layout)
 
+	var title_plate := PanelContainer.new()
+	title_plate.name = "TitlePlaque"
+	title_plate.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	layout.add_child(title_plate)
+
+	var title_layout := VBoxContainer.new()
+	title_layout.name = "TitlePlaqueLayout"
+	title_layout.add_theme_constant_override("separation", 2)
+	title_plate.add_child(title_layout)
+
 	var title := Label.new()
 	title.name = "ScreenTitle"
-	title.text = "Dead Man's Ante - Prototype Run"
-	title.add_theme_font_size_override("font_size", 28)
-	layout.add_child(title)
+	title.text = "Dead Man's Ante"
+	title.add_theme_font_size_override("font_size", 30)
+	title_layout.add_child(title)
 
 	var subtitle := Label.new()
 	subtitle.name = "ScreenSubtitle"
-	subtitle.text = "Read the table, survive five fights, and tune the run from what actually happens."
+	subtitle.text = "Five cursed tables. One clean read."
 	subtitle.add_theme_font_size_override("font_size", 16)
-	layout.add_child(subtitle)
+	title_layout.add_child(subtitle)
 
 	run_header_label = RichTextLabel.new()
 	run_header_label.name = "RunHeader"
@@ -520,6 +559,44 @@ func _build_ui() -> void:
 	run_shell_actions.add_child(shell_archive_history_button)
 	run_shell_layout.move_child(run_shell_actions, 1)
 
+	action_cue_panel = PanelContainer.new()
+	action_cue_panel.name = "ActionCuePanel"
+	action_cue_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	action_cue_panel.custom_minimum_size = Vector2(0, 72)
+	layout.add_child(action_cue_panel)
+
+	var action_cue_layout := HBoxContainer.new()
+	action_cue_layout.name = "ActionCueLayout"
+	action_cue_layout.add_theme_constant_override("separation", 10)
+	action_cue_panel.add_child(action_cue_layout)
+
+	var action_cue_copy := VBoxContainer.new()
+	action_cue_copy.name = "ActionCueCopy"
+	action_cue_copy.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	action_cue_copy.add_theme_constant_override("separation", 2)
+	action_cue_layout.add_child(action_cue_copy)
+
+	action_cue_title_label = Label.new()
+	action_cue_title_label.name = "ActionCueTitle"
+	action_cue_title_label.text = "DEAL IN"
+	action_cue_title_label.add_theme_font_size_override("font_size", 22)
+	action_cue_copy.add_child(action_cue_title_label)
+
+	action_cue_detail_label = Label.new()
+	action_cue_detail_label.name = "ActionCueDetail"
+	action_cue_detail_label.text = "Open Opening Table to start the hand."
+	action_cue_detail_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	action_cue_detail_label.add_theme_font_size_override("font_size", 14)
+	action_cue_copy.add_child(action_cue_detail_label)
+
+	action_cue_pip_label = Label.new()
+	action_cue_pip_label.name = "ActionCuePip"
+	action_cue_pip_label.text = "OPEN"
+	action_cue_pip_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	action_cue_pip_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	action_cue_pip_label.custom_minimum_size = Vector2(104, 46)
+	action_cue_layout.add_child(action_cue_pip_label)
+
 	turn_label = Label.new()
 	turn_label.text = "Turn: -"
 	turn_label.add_theme_font_size_override("font_size", 20)
@@ -640,6 +717,9 @@ func _build_ui() -> void:
 	feedback_banner_label = Label.new()
 	feedback_banner_label.name = "FeedbackBanner"
 	feedback_banner_label.text = "Ready"
+	feedback_banner_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	feedback_banner_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	feedback_banner_label.custom_minimum_size = Vector2(0, 34)
 	feedback_banner_label.add_theme_font_size_override("font_size", 20)
 	feedback_layout.add_child(feedback_banner_label)
 
@@ -1148,15 +1228,20 @@ func _build_ui() -> void:
 	combat_grid.connect("log_requested", _on_log_requested)
 	combat_grid.connect("unit_moved", _on_grid_unit_moved)
 
-	var deck_panel := VBoxContainer.new()
+	var deck_panel := PanelContainer.new()
 	deck_panel.name = "DeckPanel"
-	deck_panel.add_theme_constant_override("separation", 8)
+	deck_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	layout.add_child(deck_panel)
+
+	var deck_layout := VBoxContainer.new()
+	deck_layout.name = "DeckLayout"
+	deck_layout.add_theme_constant_override("separation", 8)
+	deck_panel.add_child(deck_layout)
 
 	pile_counts_label = Label.new()
 	pile_counts_label.text = "Draw: 0 | Hand: 0 | Discard: 0 | Exhaust: 0"
 	pile_counts_label.add_theme_font_size_override("font_size", 16)
-	deck_panel.add_child(pile_counts_label)
+	deck_layout.add_child(pile_counts_label)
 
 	card_action_hint_label = RichTextLabel.new()
 	card_action_hint_label.name = "CardActionHint"
@@ -1164,7 +1249,7 @@ func _build_ui() -> void:
 	card_action_hint_label.fit_content = true
 	card_action_hint_label.scroll_active = false
 	card_action_hint_label.custom_minimum_size = Vector2(0, 64)
-	deck_panel.add_child(card_action_hint_label)
+	deck_layout.add_child(card_action_hint_label)
 
 	card_target_preview_label = RichTextLabel.new()
 	card_target_preview_label.name = "CardTargetPreview"
@@ -1172,7 +1257,7 @@ func _build_ui() -> void:
 	card_target_preview_label.fit_content = true
 	card_target_preview_label.scroll_active = false
 	card_target_preview_label.custom_minimum_size = Vector2(0, 72)
-	deck_panel.add_child(card_target_preview_label)
+	deck_layout.add_child(card_target_preview_label)
 
 	var hand_scroll := ScrollContainer.new()
 	hand_scroll.name = "HandScroll"
@@ -1180,7 +1265,7 @@ func _build_ui() -> void:
 	hand_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	hand_scroll.custom_minimum_size = Vector2(0, 196)
 	hand_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	deck_panel.add_child(hand_scroll)
+	deck_layout.add_child(hand_scroll)
 
 	hand_view = HBoxContainer.new()
 	hand_view.name = "HandView"
@@ -1201,6 +1286,7 @@ func _build_ui() -> void:
 		feedback_panel,
 		recipe_panel,
 		run_panel,
+		action_cue_panel,
 		primary_controls,
 		debug_drawer_panel,
 		body,
@@ -1275,6 +1361,7 @@ func _apply_phase35_default_layout(
 	feedback_panel: Control,
 	recipe_panel: Control,
 	run_panel: Control,
+	action_cue_panel: Control,
 	primary_controls: Control,
 	debug_drawer_panel: Control,
 	body: Control,
@@ -1282,8 +1369,19 @@ func _apply_phase35_default_layout(
 	log_column: Control
 ) -> void:
 	layout.add_theme_constant_override("separation", 8)
-	title.add_theme_font_size_override("font_size", 22)
+	title.add_theme_font_size_override("font_size", 30)
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_color_override("font_color", Color(1.0, 0.88, 0.50))
+	subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	subtitle.add_theme_color_override("font_color", Color(0.78, 0.72, 0.62))
 	subtitle.visible = false
+	var title_parent := title.get_parent()
+	if title_parent != null and title_parent.get_parent() is PanelContainer:
+		_style_play_panel(title_parent.get_parent() as PanelContainer, Color(0.075, 0.044, 0.050, 0.95), Color(0.88, 0.62, 0.24), "header")
+	run_header_label.add_theme_stylebox_override(
+		"normal",
+		DEAD_MANS_ANTE_SKIN_SCRIPT.make_panel_style(Color(0.052, 0.040, 0.040, 0.92), Color(0.70, 0.50, 0.24), "header")
+	)
 	var table_board_panel: Node = body.find_child("TableBoardPanel", true, false)
 	if table_board_panel is PanelContainer:
 		_style_play_panel(table_board_panel as PanelContainer, Color(0.12, 0.105, 0.085), Color(0.72, 0.56, 0.26))
@@ -1293,6 +1391,36 @@ func _apply_phase35_default_layout(
 	var target_controls_panel: Node = body.find_child("TargetControlsPanel", true, false)
 	if target_controls_panel is PanelContainer:
 		_style_play_panel(target_controls_panel as PanelContainer, Color(0.13, 0.115, 0.09), Color(0.68, 0.55, 0.28))
+	if run_shell_panel is PanelContainer:
+		_style_play_panel(run_shell_panel as PanelContainer, Color(0.105, 0.085, 0.072), Color(0.64, 0.45, 0.22))
+	if guidance_panel is PanelContainer:
+		_style_play_panel(guidance_panel as PanelContainer, Color(0.085, 0.088, 0.095), Color(0.38, 0.50, 0.62))
+	if feedback_panel is PanelContainer:
+		_style_play_panel(feedback_panel as PanelContainer, Color(0.095, 0.080, 0.072), Color(0.56, 0.40, 0.22))
+	if run_path_panel is PanelContainer:
+		_style_play_panel(run_path_panel as PanelContainer, Color(0.075, 0.078, 0.082), Color(0.34, 0.34, 0.38))
+	if turn_status_panel is PanelContainer:
+		_style_play_panel(turn_status_panel as PanelContainer, Color(0.070, 0.060, 0.055), Color(0.52, 0.42, 0.26))
+	if table_rule_panel is PanelContainer:
+		_style_play_panel(table_rule_panel as PanelContainer, Color(0.060, 0.058, 0.066), Color(0.44, 0.34, 0.58))
+	if recipe_panel is PanelContainer:
+		_style_play_panel(recipe_panel as PanelContainer, Color(0.058, 0.052, 0.048), Color(0.46, 0.36, 0.24))
+	if run_panel is PanelContainer:
+		_style_play_panel(run_panel as PanelContainer, Color(0.065, 0.052, 0.048), Color(0.58, 0.40, 0.20))
+	if debug_drawer_panel is PanelContainer:
+		_style_play_panel(debug_drawer_panel as PanelContainer, Color(0.052, 0.052, 0.056), Color(0.32, 0.32, 0.35))
+	if action_cue_panel is PanelContainer:
+		_style_play_panel(action_cue_panel as PanelContainer, Color(0.062, 0.046, 0.040), Color(0.82, 0.56, 0.22), "cue")
+	if deck_panel is PanelContainer:
+		_style_play_panel(deck_panel as PanelContainer, Color(0.070, 0.050, 0.038), Color(0.78, 0.54, 0.24), "hand")
+	if run_ceremony_panel != null:
+		_style_play_panel(run_ceremony_panel, Color(0.070, 0.052, 0.046), Color(0.68, 0.48, 0.22))
+	if encounter_approach_panel != null:
+		_style_play_panel(encounter_approach_panel, Color(0.060, 0.055, 0.058), Color(0.58, 0.44, 0.24))
+	if run_finale_panel != null:
+		_style_play_panel(run_finale_panel, Color(0.070, 0.052, 0.052), Color(0.76, 0.52, 0.22))
+	if run_inspector_panel != null:
+		_style_play_panel(run_inspector_panel, Color(0.052, 0.050, 0.052), Color(0.42, 0.36, 0.30))
 
 	run_header_label.custom_minimum_size = Vector2(0, 42)
 	run_path_label.custom_minimum_size = Vector2(0, 42)
@@ -1317,6 +1445,7 @@ func _apply_phase35_default_layout(
 	first_play_step_row.custom_minimum_size = Vector2(0, 34)
 	card_action_hint_label.custom_minimum_size = Vector2(0, 48)
 	card_target_preview_label.custom_minimum_size = Vector2(0, 46)
+	action_cue_panel.custom_minimum_size = Vector2(0, 72)
 
 	var hand_scroll: Node = deck_panel.find_child("HandScroll", true, false)
 	if hand_scroll is Control:
@@ -1339,38 +1468,24 @@ func _apply_phase35_default_layout(
 
 	layout.move_child(run_header_label, 1)
 	layout.move_child(run_shell_panel, 2)
-	layout.move_child(primary_controls, 3)
-	layout.move_child(body, 4)
-	layout.move_child(run_path_panel, 5)
-	layout.move_child(guidance_panel, 6)
-	layout.move_child(turn_status_panel, 7)
-	layout.move_child(table_rule_panel, 8)
-	layout.move_child(feedback_panel, 9)
-	layout.move_child(run_panel, 10)
-	layout.move_child(debug_drawer_panel, 11)
-	layout.move_child(recipe_panel, 12)
+	layout.move_child(action_cue_panel, 3)
+	layout.move_child(primary_controls, 4)
+	layout.move_child(body, 5)
+	layout.move_child(run_path_panel, 6)
+	layout.move_child(guidance_panel, 7)
+	layout.move_child(turn_status_panel, 8)
+	layout.move_child(table_rule_panel, 9)
+	layout.move_child(feedback_panel, 10)
+	layout.move_child(run_panel, 11)
+	layout.move_child(debug_drawer_panel, 12)
+	layout.move_child(recipe_panel, 13)
 
 
-func _style_play_panel(panel: PanelContainer, bg_color: Color, border_color: Color) -> void:
+func _style_play_panel(panel: PanelContainer, bg_color: Color, border_color: Color, kind: String = "panel") -> void:
 	if panel == null:
 		return
 
-	var style := StyleBoxFlat.new()
-	style.bg_color = bg_color
-	style.border_color = border_color
-	style.border_width_left = 2
-	style.border_width_top = 2
-	style.border_width_right = 2
-	style.border_width_bottom = 2
-	style.corner_radius_top_left = 6
-	style.corner_radius_top_right = 6
-	style.corner_radius_bottom_left = 6
-	style.corner_radius_bottom_right = 6
-	style.content_margin_left = 8
-	style.content_margin_top = 8
-	style.content_margin_right = 8
-	style.content_margin_bottom = 8
-	panel.add_theme_stylebox_override("panel", style)
+	DEAD_MANS_ANTE_SKIN_SCRIPT.apply_panel(panel, bg_color, border_color, kind)
 
 
 func _create_compact_chip(chip_name: String, label: String) -> Button:
@@ -1391,29 +1506,7 @@ func _style_compact_button(button: Button, active: bool, color: Color, tooltip: 
 
 	button.tooltip_text = tooltip
 	button.add_theme_font_size_override("font_size", 13 if active else 12)
-	button.add_theme_color_override("font_color", Color(1.0, 0.95, 0.82) if active else Color(0.78, 0.77, 0.72))
-	button.add_theme_color_override("font_hover_color", Color(1.0, 0.96, 0.84))
-
-	var style := StyleBoxFlat.new()
-	style.corner_radius_top_left = 5
-	style.corner_radius_top_right = 5
-	style.corner_radius_bottom_left = 5
-	style.corner_radius_bottom_right = 5
-	style.border_width_left = 2
-	style.border_width_top = 2
-	style.border_width_right = 2
-	style.border_width_bottom = 2
-	style.bg_color = Color(0.18, 0.145, 0.095) if active else Color(0.095, 0.095, 0.10)
-	style.border_color = color if active else Color(0.30, 0.30, 0.32)
-	style.content_margin_left = 8
-	style.content_margin_top = 4
-	style.content_margin_right = 8
-	style.content_margin_bottom = 4
-	button.add_theme_stylebox_override("normal", style)
-	var hover_style := style.duplicate()
-	hover_style.bg_color = Color(0.24, 0.19, 0.12) if active else Color(0.12, 0.12, 0.13)
-	button.add_theme_stylebox_override("hover", hover_style)
-	button.add_theme_stylebox_override("pressed", style)
+	DEAD_MANS_ANTE_SKIN_SCRIPT.apply_chip(button, active, color, tooltip)
 
 
 func _connect_turn_manager() -> void:
@@ -1544,7 +1637,7 @@ func _on_next_encounter_pressed() -> void:
 		table_count,
 		node_name
 	], FEEDBACK_PHASE_COLOR, run_path_label)
-	_push_feedback("Approach: %s dealt into combat. Read enemies, table rule, then begin turn." % node_name, FEEDBACK_PHASE_COLOR, run_shell_panel)
+	_push_feedback("Approach: %s dealt into combat. Read the table, pick a target, then play." % node_name, FEEDBACK_PHASE_COLOR, run_shell_panel)
 	_surface_latest_table_rule_effect()
 
 
@@ -2694,6 +2787,7 @@ func _refresh_action_controls() -> void:
 	_refresh_run_shell(run_state)
 	_refresh_turn_status(run_state)
 	_refresh_table_rule_status(run_state)
+	_refresh_action_cue(combat_session.call("get_state"), run_state)
 	_refresh_card_action_hint()
 	_sync_hand_card_interaction()
 	_sync_target_focus()
@@ -2726,27 +2820,7 @@ func _apply_dominant_button_style(button: Button, active: bool, hint: String) ->
 	button.tooltip_text = "Dominant next action: %s" % hint if active else "Locked: %s" % hint
 	button.add_theme_font_size_override("font_size", 19 if active else 16)
 	button.custom_minimum_size = Vector2(240, 46) if active else Vector2(180, 40)
-
-	var style := StyleBoxFlat.new()
-	style.corner_radius_top_left = 6
-	style.corner_radius_top_right = 6
-	style.corner_radius_bottom_left = 6
-	style.corner_radius_bottom_right = 6
-	style.border_width_left = 2
-	style.border_width_top = 2
-	style.border_width_right = 2
-	style.border_width_bottom = 2
-	style.bg_color = Color(0.30, 0.22, 0.10) if active else Color(0.12, 0.12, 0.13)
-	style.border_color = Color(1.0, 0.78, 0.28) if active else Color(0.36, 0.36, 0.38)
-	button.add_theme_stylebox_override("normal", style)
-	var hover_style := style.duplicate()
-	hover_style.bg_color = Color(0.38, 0.27, 0.12) if active else Color(0.16, 0.16, 0.17)
-	button.add_theme_stylebox_override("hover", hover_style)
-	button.add_theme_stylebox_override("pressed", style)
-	var disabled_style := style.duplicate()
-	disabled_style.bg_color = Color(0.08, 0.08, 0.085)
-	disabled_style.border_color = Color(0.24, 0.24, 0.25)
-	button.add_theme_stylebox_override("disabled", disabled_style)
+	DEAD_MANS_ANTE_SKIN_SCRIPT.apply_button(button, active, button.tooltip_text)
 
 
 func _get_continue_button_hint(phase_key: String) -> String:
@@ -2772,6 +2846,143 @@ func _get_continue_button_hint(phase_key: String) -> String:
 			return "Next Turn cleans up and deals the next planning hand."
 		_:
 			return "Continue the combat loop."
+
+
+func _refresh_action_cue(session_state: Dictionary, run_state: Dictionary) -> void:
+	if action_cue_panel == null or action_cue_title_label == null or action_cue_detail_label == null or action_cue_pip_label == null:
+		return
+
+	var cue := _get_action_cue_snapshot(session_state, run_state)
+	var title := String(cue.get("title", "PLAY"))
+	var detail := String(cue.get("detail", "Read the table and take the next action."))
+	var pip := String(cue.get("pip", "READY"))
+	var color: Color = cue.get("color", FEEDBACK_PHASE_COLOR)
+	var key := "%s|%s|%s" % [title, detail, pip]
+
+	action_cue_title_label.text = title
+	action_cue_detail_label.text = detail
+	action_cue_pip_label.text = pip
+	_style_action_cue(color)
+	if key != last_action_cue_key:
+		last_action_cue_key = key
+		_pulse_canvas_item(action_cue_panel, color)
+
+
+func _get_action_cue_snapshot(session_state: Dictionary, run_state: Dictionary) -> Dictionary:
+	if run_flow_state == RUN_FLOW_START:
+		return {
+			"title": "DEAL IN",
+			"detail": "Open Opening Table to sit down with a full hand and a visible first target.",
+			"pip": "OPEN",
+			"color": FEEDBACK_CARD_COLOR
+		}
+	if run_flow_state == RUN_FLOW_REWARD:
+		return {
+			"title": "CASH OUT",
+			"detail": "Take the highlighted reward, or skip to keep the deck lean and move the marker.",
+			"pip": "REWARD",
+			"color": FEEDBACK_CARD_COLOR
+		}
+	if run_flow_state == RUN_FLOW_NEXT_ENCOUNTER:
+		return {
+			"title": "APPROACH",
+			"detail": "Read the enemy cards and table rule, then Open Next Table when the matchup feels right.",
+			"pip": "NEXT",
+			"color": FEEDBACK_PHASE_COLOR
+		}
+	if run_flow_state == RUN_FLOW_RESULTS:
+		return {
+			"title": "FINAL HAND",
+			"detail": "Export the run summary or start a fresh run from the results ceremony.",
+			"pip": "RESULTS",
+			"color": _get_results_cue_color(run_state)
+		}
+
+	if bool(session_state.get("combat_over", false)):
+		if bool(run_state.get("waiting_for_reward", false)):
+			return {
+				"title": "PAYOUT",
+				"detail": "The table is cleared. Pick a reward to keep the run moving.",
+				"pip": "REWARD",
+				"color": FEEDBACK_CARD_COLOR
+			}
+		return {
+			"title": "TABLE ENDS",
+			"detail": "Combat is over. Review the result and follow the run shell.",
+			"pip": "DONE",
+			"color": FEEDBACK_PHASE_COLOR
+		}
+
+	var phase_key := String(session_state.get("current_phase_key", "START_TURN"))
+	match phase_key:
+		"START_TURN", "DRAW", "ENEMY_INTENT_PREVIEW":
+			return {
+				"title": "SET THE TABLE",
+				"detail": "Begin Turn finishes setup and deals you straight into card play.",
+				"pip": "BEGIN",
+				"color": FEEDBACK_PHASE_COLOR
+			}
+		"PLAYER_COMMIT":
+			var target_name := String(_get_selected_enemy_target().get("name", "target"))
+			var energy := int(session_state.get("energy", 0))
+			var detail := "Target %s, play a lit card, then Resolve Turn." % target_name
+			if energy <= 0:
+				detail = "Energy is spent. Resolve Turn to let the table answer."
+			return {
+				"title": "YOUR PLAY",
+				"detail": detail,
+				"pip": "PLAY",
+				"color": FEEDBACK_CARD_COLOR
+			}
+		"BLUFF_WAGER":
+			return {
+				"title": "MAKE THE CALL",
+				"detail": "Call the intent, raise if confident, or fold before the reveal.",
+				"pip": "BLUFF",
+				"color": FEEDBACK_REVEAL_COLOR
+			}
+		"REVEAL":
+			return {
+				"title": "REVEAL",
+				"detail": "The committed card and enemy intent are turning over.",
+				"pip": "FLIP",
+				"color": FEEDBACK_REVEAL_COLOR
+			}
+		"RESOLVE", "CLEANUP":
+			return {
+				"title": "NEXT HAND",
+				"detail": "Press Next Turn to clean up, draw, read, and return to planning.",
+				"pip": "NEXT",
+				"color": FEEDBACK_MOVE_COLOR
+			}
+		_:
+			return {
+				"title": "PLAY",
+				"detail": "Read the table and take the highlighted action.",
+				"pip": "READY",
+				"color": FEEDBACK_PHASE_COLOR
+			}
+
+
+func _style_action_cue(color: Color) -> void:
+	var panel_style := DEAD_MANS_ANTE_SKIN_SCRIPT.make_panel_style(
+		Color(0.055, 0.050, 0.045).lerp(color, 0.11),
+		color,
+		"cue"
+	)
+	action_cue_panel.add_theme_stylebox_override("panel", panel_style)
+
+	action_cue_title_label.add_theme_color_override("font_color", Color(1.0, 0.94, 0.76))
+	action_cue_detail_label.add_theme_color_override("font_color", Color(0.86, 0.84, 0.78))
+	action_cue_pip_label.add_theme_font_size_override("font_size", 15)
+	action_cue_pip_label.add_theme_color_override("font_color", Color(0.08, 0.06, 0.035))
+
+	var pip_style := DEAD_MANS_ANTE_SKIN_SCRIPT.make_action_pip_style(color)
+	action_cue_pip_label.add_theme_stylebox_override("normal", pip_style)
+
+
+func _get_results_cue_color(run_state: Dictionary) -> Color:
+	return FEEDBACK_PHASE_COLOR if String(run_state.get("run_outcome", "running")) == "victory" else FEEDBACK_DAMAGE_COLOR
 
 
 func _refresh_run_panel(state: Dictionary) -> void:
@@ -5089,6 +5300,7 @@ func _push_feedback(message: String, color: Color = Color.WHITE, pulse_node: Nod
 
 	if feedback_banner_label != null:
 		feedback_banner_label.text = message
+		_style_feedback_banner(color)
 		_pulse_canvas_item(feedback_banner_label, color)
 
 	if combat_feedback_label != null:
@@ -5107,6 +5319,16 @@ func _refresh_feedback_label() -> void:
 	combat_feedback_label.append_text("Feedback Beats\n")
 	for message in feedback_history:
 		combat_feedback_label.append_text("- %s\n" % message)
+
+
+func _style_feedback_banner(color: Color) -> void:
+	if feedback_banner_label == null:
+		return
+
+	feedback_banner_label.add_theme_color_override("font_color", Color(1.0, 0.95, 0.82))
+	feedback_banner_label.add_theme_color_override("font_shadow_color", color.darkened(0.45))
+	feedback_banner_label.add_theme_constant_override("shadow_offset_x", 1)
+	feedback_banner_label.add_theme_constant_override("shadow_offset_y", 1)
 
 
 func _pulse_canvas_item(item: CanvasItem, color: Color) -> void:

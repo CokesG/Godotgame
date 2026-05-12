@@ -120,8 +120,9 @@ func _verify_live_opponent_and_target_hierarchy(combat_scene: Node) -> void:
 		_fail("Move dropdown should use explicit move language.")
 		return
 
-	continue_button.emit_signal("pressed")
-	await get_tree().process_frame
+	if _get_phase_key(combat_scene) != "PLAYER_COMMIT":
+		continue_button.emit_signal("pressed")
+		await get_tree().process_frame
 	var card_hint: Node = combat_scene.find_child("CardActionHint", true, false)
 	if card_hint == null or not _get_text(card_hint).contains("Cards are playable now"):
 		_fail("Card affordance should still explain live card play.")
@@ -155,6 +156,13 @@ func _get_text(node: Node) -> String:
 	if node.has_method("get_parsed_text"):
 		return String(node.call("get_parsed_text"))
 	return String(node.get("text"))
+
+
+func _get_phase_key(combat_scene: Node) -> String:
+	var session: Node = combat_scene.find_child("CombatSession", true, false)
+	if session == null:
+		return ""
+	return String(session.get("current_phase_key"))
 
 
 func _fail(message: String) -> void:

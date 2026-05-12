@@ -71,7 +71,19 @@ func _verify_begin_turn_step(combat_scene: Node) -> void:
 	await get_tree().process_frame
 
 	if not bool(continue_button.get("visible")) or bool(continue_button.get("disabled")):
-		_fail("ContinueButton should become the live Begin Turn action after opening the table.")
+		_fail("ContinueButton should become the live action after opening the table.")
+		return
+	if _get_phase_key(combat_scene) == "PLAYER_COMMIT":
+		if String(continue_button.get("text")) != "Resolve Turn" or not continue_button.tooltip_text.contains("Dominant next action"):
+			_fail("Opening table should clearly land on the dominant Resolve Turn action when setup is auto-skipped.")
+			return
+		if not _get_text(first_play_path).contains("ACTIVE: 2 Pick Target -> 3 Play Card"):
+			_fail("FirstPlayPath should move directly to target/card when setup is auto-skipped.")
+			return
+
+		var live_card: Button = hand_view.get_child(0)
+		if bool(live_card.get("disabled")) or not live_card.tooltip_text.contains("Click to play"):
+			_fail("Hand cards should unlock when Open Table deals directly into Player Commit.")
 		return
 	if String(continue_button.get("text")) != "Begin Turn" or not continue_button.tooltip_text.contains("Dominant next action"):
 		_fail("ContinueButton should clearly be the dominant Begin Turn action.")
@@ -94,8 +106,9 @@ func _verify_commit_step(combat_scene: Node) -> void:
 		_fail("Expected commit-step controls and readouts.")
 		return
 
-	continue_button.emit_signal("pressed")
-	await get_tree().process_frame
+	if _get_phase_key(combat_scene) != "PLAYER_COMMIT":
+		continue_button.emit_signal("pressed")
+		await get_tree().process_frame
 
 	if _get_phase_key(combat_scene) != "PLAYER_COMMIT":
 		_fail("Begin Turn should land on Player Commit.")

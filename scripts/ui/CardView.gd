@@ -1,6 +1,8 @@
 class_name CardView
 extends Button
 
+const DEAD_MANS_ANTE_SKIN_SCRIPT := preload("res://scripts/ui/DeadMansAnteSkin.gd")
+
 signal card_pressed(hand_index: int)
 signal card_hovered(hand_index: int)
 signal card_unhovered(hand_index: int)
@@ -106,27 +108,12 @@ func _refresh() -> void:
 			_get_tag_tooltip()
 		]
 
-	var style := StyleBoxFlat.new()
-	style.corner_radius_top_left = 6
-	style.corner_radius_top_right = 6
-	style.corner_radius_bottom_left = 6
-	style.corner_radius_bottom_right = 6
-	style.border_width_left = 2
-	style.border_width_top = 2
-	style.border_width_right = 2
-	style.border_width_bottom = 2
-	style.bg_color = Color(0.25, 0.19, 0.12) if is_previewed else Color(0.15, 0.13, 0.105)
-	style.border_color = Color(1.0, 0.88, 0.48) if is_previewed else _get_card_type_color()
+	var card_color := _get_card_type_color()
+	var style := DEAD_MANS_ANTE_SKIN_SCRIPT.make_card_style(is_previewed, card_color, not is_playable)
 	add_theme_stylebox_override("normal", style)
-	var hover_style := style.duplicate()
-	hover_style.bg_color = Color(0.24, 0.20, 0.15)
-	hover_style.border_color = Color(1.0, 0.86, 0.42)
-	add_theme_stylebox_override("hover", hover_style)
+	add_theme_stylebox_override("hover", DEAD_MANS_ANTE_SKIN_SCRIPT.make_card_style(true, Color(1.0, 0.86, 0.42), false))
 	add_theme_stylebox_override("pressed", style)
-	var disabled_style := style.duplicate()
-	disabled_style.bg_color = Color(0.08, 0.075, 0.07)
-	disabled_style.border_color = Color(0.30, 0.30, 0.32)
-	add_theme_stylebox_override("disabled", disabled_style)
+	add_theme_stylebox_override("disabled", DEAD_MANS_ANTE_SKIN_SCRIPT.make_card_style(false, card_color, true))
 	add_theme_font_size_override("font_size", 14)
 	add_theme_color_override("font_color", Color(0.96, 0.91, 0.82))
 	add_theme_color_override("font_hover_color", Color(1.0, 0.94, 0.78))
