@@ -89,6 +89,16 @@ func _ready() -> void:
 		_fail("Expected RunPanel for the Phase 11 prototype path.")
 		return
 
+	var run_path := combat_scene.find_child("RunPath", true, false)
+	if run_path == null:
+		_fail("Expected RunPath for Phase 25 run-map presentation.")
+		return
+
+	var run_path_panel := combat_scene.find_child("RunPathPanel", true, false)
+	if run_path_panel == null:
+		_fail("Expected RunPathPanel for Phase 25 run-map presentation.")
+		return
+
 	var reward_prompt := combat_scene.find_child("RewardPrompt", true, false)
 	if reward_prompt == null:
 		_fail("Expected RewardPrompt for Phase 14 reward readability.")

@@ -233,6 +233,22 @@ func get_current_reward_tag_names() -> Array[String]:
 	return _format_reward_tags(node.get("reward_tags", []))
 
 
+func get_run_path() -> Array[Dictionary]:
+	var path: Array[Dictionary] = []
+	for index in range(RUN_NODES.size()):
+		var node: Dictionary = RUN_NODES[index]
+		var status: String = _get_run_path_status(index)
+		path.append({
+			"index": index,
+			"table_number": index + 1,
+			"name": String(node.get("name", "Table")),
+			"kind": String(node.get("kind", "combat")),
+			"status": status,
+			"status_label": _get_run_path_status_label(status)
+		})
+	return path
+
+
 func get_deck_paths() -> Array[String]:
 	return deck_paths.duplicate()
 
@@ -493,6 +509,7 @@ func get_state() -> Dictionary:
 		"encounter_intro": get_current_encounter_intro(),
 		"table_modifier": get_current_table_modifier(),
 		"table_modifiers": get_table_modifiers(),
+		"run_path": get_run_path(),
 		"reward_stakes": get_current_reward_stakes(),
 		"reward_tag_names": get_current_reward_tag_names(),
 		"player_hp": player_current_hp,
@@ -572,6 +589,46 @@ func _advance_if_rewards_clear() -> void:
 		log_requested.emit("Run complete.")
 	else:
 		log_requested.emit("Next node: %s." % String(get_current_node().get("name", "Encounter")))
+
+
+func _get_run_path_status(index: int) -> String:
+	if run_outcome == "victory":
+		return "cleared"
+	if run_outcome == "defeat":
+		if index < current_node_index:
+			return "cleared"
+		if index == current_node_index:
+			return "lost"
+		return "upcoming"
+	if is_waiting_for_reward():
+		if index < current_node_index:
+			return "cleared"
+		if index == current_node_index:
+			return "reward"
+		if index == current_node_index + 1:
+			return "next"
+		return "upcoming"
+	if index < current_node_index:
+		return "cleared"
+	if index == current_node_index:
+		return "current"
+	return "upcoming"
+
+
+func _get_run_path_status_label(status: String) -> String:
+	match status:
+		"cleared":
+			return "CLEARED"
+		"current":
+			return "CURRENT"
+		"reward":
+			return "REWARD"
+		"next":
+			return "NEXT"
+		"lost":
+			return "LOST"
+		_:
+			return "UPCOMING"
 
 
 func _resource_has_any_tag(resource: Resource, tags_to_match: Array) -> bool:

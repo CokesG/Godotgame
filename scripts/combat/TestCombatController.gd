@@ -120,6 +120,7 @@ var hand_view: HBoxContainer
 var pile_counts_label: Label
 var resource_state_label: Label
 var run_header_label: RichTextLabel
+var run_path_label: RichTextLabel
 var run_shell_panel: PanelContainer
 var run_shell_title_label: Label
 var run_shell_detail_label: RichTextLabel
@@ -241,6 +242,19 @@ func _build_ui() -> void:
 	run_header_label.scroll_active = false
 	run_header_label.custom_minimum_size = Vector2(0, 64)
 	layout.add_child(run_header_label)
+
+	var run_path_panel := PanelContainer.new()
+	run_path_panel.name = "RunPathPanel"
+	run_path_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	layout.add_child(run_path_panel)
+
+	run_path_label = RichTextLabel.new()
+	run_path_label.name = "RunPath"
+	run_path_label.bbcode_enabled = false
+	run_path_label.fit_content = true
+	run_path_label.scroll_active = false
+	run_path_label.custom_minimum_size = Vector2(0, 92)
+	run_path_panel.add_child(run_path_label)
 
 	run_shell_panel = PanelContainer.new()
 	run_shell_panel.name = "RunShellPanel"
@@ -980,7 +994,7 @@ func _on_start_run_pressed() -> void:
 		return
 	_set_run_flow_state(RUN_FLOW_COMBAT)
 	_append_log("Run started: Opening Table is live.")
-	_push_feedback("Run started: Opening Table is live.", FEEDBACK_PHASE_COLOR, run_shell_panel)
+	_push_feedback("Run map: Opening Table is live.", FEEDBACK_PHASE_COLOR, run_path_label)
 	_refresh_action_controls()
 
 
@@ -997,11 +1011,18 @@ func _on_next_encounter_pressed() -> void:
 		_refresh_action_controls()
 		return
 
-	var node_name := String(state.get("current_node_name", "Next Table"))
+	var node_name: String = String(state.get("current_node_name", "Next Table"))
+	var table_number: int = min(int(state.get("current_node_index", 0)) + 1, int(state.get("current_node_count", 0)))
+	var table_count: int = int(state.get("current_node_count", 0))
 	_set_run_flow_state(RUN_FLOW_COMBAT)
 	_append_log("%s is live." % node_name)
-	_push_feedback("Next table: %s is live." % node_name, FEEDBACK_PHASE_COLOR, run_shell_panel)
 	_reset_playable_combat()
+	_push_feedback("Run map: moving to Table %d/%d - %s." % [
+		table_number,
+		table_count,
+		node_name
+	], FEEDBACK_PHASE_COLOR, run_path_label)
+	_surface_latest_table_rule_effect()
 
 
 func _on_reset_grid_pressed() -> void:
@@ -1495,7 +1516,13 @@ func _show_next_encounter_if_ready() -> void:
 
 	if bool(run_manager.call("can_start_current_node")):
 		_set_run_flow_state(RUN_FLOW_NEXT_ENCOUNTER)
-		_push_feedback("Next table ready: %s." % run_state.get("current_node_name", "Encounter"), FEEDBACK_PHASE_COLOR, run_shell_panel)
+		var table_number: int = min(int(run_state.get("current_node_index", 0)) + 1, int(run_state.get("current_node_count", 0)))
+		var table_count: int = int(run_state.get("current_node_count", 0))
+		_push_feedback("Run map: rewards clear. Marker moves to Table %d/%d - %s." % [
+			table_number,
+			table_count,
+			run_state.get("current_node_name", "Encounter")
+		], FEEDBACK_PHASE_COLOR, run_path_label)
 
 	_refresh_action_controls()
 
@@ -1666,6 +1693,7 @@ func _refresh_run_panel(state: Dictionary) -> void:
 	var fast_run: Dictionary = balance.get("fast_run", {})
 	var playtest_batch: Dictionary = balance.get("playtest_batch", {})
 	_refresh_run_header(state, evaluation)
+	_refresh_run_path(state)
 	_refresh_debug_summary(state, evaluation, fast_run, playtest_batch)
 
 	run_state_label.clear()
@@ -1949,21 +1977,21 @@ func _get_run_continuity_text(state: Dictionary) -> String:
 	var current_index: int = mini(int(state.get("current_node_index", 0)) + 1, node_count)
 	match run_flow_state:
 		RUN_FLOW_START:
-			return "Path: 0/%d tables cleared. Opening Table is next." % node_count
+			return "Run map: Opening Table is the current stop; %d upcoming tables are visible." % max(0, node_count - 1)
 		RUN_FLOW_COMBAT:
-			return "Now playing: Table %d/%d, %s. Clear the table to open rewards or results." % [
+			return "Run map: marker is on Table %d/%d, %s. Clear the table to open rewards or results." % [
 				current_index,
 				node_count,
 				state.get("current_node_name", "Encounter")
 			]
 		RUN_FLOW_REWARD:
 			var next_table := _get_next_table_name_after_reward(state)
-			return "Cleared: %s. Resolve rewards, then %s becomes the next table." % [
+			return "Run map: %s is cleared for rewards; %s is marked NEXT." % [
 				state.get("last_completed_node_name", "Table"),
 				next_table
 			]
 		RUN_FLOW_NEXT_ENCOUNTER:
-			return "Next table ready: %s (%d/%d). Deal Next Table to continue the same run." % [
+			return "Run map: marker has moved to %s (%d/%d). Deal Next Table to continue the same run." % [
 				state.get("current_node_name", "Encounter"),
 				current_index,
 				node_count
@@ -2036,6 +2064,78 @@ func _refresh_run_header(state: Dictionary, evaluation: Dictionary) -> void:
 		state.get("deck_size", 0),
 		state.get("run_outcome", "running")
 	])
+
+
+func _refresh_run_path(state: Dictionary) -> void:
+	if run_path_label == null:
+		return
+
+	run_path_label.clear()
+	var path_entries: Array = state.get("run_path", [])
+	if path_entries.is_empty():
+		run_path_label.append_text("Run Map\nNo route loaded.")
+		return
+
+	var node_count: int = int(state.get("current_node_count", path_entries.size()))
+	var cleared_count: int = int(state.get("combats_won", _count_path_status(path_entries, "cleared")))
+	var segments := PackedStringArray()
+	for value in path_entries:
+		if typeof(value) != TYPE_DICTIONARY:
+			continue
+		var entry: Dictionary = Dictionary(value)
+		segments.append("[%s] %d. %s (%s)" % [
+			entry.get("status_label", "UPCOMING"),
+			entry.get("table_number", 0),
+			entry.get("name", "Table"),
+			String(entry.get("kind", "combat")).capitalize()
+		])
+
+	run_path_label.append_text("Run Map | %d/%d cleared\n" % [
+		cleared_count,
+		node_count
+	])
+	run_path_label.append_text(" -> ".join(segments))
+	run_path_label.append_text("\n%s" % _get_run_map_caption(state))
+
+
+func _count_path_status(path_entries: Array, status: String) -> int:
+	var count := 0
+	for value in path_entries:
+		if typeof(value) != TYPE_DICTIONARY:
+			continue
+		var entry: Dictionary = Dictionary(value)
+		if String(entry.get("status", "")) == status:
+			count += 1
+	return count
+
+
+func _get_run_map_caption(state: Dictionary) -> String:
+	var node_count: int = int(state.get("current_node_count", 0))
+	var current_index: int = mini(int(state.get("current_node_index", 0)) + 1, node_count)
+	match run_flow_state:
+		RUN_FLOW_START:
+			return "Current marker: %s. %d upcoming tables are visible." % [
+				state.get("current_node_name", "Opening Table"),
+				max(0, node_count - 1)
+			]
+		RUN_FLOW_COMBAT:
+			return "Marker is on Table %d/%d while %s is live." % [
+				current_index,
+				node_count,
+				state.get("current_node_name", "Encounter")
+			]
+		RUN_FLOW_REWARD:
+			return "Marker holds on %s for rewards; %s is marked NEXT." % [
+				state.get("last_completed_node_name", "Table"),
+				state.get("next_node_name_after_reward", "Next Table")
+			]
+		RUN_FLOW_NEXT_ENCOUNTER:
+			return "Reward resolved. The marker has moved to %s; Deal Next Table to enter combat." % state.get("current_node_name", "Encounter")
+		RUN_FLOW_RESULTS:
+			var results: Dictionary = state.get("run_results", {})
+			return "Route complete: %s." % results.get("grade", "Table Stakes")
+		_:
+			return "Route marker is waiting for the next run state."
 
 
 func _refresh_reward_prompt(state: Dictionary, card_rewards: Array, relic_rewards: Array) -> void:
