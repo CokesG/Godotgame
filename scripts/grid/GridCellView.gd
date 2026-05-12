@@ -8,6 +8,7 @@ var occupant_id: StringName = &""
 var occupant_label: String = ""
 var is_selected: bool = false
 var is_valid_target: bool = false
+var feedback_tween: Tween
 
 
 func _ready() -> void:
@@ -42,6 +43,15 @@ func set_selected(value: bool) -> void:
 func set_valid_target(value: bool) -> void:
 	is_valid_target = value
 	_refresh()
+
+
+func play_feedback(color: Color) -> void:
+	if feedback_tween != null and feedback_tween.is_valid():
+		feedback_tween.kill()
+
+	modulate = color
+	feedback_tween = create_tween()
+	feedback_tween.tween_property(self, "modulate", Color.WHITE, 0.28).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 
 
 func _on_pressed() -> void:

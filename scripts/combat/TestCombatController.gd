@@ -30,6 +30,12 @@ const RUN_FLOW_START := "start"
 const RUN_FLOW_COMBAT := "combat"
 const RUN_FLOW_REWARD := "reward"
 const RUN_FLOW_RESULTS := "results"
+const FEEDBACK_DAMAGE_COLOR := Color(1.0, 0.36, 0.28)
+const FEEDBACK_GUARD_COLOR := Color(0.38, 0.78, 1.0)
+const FEEDBACK_CARD_COLOR := Color(1.0, 0.78, 0.36)
+const FEEDBACK_PHASE_COLOR := Color(0.72, 0.90, 1.0)
+const FEEDBACK_REVEAL_COLOR := Color(0.90, 0.68, 1.0)
+const FEEDBACK_MOVE_COLOR := Color(0.52, 1.0, 0.62)
 const PHASE_ACTION_LABELS := {
 	"START_TURN": "Start Draw",
 	"DRAW": "Read Intents",
@@ -120,6 +126,8 @@ var start_run_button: Button
 var shell_new_run_button: Button
 var shell_export_button: Button
 var turn_status_label: RichTextLabel
+var feedback_banner_label: Label
+var combat_feedback_label: RichTextLabel
 var action_prompt_label: Label
 var phase_guidance_label: Label
 var phase_detail_label: Label
@@ -174,6 +182,8 @@ var run_flow_state: String = RUN_FLOW_START
 var recipe_progress: Dictionary = {}
 var pending_card_context: Dictionary = {}
 var committed_card_context: Dictionary = {}
+var feedback_history: Array[String] = []
+var last_combat_feedback_state: Dictionary = {}
 
 
 func _ready() -> void:
@@ -325,6 +335,30 @@ func _build_ui() -> void:
 	action_prompt_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	action_prompt_label.add_theme_font_size_override("font_size", 16)
 	guidance_layout.add_child(action_prompt_label)
+
+	var feedback_panel := PanelContainer.new()
+	feedback_panel.name = "CombatFeedbackPanel"
+	feedback_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	layout.add_child(feedback_panel)
+
+	var feedback_layout := VBoxContainer.new()
+	feedback_layout.name = "CombatFeedbackLayout"
+	feedback_layout.add_theme_constant_override("separation", 4)
+	feedback_panel.add_child(feedback_layout)
+
+	feedback_banner_label = Label.new()
+	feedback_banner_label.name = "FeedbackBanner"
+	feedback_banner_label.text = "Ready"
+	feedback_banner_label.add_theme_font_size_override("font_size", 20)
+	feedback_layout.add_child(feedback_banner_label)
+
+	combat_feedback_label = RichTextLabel.new()
+	combat_feedback_label.name = "CombatFeedback"
+	combat_feedback_label.bbcode_enabled = false
+	combat_feedback_label.fit_content = true
+	combat_feedback_label.scroll_active = false
+	combat_feedback_label.custom_minimum_size = Vector2(0, 72)
+	feedback_layout.add_child(combat_feedback_label)
 
 	recipe_panel = PanelContainer.new()
 	recipe_panel.name = "RecipePanel"
@@ -790,6 +824,7 @@ func _on_phase_changed(new_phase: int) -> void:
 	var phase_key: String = turn_manager.get_phase_key(new_phase)
 	reveal_resolved_this_phase = false
 	combat_session.call("enter_phase", phase_key, turn_manager.turn_number)
+	_show_phase_feedback(phase_key)
 
 	if phase_key == "DRAW":
 		_draw_to_hand_target()
@@ -839,6 +874,7 @@ func _on_start_run_pressed() -> void:
 		return
 	_set_run_flow_state(RUN_FLOW_COMBAT)
 	_append_log("Run started: Opening Table is live.")
+	_push_feedback("Run started: Opening Table is live.", FEEDBACK_PHASE_COLOR, run_shell_panel)
 	_refresh_action_controls()
 
 
@@ -920,6 +956,7 @@ func _on_card_clicked(hand_index: int) -> void:
 
 
 func _on_card_played(card: Resource) -> void:
+	_push_feedback("Card: %s played." % _get_card_name(card), FEEDBACK_CARD_COLOR, card_action_hint_label)
 	if _is_movement_card(card):
 		if bool(_resolve_movement_card(card, pending_card_context)):
 			_apply_card_side_effects(card)
@@ -959,6 +996,7 @@ func _on_commit_first_card_pressed() -> void:
 		committed_card_context = context.duplicate()
 		bluff_system.call("set_committed_card", committed)
 		_mark_recipe_step("play_or_commit")
+		_push_feedback("Committed: %s face-down." % _get_card_name(committed), FEEDBACK_CARD_COLOR, bluff_state_label)
 	else:
 		combat_session.call("refund_energy", cost, "Commit failed")
 
@@ -984,6 +1022,10 @@ func _on_set_call_pressed() -> void:
 		int(lane_metadata)
 	)
 	_mark_recipe_step("bluff_choice")
+	_push_feedback("Call set: %s on %s." % [
+		intent_metadata.get("intent_name", "Intent"),
+		enemy_metadata.get("enemy_name", "Enemy")
+	], FEEDBACK_REVEAL_COLOR, bluff_state_label)
 
 
 func _on_raise_pressed() -> void:
@@ -992,6 +1034,7 @@ func _on_raise_pressed() -> void:
 		return
 	if bool(bluff_system.call("raise_wager", 1)):
 		_mark_recipe_step("bluff_choice")
+		_push_feedback("Raise: wager increased.", FEEDBACK_REVEAL_COLOR, bluff_state_label)
 
 
 func _on_fold_pressed() -> void:
@@ -1002,6 +1045,7 @@ func _on_fold_pressed() -> void:
 		deck_manager.call("fold_committed_card")
 		committed_card_context.clear()
 		_mark_recipe_step("bluff_choice")
+		_push_feedback("Fold: committed card moved to discard.", FEEDBACK_REVEAL_COLOR, bluff_state_label)
 
 
 func _on_reset_bluff_pressed() -> void:
@@ -1035,6 +1079,7 @@ func _reset_run_slice() -> void:
 
 func _reset_playable_combat() -> void:
 	_reset_recipe_progress()
+	_reset_feedback_state()
 	pending_card_context.clear()
 	committed_card_context.clear()
 	_apply_relic_modifiers()
@@ -1136,6 +1181,16 @@ func _on_debug_truth_changed(truth: Array[Dictionary]) -> void:
 func _on_intents_revealed(revealed: Array[Dictionary]) -> void:
 	if revealed.is_empty():
 		_append_log("Reveal: no enemy intents selected.")
+		_push_feedback("Reveal: no enemy intents selected.", FEEDBACK_REVEAL_COLOR, intent_preview_label)
+		return
+
+	var reveal_names: Array[String] = []
+	for entry in revealed:
+		reveal_names.append("%s: %s" % [
+			entry.get("enemy_name", "Enemy"),
+			entry.get("intent_name", "Intent")
+		])
+	_push_feedback("Reveal: %s." % " | ".join(reveal_names), FEEDBACK_REVEAL_COLOR, intent_preview_label)
 
 
 func _on_bluff_state_changed(state: Dictionary) -> void:
@@ -1173,6 +1228,7 @@ func _on_combat_state_changed(state: Dictionary) -> void:
 		_get_trap_cells_text(state.get("trap_cells", [])),
 		state.get("outcome", "ongoing")
 	])
+	_emit_combat_delta_feedback(state)
 	_refresh_enemy_status(state)
 	_refresh_targeting_options()
 	_refresh_action_controls()
@@ -1242,7 +1298,13 @@ func _on_export_summary_pressed() -> void:
 		_append_log("Run summary exported to %s." % path)
 
 
-func _on_grid_unit_moved(_unit_id: StringName, _from_cell: Vector2i, _to_cell: Vector2i) -> void:
+func _on_grid_unit_moved(unit_id: StringName, from_cell: Vector2i, to_cell: Vector2i) -> void:
+	_push_feedback("Move: %s %s to %s." % [
+		combat_grid.call("get_unit_label", unit_id),
+		combat_grid.call("format_cell", from_cell),
+		combat_grid.call("format_cell", to_cell)
+	], FEEDBACK_MOVE_COLOR, combat_grid)
+	_flash_grid_unit(unit_id, FEEDBACK_MOVE_COLOR)
 	_refresh_targeting_options()
 
 
@@ -2192,6 +2254,154 @@ func _get_card_affordance_text(session_state: Dictionary) -> String:
 			return "Pick Target and Move now so card clicks make sense on commit."
 		_:
 			return "Hand is visible for planning; card clicks unlock on Player Commit."
+
+
+func _reset_feedback_state() -> void:
+	feedback_history.clear()
+	last_combat_feedback_state.clear()
+	if feedback_banner_label != null:
+		feedback_banner_label.text = "Ready"
+		feedback_banner_label.modulate = Color.WHITE
+	if combat_feedback_label != null:
+		combat_feedback_label.clear()
+		combat_feedback_label.append_text("Feedback: phase changes, card plays, damage, Guard, movement, and reveals land here.")
+
+
+func _show_phase_feedback(phase_key: String) -> void:
+	var phase_name: String = phase_key.capitalize().replace("_", " ")
+	_push_feedback("Phase: %s." % phase_name, FEEDBACK_PHASE_COLOR, turn_status_label)
+
+
+func _push_feedback(message: String, color: Color = Color.WHITE, pulse_node: Node = null) -> void:
+	if message.is_empty():
+		return
+
+	feedback_history.push_front(message)
+	while feedback_history.size() > 6:
+		feedback_history.pop_back()
+
+	if feedback_banner_label != null:
+		feedback_banner_label.text = message
+		_pulse_canvas_item(feedback_banner_label, color)
+
+	if combat_feedback_label != null:
+		_refresh_feedback_label()
+
+	if pulse_node != null and pulse_node is CanvasItem:
+		var item: CanvasItem = pulse_node as CanvasItem
+		_pulse_canvas_item(item, color)
+
+
+func _refresh_feedback_label() -> void:
+	if combat_feedback_label == null:
+		return
+
+	combat_feedback_label.clear()
+	combat_feedback_label.append_text("Feedback Beats\n")
+	for message in feedback_history:
+		combat_feedback_label.append_text("- %s\n" % message)
+
+
+func _pulse_canvas_item(item: CanvasItem, color: Color) -> void:
+	if item == null or not item.is_inside_tree():
+		return
+
+	item.modulate = color
+	if item is Control:
+		var control: Control = item
+		control.pivot_offset = control.size * 0.5
+		control.scale = Vector2(1.03, 1.03)
+		var control_tween: Tween = create_tween()
+		control_tween.tween_property(control, "scale", Vector2.ONE, 0.18).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		control_tween.parallel().tween_property(control, "modulate", Color.WHITE, 0.32).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	else:
+		var item_tween: Tween = create_tween()
+		item_tween.tween_property(item, "modulate", Color.WHITE, 0.32).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+
+
+func _emit_combat_delta_feedback(state: Dictionary) -> void:
+	if last_combat_feedback_state.is_empty():
+		last_combat_feedback_state = _capture_combat_feedback_state(state)
+		return
+
+	var previous_player: Dictionary = last_combat_feedback_state.get("player", {})
+	var player: Dictionary = state.get("player", {})
+	_emit_actor_delta_feedback(previous_player, player, &"player", String(player.get("name", "Gambler-Knight")))
+
+	var previous_enemies: Dictionary = last_combat_feedback_state.get("enemies", {})
+	var enemies: Array = state.get("enemies", [])
+	for enemy in enemies:
+		if typeof(enemy) != TYPE_DICTIONARY:
+			continue
+		var enemy_data: Dictionary = enemy
+		var enemy_id: StringName = StringName(enemy_data.get("id", &""))
+		if not previous_enemies.has(enemy_id):
+			continue
+		var previous_enemy: Dictionary = previous_enemies[enemy_id]
+		_emit_actor_delta_feedback(previous_enemy, enemy_data, enemy_id, String(enemy_data.get("name", "Enemy")))
+
+	var previous_traps: int = int(last_combat_feedback_state.get("traps_armed", 0))
+	var current_traps: int = int(state.get("traps_armed", 0))
+	if current_traps > previous_traps:
+		_push_feedback("Trap armed +%d." % (current_traps - previous_traps), FEEDBACK_CARD_COLOR, combat_feedback_label)
+	elif current_traps < previous_traps:
+		_push_feedback("Trap sprung: %d trap removed." % (previous_traps - current_traps), FEEDBACK_DAMAGE_COLOR, combat_feedback_label)
+
+	var previous_outcome: String = String(last_combat_feedback_state.get("outcome", "ongoing"))
+	var current_outcome: String = String(state.get("outcome", "ongoing"))
+	if previous_outcome != current_outcome and current_outcome != "ongoing":
+		_push_feedback("Combat %s." % current_outcome.capitalize(), FEEDBACK_PHASE_COLOR, combat_feedback_label)
+
+	last_combat_feedback_state = _capture_combat_feedback_state(state)
+
+
+func _emit_actor_delta_feedback(previous_actor: Dictionary, actor: Dictionary, unit_id: StringName, label: String) -> void:
+	var previous_hp: int = int(previous_actor.get("hp", 0))
+	var current_hp: int = int(actor.get("hp", 0))
+	var previous_guard: int = int(previous_actor.get("guard", 0))
+	var current_guard: int = int(actor.get("guard", 0))
+	var hp_lost: int = previous_hp - current_hp
+	var guard_delta: int = current_guard - previous_guard
+
+	if hp_lost > 0:
+		var hp_label: String = "Blood" if unit_id == &"player" else "HP"
+		_push_feedback("%s -%d %s." % [label, hp_lost, hp_label], FEEDBACK_DAMAGE_COLOR, enemy_status_label)
+		_flash_grid_unit(unit_id, FEEDBACK_DAMAGE_COLOR)
+	elif guard_delta < 0:
+		_push_feedback("%s Guard -%d absorbed impact." % [label, abs(guard_delta)], FEEDBACK_GUARD_COLOR, enemy_status_label)
+		_flash_grid_unit(unit_id, FEEDBACK_GUARD_COLOR)
+
+	if guard_delta > 0:
+		_push_feedback("%s Guard +%d." % [label, guard_delta], FEEDBACK_GUARD_COLOR, enemy_status_label)
+		_flash_grid_unit(unit_id, FEEDBACK_GUARD_COLOR)
+
+	if bool(previous_actor.get("alive", true)) and not bool(actor.get("alive", true)):
+		_push_feedback("%s defeated." % label, FEEDBACK_DAMAGE_COLOR, enemy_status_label)
+		_flash_grid_unit(unit_id, FEEDBACK_DAMAGE_COLOR)
+
+
+func _capture_combat_feedback_state(state: Dictionary) -> Dictionary:
+	var player: Dictionary = state.get("player", {})
+	var enemies_by_id: Dictionary = {}
+	var enemies: Array = state.get("enemies", [])
+	for enemy in enemies:
+		if typeof(enemy) != TYPE_DICTIONARY:
+			continue
+		var enemy_data: Dictionary = enemy
+		var enemy_id: StringName = StringName(enemy_data.get("id", &""))
+		enemies_by_id[enemy_id] = enemy_data.duplicate()
+
+	return {
+		"player": player.duplicate(),
+		"enemies": enemies_by_id,
+		"traps_armed": int(state.get("traps_armed", 0)),
+		"outcome": String(state.get("outcome", "ongoing"))
+	}
+
+
+func _flash_grid_unit(unit_id: StringName, color: Color) -> void:
+	if combat_grid != null and combat_grid.has_method("flash_unit"):
+		combat_grid.call("flash_unit", unit_id, color)
 
 
 func _reset_recipe_progress() -> void:

@@ -240,6 +240,21 @@ func format_cell(cell: Vector2i) -> String:
 	return "(%d,%d)" % [cell.x, cell.y]
 
 
+func flash_unit(unit_id: StringName, color: Color) -> void:
+	if not unit_positions.has(unit_id):
+		return
+	flash_cell(unit_positions[unit_id], color)
+
+
+func flash_cell(cell: Vector2i, color: Color) -> void:
+	if not cells_by_position.has(cell):
+		return
+
+	var cell_view: Button = cells_by_position[cell]
+	if cell_view.has_method("play_feedback"):
+		cell_view.call("play_feedback", color)
+
+
 func _build_ui() -> void:
 	size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	size_flags_vertical = Control.SIZE_SHRINK_CENTER

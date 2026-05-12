@@ -54,6 +54,16 @@ func _ready() -> void:
 		_fail("Expected TurnStatus for Phase 17 turn-state readability.")
 		return
 
+	var feedback_banner := combat_scene.find_child("FeedbackBanner", true, false)
+	if feedback_banner == null:
+		_fail("Expected FeedbackBanner for Phase 18 combat feel.")
+		return
+
+	var combat_feedback := combat_scene.find_child("CombatFeedback", true, false)
+	if combat_feedback == null:
+		_fail("Expected CombatFeedback feed for Phase 18 combat feel.")
+		return
+
 	var run_panel := combat_scene.find_child("RunPanel", true, false)
 	if run_panel == null:
 		_fail("Expected RunPanel for the Phase 11 prototype path.")
