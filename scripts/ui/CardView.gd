@@ -2,9 +2,12 @@ class_name CardView
 extends Button
 
 signal card_pressed(hand_index: int)
+signal card_hovered(hand_index: int)
+signal card_unhovered(hand_index: int)
 
 var card_resource: Resource
 var hand_index: int = -1
+var is_previewed: bool = false
 
 
 func _ready() -> void:
@@ -12,6 +15,10 @@ func _ready() -> void:
 	focus_mode = Control.FOCUS_NONE
 	autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	pressed.connect(_on_pressed)
+	mouse_entered.connect(_on_mouse_entered)
+	mouse_exited.connect(_on_mouse_exited)
+	focus_entered.connect(_on_focus_entered)
+	focus_exited.connect(_on_focus_exited)
 	_refresh()
 
 
@@ -23,6 +30,27 @@ func set_card(card: Resource, index: int) -> void:
 
 func _on_pressed() -> void:
 	card_pressed.emit(hand_index)
+
+
+func set_previewed(value: bool) -> void:
+	is_previewed = value
+	_refresh()
+
+
+func _on_mouse_entered() -> void:
+	card_hovered.emit(hand_index)
+
+
+func _on_mouse_exited() -> void:
+	card_unhovered.emit(hand_index)
+
+
+func _on_focus_entered() -> void:
+	card_hovered.emit(hand_index)
+
+
+func _on_focus_exited() -> void:
+	card_unhovered.emit(hand_index)
 
 
 func _refresh() -> void:
@@ -51,8 +79,8 @@ func _refresh() -> void:
 	style.border_width_top = 2
 	style.border_width_right = 2
 	style.border_width_bottom = 2
-	style.bg_color = Color(0.16, 0.14, 0.12)
-	style.border_color = _get_card_type_color()
+	style.bg_color = Color(0.22, 0.18, 0.12) if is_previewed else Color(0.16, 0.14, 0.12)
+	style.border_color = Color(1.0, 0.88, 0.48) if is_previewed else _get_card_type_color()
 	add_theme_stylebox_override("normal", style)
 	add_theme_stylebox_override("hover", style)
 	add_theme_stylebox_override("pressed", style)

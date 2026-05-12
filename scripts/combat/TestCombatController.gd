@@ -149,6 +149,7 @@ var lane_call_option: OptionButton
 var target_enemy_option: OptionButton
 var movement_cell_option: OptionButton
 var enemy_status_label: RichTextLabel
+var intent_icon_strip_label: RichTextLabel
 var threat_summary_label: RichTextLabel
 var intent_preview_label: RichTextLabel
 var truth_title_label: Label
@@ -174,6 +175,7 @@ var raise_button: Button
 var fold_button: Button
 var reset_bluff_button: Button
 var card_action_hint_label: RichTextLabel
+var card_target_preview_label: RichTextLabel
 var debug_controls_visible: bool = false
 var debug_truth_visible: bool = false
 var current_intent_previews: Array[Dictionary] = []
@@ -184,6 +186,7 @@ var pending_card_context: Dictionary = {}
 var committed_card_context: Dictionary = {}
 var feedback_history: Array[String] = []
 var last_combat_feedback_state: Dictionary = {}
+var previewed_hand_index: int = -1
 
 
 func _ready() -> void:
@@ -594,6 +597,14 @@ func _build_ui() -> void:
 	enemy_status_label.custom_minimum_size = Vector2(320, 112)
 	intent_column.add_child(enemy_status_label)
 
+	intent_icon_strip_label = RichTextLabel.new()
+	intent_icon_strip_label.name = "IntentIconStrip"
+	intent_icon_strip_label.bbcode_enabled = false
+	intent_icon_strip_label.fit_content = true
+	intent_icon_strip_label.scroll_active = false
+	intent_icon_strip_label.custom_minimum_size = Vector2(320, 72)
+	intent_column.add_child(intent_icon_strip_label)
+
 	threat_summary_label = RichTextLabel.new()
 	threat_summary_label.name = "ThreatSummary"
 	threat_summary_label.bbcode_enabled = false
@@ -749,6 +760,14 @@ func _build_ui() -> void:
 	card_action_hint_label.custom_minimum_size = Vector2(0, 64)
 	deck_panel.add_child(card_action_hint_label)
 
+	card_target_preview_label = RichTextLabel.new()
+	card_target_preview_label.name = "CardTargetPreview"
+	card_target_preview_label.bbcode_enabled = false
+	card_target_preview_label.fit_content = true
+	card_target_preview_label.scroll_active = false
+	card_target_preview_label.custom_minimum_size = Vector2(0, 72)
+	deck_panel.add_child(card_target_preview_label)
+
 	var hand_scroll := ScrollContainer.new()
 	hand_scroll.name = "HandScroll"
 	hand_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
@@ -771,6 +790,8 @@ func _build_ui() -> void:
 	deck_manager.connect("piles_changed", _on_piles_changed)
 	deck_manager.connect("card_played", _on_card_played)
 	hand_view.connect("card_clicked", _on_card_clicked)
+	hand_view.connect("card_previewed", _on_card_previewed)
+	hand_view.connect("card_preview_cleared", _on_card_preview_cleared)
 
 	enemy_intent_system = Node.new()
 	enemy_intent_system.name = "EnemyIntentSystem"
@@ -1057,7 +1078,9 @@ func _on_reset_bluff_pressed() -> void:
 
 func _on_hand_changed(cards: Array[Resource]) -> void:
 	hand_view.call("set_cards", cards)
+	previewed_hand_index = -1
 	_refresh_card_action_hint()
+	_refresh_card_target_preview()
 
 
 func _on_piles_changed(counts: Dictionary) -> void:
@@ -1135,6 +1158,9 @@ func _cleanup_turn() -> void:
 
 func _on_intent_previews_changed(previews: Array[Dictionary]) -> void:
 	current_intent_previews = previews.duplicate()
+	if intent_icon_strip_label != null:
+		intent_icon_strip_label.clear()
+		intent_icon_strip_label.append_text(_build_intent_icon_strip(previews))
 	if threat_summary_label != null:
 		threat_summary_label.clear()
 		threat_summary_label.append_text(_build_threat_summary(previews))
@@ -1153,8 +1179,9 @@ func _on_intent_previews_changed(previews: Array[Dictionary]) -> void:
 				continue
 			var option_data: Dictionary = option
 			var marker := ">" if StringName(option_data.get("intent_id", &"")) == StringName(top_option.get("intent_id", &"")) else " "
-			intent_preview_label.append_text("%s %s %d%% %s\n" % [
+			intent_preview_label.append_text("%s %s %s %d%% %s\n" % [
 				marker,
+				_get_intent_icon_marker(option_data),
 				_get_threat_level(option_data),
 				option_data.get("percentage", 0),
 				option_data.get("summary", "Unknown intent")
@@ -1256,10 +1283,28 @@ func _on_session_state_changed(state: Dictionary) -> void:
 
 func _on_target_enemy_selected(_index: int) -> void:
 	_refresh_card_action_hint()
+	_refresh_card_target_preview()
 
 
 func _on_movement_cell_selected(_index: int) -> void:
 	_refresh_card_action_hint()
+	_refresh_card_target_preview()
+
+
+func _on_card_previewed(hand_index: int) -> void:
+	previewed_hand_index = hand_index
+	if hand_view != null and hand_view.has_method("set_previewed_index"):
+		hand_view.call("set_previewed_index", hand_index)
+	_refresh_card_target_preview()
+
+
+func _on_card_preview_cleared(hand_index: int) -> void:
+	if previewed_hand_index != hand_index:
+		return
+	previewed_hand_index = -1
+	if hand_view != null and hand_view.has_method("set_previewed_index"):
+		hand_view.call("set_previewed_index", -1)
+	_refresh_card_target_preview()
 
 
 func _on_run_state_changed(state: Dictionary) -> void:
@@ -1748,6 +1793,55 @@ func _build_threat_summary(previews: Array[Dictionary]) -> String:
 	]
 
 
+func _build_intent_icon_strip(previews: Array[Dictionary]) -> String:
+	if previews.is_empty():
+		return "Intent Icons\n[?] No active enemy reads."
+
+	var lines: Array[String] = ["Intent Icons"]
+	for preview in previews:
+		var options: Array = preview.get("options", [])
+		var top_option: Dictionary = _get_top_intent_option(options)
+		if top_option.is_empty():
+			lines.append("[?] %s no weighted read" % preview.get("enemy_name", "Enemy"))
+			continue
+		lines.append("%s %s %d%% %s" % [
+			_get_intent_icon_marker(top_option),
+			preview.get("enemy_name", "Enemy"),
+			top_option.get("percentage", 0),
+			_get_lane_preview_text(top_option)
+		])
+	return "\n".join(lines)
+
+
+func _get_intent_icon_marker(option: Dictionary) -> String:
+	match int(option.get("intent_type", -1)):
+		0:
+			return "[ATK]"
+		1:
+			return "[GRD]"
+		2:
+			return "[MOV]"
+		3:
+			return "[FNT]"
+		4:
+			return "[BUF]"
+		5:
+			return "[DEB]"
+		6:
+			return "[SUM]"
+		7:
+			return "[TRP]"
+		_:
+			return "[?]"
+
+
+func _get_lane_preview_text(option: Dictionary) -> String:
+	var target_lane: int = int(option.get("target_lane", -1))
+	if target_lane >= 0:
+		return "%s lane" % _get_lane_name(target_lane)
+	return "tracking"
+
+
 func _get_top_intent_option(options: Array) -> Dictionary:
 	var best_option: Dictionary = {}
 	var best_score := -1
@@ -1868,6 +1962,7 @@ func _refresh_targeting_options() -> void:
 	elif movement_cell_option.selected < 0:
 		movement_cell_option.select(0)
 	_refresh_card_action_hint()
+	_refresh_card_target_preview()
 
 
 func _build_card_context(card: Resource) -> Dictionary:
@@ -2256,15 +2351,149 @@ func _get_card_affordance_text(session_state: Dictionary) -> String:
 			return "Hand is visible for planning; card clicks unlock on Player Commit."
 
 
+func _refresh_card_target_preview() -> void:
+	if card_target_preview_label == null:
+		return
+
+	card_target_preview_label.clear()
+	if previewed_hand_index < 0:
+		card_target_preview_label.append_text("Preview: hover a card to see target, expected effect, and grid focus.")
+		return
+
+	var card: Resource = deck_manager.call("get_card_at", previewed_hand_index) if deck_manager != null else null
+	if card == null:
+		card_target_preview_label.append_text("Preview: no card at this hand slot.")
+		return
+
+	var context: Dictionary = _build_card_context(card)
+	card_target_preview_label.append_text("Preview: %s | Cost %d | %s\n" % [
+		_get_card_name(card),
+		_get_card_cost(card),
+		_get_preview_card_type_label(card)
+	])
+	card_target_preview_label.append_text("Target: %s\n" % _get_card_preview_target_text(card, context))
+	card_target_preview_label.append_text("Expected: %s" % _get_card_preview_effect_text(card, context))
+	_preview_card_grid_focus(card, context)
+
+
+func _get_preview_card_type_label(card: Resource) -> String:
+	var labels := [
+		"Attack",
+		"Defense",
+		"Movement",
+		"Bluff",
+		"Read",
+		"Trap",
+		"Ritual"
+	]
+	var card_type: int = int(card.get("card_type"))
+	if card_type >= 0 and card_type < labels.size():
+		return labels[card_type]
+	return "Card"
+
+
+func _get_card_preview_target_text(card: Resource, context: Dictionary) -> String:
+	var target_type: int = int(card.get("target_type"))
+	match target_type:
+		1:
+			return "Gambler-Knight"
+		2:
+			var target: Dictionary = _get_selected_enemy_target()
+			if target.is_empty():
+				return "No living enemy selected"
+			return "%s HP %d/%d" % [
+				target.get("name", "Enemy"),
+				target.get("hp", 0),
+				target.get("max_hp", 0)
+			]
+		3:
+			return String(context.get("target_cell_label", "No legal move"))
+		4:
+			var player_lane: int = int(context.get("player_lane", -1))
+			return "Current lane: %s" % _get_lane_name(player_lane)
+		5:
+			return "Any unit"
+		_:
+			return "No target"
+
+
+func _get_card_preview_effect_text(card: Resource, context: Dictionary) -> String:
+	var card_id: StringName = StringName(card.get("id"))
+	match card_id:
+		&"quick_slash":
+			return "Deal 4 damage to Target."
+		&"low_stab":
+			return "Deal 2 damage to Target."
+		&"sure_cut":
+			return "Deal 6 damage to Target."
+		&"center_cut":
+			var center_damage: int = 7 if int(context.get("player_lane", -1)) == 1 else 4
+			return "Deal %d damage; best from Center lane." % center_damage
+		&"house_edge":
+			return "Deal 4 damage to Target and gain 3 Guard."
+		&"all_in_cut":
+			return "Deal 8 damage to Target."
+		&"guard_up":
+			return "Gain 5 Guard."
+		&"iron_vow":
+			return "Gain 8 Guard."
+		&"bone_guard":
+			return "Gain 5 Guard."
+		&"black_shield":
+			return "Gain 11 Guard."
+		&"sidestep":
+			return "Move to %s." % context.get("target_cell_label", "selected cell")
+		&"hook_step":
+			return "Move to %s and set up a follow-up." % context.get("target_cell_label", "selected cell")
+		&"shadow_step":
+			return "Move to %s and gain 2 Guard." % context.get("target_cell_label", "selected cell")
+		&"read_tell":
+			return "Sharpen the read on %s." % context.get("target_enemy_name", "the selected enemy")
+		&"marked_card":
+			return "Deal 2 damage and gain 1 Nerve."
+		&"false_opening":
+			return "Bait a call; Commit, Call, or Raise to cash it in."
+		&"snare_card":
+			return "Arm a trap at %s." % context.get("target_cell_label", "selected cell")
+		&"tripwire":
+			return "Arm a trap at %s." % context.get("target_cell_label", "selected cell")
+		&"blood_ritual":
+			return "Gain 2 Nerve for the wager engine."
+		&"second_wind":
+			return "Gain 5 Guard and 1 Nerve."
+		_:
+			return "Resolver effect not previewed yet."
+
+
+func _preview_card_grid_focus(card: Resource, context: Dictionary) -> void:
+	if combat_grid == null:
+		return
+
+	if _is_attack_or_read_card(card):
+		var target_enemy_id: StringName = StringName(context.get("target_enemy_id", &""))
+		if not target_enemy_id.is_empty():
+			_flash_grid_unit(target_enemy_id, FEEDBACK_CARD_COLOR)
+	elif _is_grid_cell_card(card):
+		var target_cell: Vector2i = context.get("target_cell", Vector2i(-1, -1))
+		if target_cell != Vector2i(-1, -1) and combat_grid.has_method("flash_cell"):
+			combat_grid.call("flash_cell", target_cell, FEEDBACK_CARD_COLOR)
+	elif int(card.get("target_type")) == 1:
+		_flash_grid_unit(&"player", FEEDBACK_CARD_COLOR)
+
+
 func _reset_feedback_state() -> void:
 	feedback_history.clear()
 	last_combat_feedback_state.clear()
+	previewed_hand_index = -1
 	if feedback_banner_label != null:
 		feedback_banner_label.text = "Ready"
 		feedback_banner_label.modulate = Color.WHITE
 	if combat_feedback_label != null:
 		combat_feedback_label.clear()
 		combat_feedback_label.append_text("Feedback: phase changes, card plays, damage, Guard, movement, and reveals land here.")
+	if card_target_preview_label != null:
+		card_target_preview_label.clear()
+		card_target_preview_label.append_text("Preview: hover a card to see target, expected effect, and grid focus.")
 
 
 func _show_phase_feedback(phase_key: String) -> void:
@@ -2367,17 +2596,21 @@ func _emit_actor_delta_feedback(previous_actor: Dictionary, actor: Dictionary, u
 		var hp_label: String = "Blood" if unit_id == &"player" else "HP"
 		_push_feedback("%s -%d %s." % [label, hp_lost, hp_label], FEEDBACK_DAMAGE_COLOR, enemy_status_label)
 		_flash_grid_unit(unit_id, FEEDBACK_DAMAGE_COLOR)
+		_float_grid_text(unit_id, "-%d" % hp_lost, FEEDBACK_DAMAGE_COLOR)
 	elif guard_delta < 0:
 		_push_feedback("%s Guard -%d absorbed impact." % [label, abs(guard_delta)], FEEDBACK_GUARD_COLOR, enemy_status_label)
 		_flash_grid_unit(unit_id, FEEDBACK_GUARD_COLOR)
+		_float_grid_text(unit_id, "BLOCK %d" % abs(guard_delta), FEEDBACK_GUARD_COLOR)
 
 	if guard_delta > 0:
 		_push_feedback("%s Guard +%d." % [label, guard_delta], FEEDBACK_GUARD_COLOR, enemy_status_label)
 		_flash_grid_unit(unit_id, FEEDBACK_GUARD_COLOR)
+		_float_grid_text(unit_id, "+%dG" % guard_delta, FEEDBACK_GUARD_COLOR)
 
 	if bool(previous_actor.get("alive", true)) and not bool(actor.get("alive", true)):
 		_push_feedback("%s defeated." % label, FEEDBACK_DAMAGE_COLOR, enemy_status_label)
 		_flash_grid_unit(unit_id, FEEDBACK_DAMAGE_COLOR)
+		_float_grid_text(unit_id, "KO", FEEDBACK_DAMAGE_COLOR)
 
 
 func _capture_combat_feedback_state(state: Dictionary) -> Dictionary:
@@ -2402,6 +2635,11 @@ func _capture_combat_feedback_state(state: Dictionary) -> Dictionary:
 func _flash_grid_unit(unit_id: StringName, color: Color) -> void:
 	if combat_grid != null and combat_grid.has_method("flash_unit"):
 		combat_grid.call("flash_unit", unit_id, color)
+
+
+func _float_grid_text(unit_id: StringName, message: String, color: Color) -> void:
+	if combat_grid != null and combat_grid.has_method("show_floating_text_for_unit"):
+		combat_grid.call("show_floating_text_for_unit", unit_id, message, color)
 
 
 func _reset_recipe_progress() -> void:

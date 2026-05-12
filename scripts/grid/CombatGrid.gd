@@ -255,6 +255,38 @@ func flash_cell(cell: Vector2i, color: Color) -> void:
 		cell_view.call("play_feedback", color)
 
 
+func show_floating_text_for_unit(unit_id: StringName, message: String, color: Color) -> void:
+	if not unit_positions.has(unit_id):
+		return
+	show_floating_text_at_cell(unit_positions[unit_id], message, color)
+
+
+func show_floating_text_at_cell(cell: Vector2i, message: String, color: Color) -> void:
+	if not cells_by_position.has(cell) or message.is_empty():
+		return
+
+	var cell_view: Button = cells_by_position[cell]
+	var label := Label.new()
+	label.name = "FloatingCombatText"
+	label.text = message
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	label.z_index = 20
+	label.modulate = color
+	label.add_theme_font_size_override("font_size", 22)
+	label.add_theme_color_override("font_color", color)
+	label.add_theme_color_override("font_outline_color", Color(0.02, 0.02, 0.02))
+	label.add_theme_constant_override("outline_size", 4)
+	add_child(label)
+
+	var start_position: Vector2 = cell_view.get_global_rect().get_center() - get_global_rect().position + Vector2(-34, -28)
+	label.position = start_position
+	var end_color := Color(color.r, color.g, color.b, 0.0)
+	var tween := create_tween()
+	tween.tween_property(label, "position", start_position + Vector2(0, -30), 0.62).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tween.parallel().tween_property(label, "modulate", end_color, 0.62).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	tween.tween_callback(label.queue_free)
+
+
 func _build_ui() -> void:
 	size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	size_flags_vertical = Control.SIZE_SHRINK_CENTER

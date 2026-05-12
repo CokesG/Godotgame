@@ -144,6 +144,16 @@ func _ready() -> void:
 		_fail("Expected CardActionHint for Phase 17 card affordances.")
 		return
 
+	var intent_icon_strip := combat_scene.find_child("IntentIconStrip", true, false)
+	if intent_icon_strip == null:
+		_fail("Expected IntentIconStrip for Phase 19 intent presentation.")
+		return
+
+	var card_target_preview := combat_scene.find_child("CardTargetPreview", true, false)
+	if card_target_preview == null:
+		_fail("Expected CardTargetPreview for Phase 19 card preview.")
+		return
+
 	var continue_button := combat_scene.find_child("ContinueButton", true, false)
 	if continue_button == null:
 		_fail("Expected ContinueButton.")
