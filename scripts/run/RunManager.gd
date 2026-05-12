@@ -9,6 +9,9 @@ const PLAYER_MAX_HP := 30
 const VICTORY_HEAL := 3
 const RUN_SUMMARY_PREFIX := "dead_mans_ante_run_summary_"
 const RUN_SUMMARY_SUFFIX := ".json"
+const RUN_HISTORY_CSV_PREFIX := "dead_mans_ante_run_history_comparison_"
+const RUN_HISTORY_CSV_SUFFIX := ".csv"
+const RUN_SUMMARY_ARCHIVE_DIR := "run_summary_archive"
 const STARTER_DECK_PATHS := [
 	"res://resources/cards/quick_slash.tres",
 	"res://resources/cards/low_stab.tres",
@@ -564,36 +567,91 @@ func get_run_history_comparison(limit: int = 6) -> Dictionary:
 
 
 func get_recent_run_history(limit: int = 6) -> Array[Dictionary]:
-	var dir := DirAccess.open("user://")
-	if dir == null:
-		return []
-
-	var records: Array[Dictionary] = []
-	dir.list_dir_begin()
-	var file_name := dir.get_next()
-	while not file_name.is_empty():
-		if not dir.current_is_dir() and _is_run_summary_file(file_name):
-			var path := "user://%s" % file_name
-			var row := _read_run_history_row(file_name, path)
-			if not row.is_empty():
-				records.append(row)
-		file_name = dir.get_next()
-	dir.list_dir_end()
-
-	records.sort_custom(func(left: Dictionary, right: Dictionary) -> bool:
-		var left_time := int(left.get("sort_time", 0))
-		var right_time := int(right.get("sort_time", 0))
-		if left_time == right_time:
-			return String(left.get("file_name", "")) > String(right.get("file_name", ""))
-		return left_time > right_time
-	)
-
+	var records := _collect_run_history_records()
 	var rows: Array[Dictionary] = []
 	var bounded_limit: int = max(1, limit)
 	for index in range(min(bounded_limit, records.size())):
 		rows.append(records[index].duplicate(true))
 	_apply_history_deltas(rows)
 	return rows
+
+
+func export_run_history_csv(limit: int = 20) -> String:
+	var rows := get_recent_run_history(limit)
+	if rows.is_empty():
+		log_requested.emit("No run history summaries available for CSV export.")
+		return ""
+
+	var path := "user://%s%d_%d%s" % [
+		RUN_HISTORY_CSV_PREFIX,
+		Time.get_unix_time_from_system(),
+		Time.get_ticks_msec(),
+		RUN_HISTORY_CSV_SUFFIX
+	]
+	var file := FileAccess.open(path, FileAccess.WRITE)
+	if file == null:
+		log_requested.emit("Could not export run history CSV.")
+		return ""
+
+	var columns := _get_run_history_csv_columns()
+	file.store_line(_build_csv_line(columns))
+	for row in rows:
+		var values: Array[String] = []
+		for column in columns:
+			values.append(str(row.get(column, "")))
+		file.store_line(_build_csv_line(values))
+	file.close()
+
+	var global_path := ProjectSettings.globalize_path(path)
+	log_requested.emit("Run history CSV exported: %s" % global_path)
+	return global_path
+
+
+func archive_old_run_summaries(keep_count: int = 8) -> Dictionary:
+	var records := _collect_run_history_records()
+	var bounded_keep: int = max(0, keep_count)
+	var archived_files: Array[String] = []
+	var errors: Array[String] = []
+	var dir := DirAccess.open("user://")
+	if dir == null:
+		return {
+			"kept_count": 0,
+			"archived_count": 0,
+			"archived_files": archived_files,
+			"errors": ["Could not open user data directory."],
+			"archive_dir": "user://%s" % RUN_SUMMARY_ARCHIVE_DIR
+		}
+
+	if not dir.dir_exists(RUN_SUMMARY_ARCHIVE_DIR):
+		var make_error := dir.make_dir(RUN_SUMMARY_ARCHIVE_DIR)
+		if make_error != OK:
+			return {
+				"kept_count": min(bounded_keep, records.size()),
+				"archived_count": 0,
+				"archived_files": archived_files,
+				"errors": ["Could not create archive directory: %s." % error_string(make_error)],
+				"archive_dir": "user://%s" % RUN_SUMMARY_ARCHIVE_DIR
+			}
+
+	for index in range(bounded_keep, records.size()):
+		var record: Dictionary = records[index]
+		var file_name := String(record.get("file_name", ""))
+		if file_name.is_empty():
+			continue
+		var target_name := _get_archive_target_name(file_name)
+		var rename_error := dir.rename(file_name, "%s/%s" % [RUN_SUMMARY_ARCHIVE_DIR, target_name])
+		if rename_error == OK:
+			archived_files.append(target_name)
+		else:
+			errors.append("%s: %s" % [file_name, error_string(rename_error)])
+
+	return {
+		"kept_count": min(bounded_keep, records.size()),
+		"archived_count": archived_files.size(),
+		"archived_files": archived_files,
+		"errors": errors,
+		"archive_dir": "user://%s" % RUN_SUMMARY_ARCHIVE_DIR
+	}
 
 
 func get_playtest_batch() -> Dictionary:
@@ -910,6 +968,47 @@ func _is_run_summary_file(file_name: String) -> bool:
 	return file_name.begins_with(RUN_SUMMARY_PREFIX) and file_name.ends_with(RUN_SUMMARY_SUFFIX)
 
 
+func _collect_run_history_records() -> Array[Dictionary]:
+	var dir := DirAccess.open("user://")
+	if dir == null:
+		return []
+
+	var records: Array[Dictionary] = []
+	dir.list_dir_begin()
+	var file_name := dir.get_next()
+	while not file_name.is_empty():
+		if not dir.current_is_dir() and _is_run_summary_file(file_name):
+			var path := "user://%s" % file_name
+			var row := _read_run_history_row(file_name, path)
+			if not row.is_empty():
+				records.append(row)
+		file_name = dir.get_next()
+	dir.list_dir_end()
+
+	records.sort_custom(func(left: Dictionary, right: Dictionary) -> bool:
+		var left_time := int(left.get("sort_time", 0))
+		var right_time := int(right.get("sort_time", 0))
+		if left_time == right_time:
+			return String(left.get("file_name", "")) > String(right.get("file_name", ""))
+		return left_time > right_time
+	)
+	return records
+
+
+func _get_archive_target_name(file_name: String) -> String:
+	var target_name := file_name
+	if not FileAccess.file_exists("user://%s/%s" % [RUN_SUMMARY_ARCHIVE_DIR, target_name]):
+		return target_name
+
+	var stem_length: int = max(0, file_name.length() - RUN_SUMMARY_SUFFIX.length())
+	var stem := file_name.substr(0, stem_length)
+	return "%s_archive_%d%s" % [
+		stem,
+		Time.get_ticks_msec(),
+		RUN_SUMMARY_SUFFIX
+	]
+
+
 func _read_run_history_row(file_name: String, path: String) -> Dictionary:
 	var text := FileAccess.get_file_as_string(path)
 	if text.is_empty():
@@ -1048,6 +1147,40 @@ func _get_dictionary_value(value: Variant) -> Dictionary:
 	if typeof(value) == TYPE_DICTIONARY:
 		return Dictionary(value)
 	return {}
+
+
+func _get_run_history_csv_columns() -> Array[String]:
+	return [
+		"file_name",
+		"result_key",
+		"outcome",
+		"grade",
+		"cleared_tables",
+		"total_tables",
+		"blood",
+		"max_blood",
+		"lowest_blood",
+		"damage_taken_total",
+		"deck_size",
+		"cards_claimed",
+		"relics_claimed",
+		"delta_label",
+		"route_text"
+	]
+
+
+func _build_csv_line(values: Array[String]) -> String:
+	var escaped_values := PackedStringArray()
+	for value in values:
+		escaped_values.append(_csv_escape(value))
+	return ",".join(escaped_values)
+
+
+func _csv_escape(value: String) -> String:
+	var text := value.replace("\"", "\"\"")
+	if text.contains(",") or text.contains("\"") or text.contains("\n") or text.contains("\r"):
+		return "\"%s\"" % text
+	return text
 
 
 func _format_signed_int(value: int) -> String:

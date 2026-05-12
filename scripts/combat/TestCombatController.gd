@@ -141,6 +141,9 @@ var start_run_button: Button
 var next_encounter_button: Button
 var shell_new_run_button: Button
 var shell_export_button: Button
+var shell_view_history_button: Button
+var shell_export_history_csv_button: Button
+var shell_archive_history_button: Button
 var turn_status_label: RichTextLabel
 var feedback_banner_label: Label
 var combat_feedback_label: RichTextLabel
@@ -218,6 +221,9 @@ var last_export_path: String = ""
 var last_export_readback: Dictionary = {}
 var last_run_history_report: Dictionary = {}
 var last_run_history_rows: Array[Dictionary] = []
+var last_history_csv_path: String = ""
+var last_history_archive_report: Dictionary = {}
+var run_history_requested: bool = false
 
 
 func _ready() -> void:
@@ -444,6 +450,24 @@ func _build_ui() -> void:
 	shell_export_button.text = "Export Summary"
 	shell_export_button.pressed.connect(_on_export_summary_pressed)
 	run_shell_actions.add_child(shell_export_button)
+
+	shell_view_history_button = Button.new()
+	shell_view_history_button.name = "ShellViewHistoryButton"
+	shell_view_history_button.text = "View History"
+	shell_view_history_button.pressed.connect(_on_view_history_pressed)
+	run_shell_actions.add_child(shell_view_history_button)
+
+	shell_export_history_csv_button = Button.new()
+	shell_export_history_csv_button.name = "ShellExportHistoryCsvButton"
+	shell_export_history_csv_button.text = "Export History CSV"
+	shell_export_history_csv_button.pressed.connect(_on_export_history_csv_pressed)
+	run_shell_actions.add_child(shell_export_history_csv_button)
+
+	shell_archive_history_button = Button.new()
+	shell_archive_history_button.name = "ShellArchiveHistoryButton"
+	shell_archive_history_button.text = "Archive Old Summaries"
+	shell_archive_history_button.pressed.connect(_on_archive_history_pressed)
+	run_shell_actions.add_child(shell_archive_history_button)
 
 	turn_label = Label.new()
 	turn_label.text = "Turn: -"
@@ -1372,6 +1396,9 @@ func _reset_run_slice() -> void:
 	last_export_readback.clear()
 	last_run_history_report.clear()
 	last_run_history_rows.clear()
+	last_history_csv_path = ""
+	last_history_archive_report.clear()
+	run_history_requested = false
 	run_manager.call("reset_run")
 	_reset_playable_combat()
 
@@ -1646,6 +1673,14 @@ func _on_run_playtests_pressed() -> void:
 	_append_log("Playtest sims: %s" % batch.get("summary", "No summary."))
 
 
+func _on_view_history_pressed() -> void:
+	run_history_requested = true
+	_refresh_run_history_label(true)
+	_append_log("Run history loaded: %d summaries." % last_run_history_rows.size())
+	_push_feedback("History: loaded %d exported summaries." % last_run_history_rows.size(), FEEDBACK_REVEAL_COLOR, run_history_label)
+	_refresh_action_controls()
+
+
 func _on_export_summary_pressed() -> void:
 	var path: String = String(run_manager.call("export_run_summary"))
 	if path.is_empty():
@@ -1669,6 +1704,38 @@ func _on_export_summary_pressed() -> void:
 		])
 	_refresh_export_readback_label()
 	_refresh_run_history_label(true)
+
+
+func _on_export_history_csv_pressed() -> void:
+	if run_manager == null:
+		return
+
+	run_history_requested = true
+	last_history_csv_path = String(run_manager.call("export_run_history_csv", 20))
+	if last_history_csv_path.is_empty():
+		_append_log("Run history CSV export failed: no summaries available.")
+	else:
+		_append_log("Run history CSV exported to %s." % last_history_csv_path)
+		_push_feedback("History: CSV comparison exported.", FEEDBACK_REVEAL_COLOR, run_history_label)
+	_refresh_run_history_label(true)
+	_refresh_action_controls()
+
+
+func _on_archive_history_pressed() -> void:
+	if run_manager == null:
+		return
+
+	run_history_requested = true
+	last_history_archive_report = run_manager.call("archive_old_run_summaries", 8)
+	var archived_count := int(last_history_archive_report.get("archived_count", 0))
+	var kept_count := int(last_history_archive_report.get("kept_count", 0))
+	_append_log("Run history archive: kept %d recent summaries, archived %d older summaries." % [
+		kept_count,
+		archived_count
+	])
+	_push_feedback("History: archived %d older summaries." % archived_count, FEEDBACK_REVEAL_COLOR, run_history_label)
+	_refresh_run_history_label(true)
+	_refresh_action_controls()
 
 
 func _read_export_summary(path: String) -> Dictionary:
@@ -1744,11 +1811,13 @@ func _refresh_run_history_label(force_show: bool = false) -> void:
 	if run_history_label == null:
 		return
 
+	if force_show:
+		run_history_requested = true
 	run_history_label.clear()
 	if run_manager == null:
 		run_history_label.visible = false
 		return
-	if not force_show and last_run_history_rows.is_empty():
+	if not force_show and not run_history_requested and last_run_history_rows.is_empty():
 		run_history_label.visible = false
 		run_history_label.modulate = Color.WHITE
 		return
@@ -1775,6 +1844,17 @@ func _refresh_run_history_label(force_show: bool = false) -> void:
 		last_run_history_rows.size(),
 		last_run_history_report.get("headline", "History ready.")
 	])
+	run_history_label.append_text("Management: View History refreshes rows; Export History CSV writes a tuning table; Archive Old keeps the 8 newest JSON summaries.\n")
+	if not last_history_csv_path.is_empty():
+		run_history_label.append_text("CSV: %s\n" % last_history_csv_path.get_file())
+	if not last_history_archive_report.is_empty():
+		var archive_errors: Array = last_history_archive_report.get("errors", [])
+		var archive_error_text := " | errors %d" % archive_errors.size() if not archive_errors.is_empty() else ""
+		run_history_label.append_text("Archive: kept %d | archived %d%s\n" % [
+			last_history_archive_report.get("kept_count", 0),
+			last_history_archive_report.get("archived_count", 0),
+			archive_error_text
+		])
 
 	var limit: int = min(5, last_run_history_rows.size())
 	for index in range(limit):
@@ -2253,6 +2333,16 @@ func _refresh_run_shell(state: Dictionary) -> void:
 	if shell_export_button != null:
 		shell_export_button.visible = run_flow_state == RUN_FLOW_RESULTS
 		shell_export_button.disabled = run_flow_state != RUN_FLOW_RESULTS
+	if shell_view_history_button != null:
+		shell_view_history_button.visible = true
+		shell_view_history_button.disabled = run_manager == null
+	var history_tools_visible: bool = run_history_requested or run_flow_state == RUN_FLOW_RESULTS
+	if shell_export_history_csv_button != null:
+		shell_export_history_csv_button.visible = history_tools_visible
+		shell_export_history_csv_button.disabled = run_manager == null
+	if shell_archive_history_button != null:
+		shell_archive_history_button.visible = history_tools_visible
+		shell_archive_history_button.disabled = run_manager == null
 
 
 func _get_run_shell_title(state: Dictionary) -> String:

@@ -44,6 +44,30 @@ func _ready() -> void:
 		_fail("Expected ShellExportButton for Phase 15 run results export.")
 		return
 
+	var shell_view_history_button := combat_scene.find_child("ShellViewHistoryButton", true, false)
+	if shell_view_history_button == null:
+		_fail("Expected ShellViewHistoryButton for Phase 32 history management.")
+		return
+	if not bool(shell_view_history_button.get("visible")):
+		_fail("View History should be available from the run shell.")
+		return
+
+	var shell_export_history_csv_button := combat_scene.find_child("ShellExportHistoryCsvButton", true, false)
+	if shell_export_history_csv_button == null:
+		_fail("Expected ShellExportHistoryCsvButton for Phase 32 history CSV export.")
+		return
+	if bool(shell_export_history_csv_button.get("visible")):
+		_fail("History CSV export should stay hidden until history or results are active.")
+		return
+
+	var shell_archive_history_button := combat_scene.find_child("ShellArchiveHistoryButton", true, false)
+	if shell_archive_history_button == null:
+		_fail("Expected ShellArchiveHistoryButton for Phase 32 history archiving.")
+		return
+	if bool(shell_archive_history_button.get("visible")):
+		_fail("Archive Old Summaries should stay hidden until history or results are active.")
+		return
+
 	var run_continuity := combat_scene.find_child("RunContinuity", true, false)
 	if run_continuity == null:
 		_fail("Expected RunContinuity for Phase 21 run continuity.")
