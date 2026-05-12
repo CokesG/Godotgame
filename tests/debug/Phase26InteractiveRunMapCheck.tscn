@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://tests/debug/phase26_interactive_run_map_check.gd" id="1"]
+
+[node name="Phase26InteractiveRunMapCheck" type="Node"]
+script = ExtResource("1")

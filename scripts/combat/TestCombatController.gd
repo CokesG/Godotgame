@@ -121,6 +121,8 @@ var pile_counts_label: Label
 var resource_state_label: Label
 var run_header_label: RichTextLabel
 var run_path_label: RichTextLabel
+var run_path_buttons_row: HBoxContainer
+var run_path_preview_label: RichTextLabel
 var run_shell_panel: PanelContainer
 var run_shell_title_label: Label
 var run_shell_detail_label: RichTextLabel
@@ -145,6 +147,7 @@ var run_results_label: RichTextLabel
 var playtest_report_label: RichTextLabel
 var reward_prompt_label: RichTextLabel
 var reward_impact_label: RichTextLabel
+var run_path_buttons: Array[Button] = []
 var card_reward_buttons: Array[Button] = []
 var relic_reward_buttons: Array[Button] = []
 var skip_rewards_button: Button
@@ -195,6 +198,9 @@ var feedback_history: Array[String] = []
 var table_rule_effect_history: Array[String] = []
 var last_combat_feedback_state: Dictionary = {}
 var previewed_hand_index: int = -1
+var selected_run_path_index: int = -1
+var last_run_path_current_index: int = -1
+var last_run_path_transition_text: String = ""
 
 
 func _ready() -> void:
@@ -248,13 +254,43 @@ func _build_ui() -> void:
 	run_path_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	layout.add_child(run_path_panel)
 
+	var run_path_layout := VBoxContainer.new()
+	run_path_layout.name = "RunPathLayout"
+	run_path_layout.add_theme_constant_override("separation", 6)
+	run_path_panel.add_child(run_path_layout)
+
 	run_path_label = RichTextLabel.new()
 	run_path_label.name = "RunPath"
 	run_path_label.bbcode_enabled = false
 	run_path_label.fit_content = true
 	run_path_label.scroll_active = false
-	run_path_label.custom_minimum_size = Vector2(0, 92)
-	run_path_panel.add_child(run_path_label)
+	run_path_label.custom_minimum_size = Vector2(0, 52)
+	run_path_layout.add_child(run_path_label)
+
+	run_path_buttons_row = HBoxContainer.new()
+	run_path_buttons_row.name = "RunPathButtons"
+	run_path_buttons_row.add_theme_constant_override("separation", 6)
+	run_path_layout.add_child(run_path_buttons_row)
+
+	for index in range(5):
+		var path_button := Button.new()
+		path_button.name = "RunPathTable%d" % index
+		path_button.text = "Table %d" % (index + 1)
+		path_button.custom_minimum_size = Vector2(0, 76)
+		path_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		path_button.clip_text = true
+		path_button.pressed.connect(_on_run_path_table_pressed.bind(index))
+		path_button.mouse_entered.connect(_on_run_path_table_hovered.bind(index))
+		run_path_buttons.append(path_button)
+		run_path_buttons_row.add_child(path_button)
+
+	run_path_preview_label = RichTextLabel.new()
+	run_path_preview_label.name = "RunPathPreview"
+	run_path_preview_label.bbcode_enabled = false
+	run_path_preview_label.fit_content = true
+	run_path_preview_label.scroll_active = false
+	run_path_preview_label.custom_minimum_size = Vector2(0, 86)
+	run_path_layout.add_child(run_path_preview_label)
 
 	run_shell_panel = PanelContainer.new()
 	run_shell_panel.name = "RunShellPanel"
@@ -1222,6 +1258,9 @@ func _on_piles_changed(counts: Dictionary) -> void:
 
 func _reset_run_slice() -> void:
 	_set_run_flow_state(RUN_FLOW_START)
+	selected_run_path_index = -1
+	last_run_path_current_index = -1
+	last_run_path_transition_text = ""
 	run_manager.call("reset_run")
 	_reset_playable_combat()
 
@@ -1437,6 +1476,29 @@ func _on_card_preview_cleared(hand_index: int) -> void:
 func _on_run_state_changed(state: Dictionary) -> void:
 	_sync_run_flow_from_state(state)
 	_refresh_action_controls()
+
+
+func _on_run_path_table_pressed(index: int) -> void:
+	selected_run_path_index = index
+	if run_manager == null:
+		return
+
+	var state: Dictionary = run_manager.call("get_state")
+	var path_entries: Array = state.get("run_path", [])
+	if index >= 0 and index < path_entries.size() and typeof(path_entries[index]) == TYPE_DICTIONARY:
+		var entry: Dictionary = Dictionary(path_entries[index])
+		_push_feedback("Run map: inspecting Table %d - %s." % [
+			entry.get("table_number", index + 1),
+			entry.get("name", "Table")
+		], FEEDBACK_PHASE_COLOR, run_path_buttons[index])
+	_refresh_run_path(state)
+
+
+func _on_run_path_table_hovered(index: int) -> void:
+	selected_run_path_index = index
+	if run_manager == null:
+		return
+	_refresh_run_path(run_manager.call("get_state"))
 
 
 func _on_card_reward_pressed(index: int) -> void:
@@ -2074,10 +2136,21 @@ func _refresh_run_path(state: Dictionary) -> void:
 	var path_entries: Array = state.get("run_path", [])
 	if path_entries.is_empty():
 		run_path_label.append_text("Run Map\nNo route loaded.")
+		if run_path_preview_label != null:
+			run_path_preview_label.clear()
+			run_path_preview_label.append_text("Select a table once the route loads.")
 		return
 
 	var node_count: int = int(state.get("current_node_count", path_entries.size()))
 	var cleared_count: int = int(state.get("combats_won", _count_path_status(path_entries, "cleared")))
+	var current_index: int = clampi(int(state.get("current_node_index", 0)), 0, max(0, path_entries.size() - 1))
+	var marker_moved: bool = last_run_path_current_index != -1 and last_run_path_current_index != current_index
+	if selected_run_path_index < 0 or selected_run_path_index >= path_entries.size() or marker_moved:
+		selected_run_path_index = current_index
+	if marker_moved:
+		_play_run_path_marker_transition(last_run_path_current_index, current_index, path_entries)
+	last_run_path_current_index = current_index
+
 	var segments := PackedStringArray()
 	for value in path_entries:
 		if typeof(value) != TYPE_DICTIONARY:
@@ -2096,6 +2169,122 @@ func _refresh_run_path(state: Dictionary) -> void:
 	])
 	run_path_label.append_text(" -> ".join(segments))
 	run_path_label.append_text("\n%s" % _get_run_map_caption(state))
+	_refresh_run_path_buttons(path_entries)
+	_refresh_run_path_preview(path_entries)
+
+
+func _refresh_run_path_buttons(path_entries: Array) -> void:
+	for index in range(run_path_buttons.size()):
+		var button: Button = run_path_buttons[index]
+		if index >= path_entries.size() or typeof(path_entries[index]) != TYPE_DICTIONARY:
+			button.visible = false
+			button.disabled = true
+			continue
+
+		var entry: Dictionary = Dictionary(path_entries[index])
+		var status: String = String(entry.get("status", "upcoming"))
+		var status_label: String = String(entry.get("status_label", "UPCOMING"))
+		var selected: bool = index == selected_run_path_index
+		var prefix: String = ">> " if status == "current" else ""
+		var suffix: String = " <<" if status == "current" else ""
+		if selected and status != "current":
+			prefix = "* "
+			suffix = " *"
+
+		button.visible = true
+		button.disabled = false
+		button.self_modulate = _get_run_path_button_color(status, selected)
+		button.text = "%sTable %d\n%s\n%s%s" % [
+			prefix,
+			entry.get("table_number", index + 1),
+			entry.get("name", "Table"),
+			status_label,
+			suffix
+		]
+		button.tooltip_text = _get_run_path_button_tooltip(entry)
+
+
+func _refresh_run_path_preview(path_entries: Array) -> void:
+	if run_path_preview_label == null:
+		return
+
+	run_path_preview_label.clear()
+	if selected_run_path_index < 0 or selected_run_path_index >= path_entries.size():
+		run_path_preview_label.append_text("Select a table to preview its enemies, rule, and reward stakes.")
+		return
+	if typeof(path_entries[selected_run_path_index]) != TYPE_DICTIONARY:
+		run_path_preview_label.append_text("Selected table preview unavailable.")
+		return
+
+	var entry: Dictionary = Dictionary(path_entries[selected_run_path_index])
+	var enemies: Array = entry.get("enemy_names", [])
+	var enemy_text: String = "unknown opposition" if enemies.is_empty() else ", ".join(enemies)
+	var tags: Array = entry.get("reward_tag_names", [])
+	var tag_text: String = "Run clear" if tags.is_empty() else ", ".join(tags)
+	run_path_preview_label.append_text("Selected Table %d: %s [%s] - %s\n" % [
+		entry.get("table_number", selected_run_path_index + 1),
+		entry.get("name", "Table"),
+		String(entry.get("kind", "combat")).capitalize(),
+		entry.get("status_label", "UPCOMING")
+	])
+	run_path_preview_label.append_text("Enemies: %s | Rule: %s - %s\n" % [
+		enemy_text,
+		entry.get("table_modifier_name", "House Rules"),
+		entry.get("table_modifier_summary", "No special rule is active.")
+	])
+	run_path_preview_label.append_text("Stakes: %s | Reward tags: %s" % [
+		entry.get("reward_stakes", "Clear the table to improve the run."),
+		tag_text
+	])
+	if not last_run_path_transition_text.is_empty():
+		run_path_preview_label.append_text("\n%s" % last_run_path_transition_text)
+
+
+func _play_run_path_marker_transition(previous_index: int, current_index: int, path_entries: Array) -> void:
+	var previous_name: String = _get_run_path_entry_name(path_entries, previous_index)
+	var current_name: String = _get_run_path_entry_name(path_entries, current_index)
+	last_run_path_transition_text = "Last route move: %s -> %s." % [previous_name, current_name]
+	if previous_index >= 0 and previous_index < run_path_buttons.size():
+		_pulse_canvas_item(run_path_buttons[previous_index], Color(0.72, 0.90, 1.0))
+	if current_index >= 0 and current_index < run_path_buttons.size():
+		_pulse_canvas_item(run_path_buttons[current_index], Color(1.0, 0.88, 0.36))
+	if run_path_preview_label != null:
+		_pulse_canvas_item(run_path_preview_label, Color(1.0, 0.88, 0.36))
+
+
+func _get_run_path_entry_name(path_entries: Array, index: int) -> String:
+	if index < 0 or index >= path_entries.size() or typeof(path_entries[index]) != TYPE_DICTIONARY:
+		return "Table"
+	var entry: Dictionary = Dictionary(path_entries[index])
+	return String(entry.get("name", "Table"))
+
+
+func _get_run_path_button_color(status: String, selected: bool) -> Color:
+	if selected:
+		return Color(1.0, 0.92, 0.48)
+	match status:
+		"cleared":
+			return Color(0.58, 1.0, 0.68)
+		"current":
+			return Color(1.0, 0.82, 0.30)
+		"reward":
+			return Color(1.0, 0.74, 0.44)
+		"next":
+			return Color(0.58, 0.86, 1.0)
+		"lost":
+			return Color(1.0, 0.45, 0.40)
+		_:
+			return Color(0.80, 0.84, 0.90)
+
+
+func _get_run_path_button_tooltip(entry: Dictionary) -> String:
+	var enemies: Array = entry.get("enemy_names", [])
+	var enemy_text: String = "unknown opposition" if enemies.is_empty() else ", ".join(enemies)
+	return "%s\nEnemies: %s\nRule: %s" % [
+		entry.get("encounter_intro", "Read the table before combat starts."),
+		enemy_text,
+		entry.get("table_modifier_name", "House Rules")
+	]
 
 
 func _count_path_status(path_entries: Array, status: String) -> int:

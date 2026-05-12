@@ -186,12 +186,7 @@ func get_current_enemy_paths() -> Array[String]:
 
 
 func get_current_enemy_names() -> Array[String]:
-	var names: Array[String] = []
-	for path in get_current_enemy_paths():
-		var enemy: Resource = load(path)
-		if enemy != null:
-			names.append(_get_resource_name(enemy))
-	return names
+	return _get_enemy_names_from_paths(get_current_enemy_paths())
 
 
 func get_next_node_name_after_reward() -> String:
@@ -238,11 +233,18 @@ func get_run_path() -> Array[Dictionary]:
 	for index in range(RUN_NODES.size()):
 		var node: Dictionary = RUN_NODES[index]
 		var status: String = _get_run_path_status(index)
+		var modifier: Dictionary = _get_node_table_modifier(node)
 		path.append({
 			"index": index,
 			"table_number": index + 1,
 			"name": String(node.get("name", "Table")),
 			"kind": String(node.get("kind", "combat")),
+			"enemy_names": _get_enemy_names_from_paths(node.get("enemy_paths", [])),
+			"encounter_intro": String(node.get("encounter_intro", "Read the table before combat starts.")),
+			"table_modifier_name": String(modifier.get("name", "House Rules")),
+			"table_modifier_summary": String(modifier.get("summary", "No special rule is active.")),
+			"reward_stakes": String(node.get("reward_stakes", "Clear the table to improve the run.")),
+			"reward_tag_names": _format_reward_tags(node.get("reward_tags", [])),
 			"status": status,
 			"status_label": _get_run_path_status_label(status)
 		})
@@ -629,6 +631,25 @@ func _get_run_path_status_label(status: String) -> String:
 			return "LOST"
 		_:
 			return "UPCOMING"
+
+
+func _get_node_table_modifier(node: Dictionary) -> Dictionary:
+	var modifier_value: Variant = node.get("table_modifier", {})
+	if typeof(modifier_value) != TYPE_DICTIONARY:
+		return {}
+	return Dictionary(modifier_value)
+
+
+func _get_enemy_names_from_paths(enemy_paths_value: Variant) -> Array[String]:
+	var names: Array[String] = []
+	if typeof(enemy_paths_value) != TYPE_ARRAY:
+		return names
+
+	for path_value in enemy_paths_value:
+		var enemy: Resource = load(String(path_value))
+		if enemy != null:
+			names.append(_get_resource_name(enemy))
+	return names
 
 
 func _resource_has_any_tag(resource: Resource, tags_to_match: Array) -> bool:
