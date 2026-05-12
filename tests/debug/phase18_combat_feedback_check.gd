@@ -73,15 +73,16 @@ func _advance_to_commit(combat_scene: Node) -> void:
 		_fail("Expected ContinueButton.")
 		return
 
-	for _index in range(3):
+	for _index in range(4):
+		if _get_phase_key(combat_scene) == "PLAYER_COMMIT":
+			break
 		if continue_button.disabled:
 			_fail("ContinueButton should stay available through Player Commit.")
 			return
 		continue_button.emit_signal("pressed")
 		await get_tree().process_frame
 
-	var turn_status: Node = combat_scene.find_child("TurnStatus", true, false)
-	if turn_status == null or not _get_text(turn_status).contains("Player Commit"):
+	if _get_phase_key(combat_scene) != "PLAYER_COMMIT":
 		_fail("Expected to reach Player Commit before playing a card.")
 
 
@@ -134,12 +135,11 @@ func _verify_reveal_feedback(combat_scene: Node) -> void:
 		_fail("Expected ContinueButton.")
 		return
 
-	for _index in range(2):
-		if continue_button.disabled:
-			_fail("ContinueButton should advance from commit to reveal.")
-			return
-		continue_button.emit_signal("pressed")
-		await get_tree().process_frame
+	if continue_button.disabled:
+		_fail("ContinueButton should advance from commit to reveal.")
+		return
+	continue_button.emit_signal("pressed")
+	await get_tree().process_frame
 
 	var feedback_text: String = _get_feedback_text(combat_scene)
 	if not feedback_text.contains("Reveal:"):
@@ -162,6 +162,13 @@ func _get_text(node: Node) -> String:
 	if node.has_method("get_parsed_text"):
 		return String(node.call("get_parsed_text"))
 	return String(node.get("text"))
+
+
+func _get_phase_key(combat_scene: Node) -> String:
+	var session: Node = combat_scene.find_child("CombatSession", true, false)
+	if session == null:
+		return ""
+	return String(session.get("current_phase_key"))
 
 
 func _fail(message: String) -> void:

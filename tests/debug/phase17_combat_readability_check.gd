@@ -72,12 +72,17 @@ func _advance_to_commit(combat_scene: Node) -> void:
 		_fail("Expected ContinueButton.")
 		return
 
-	for _index in range(3):
+	for _index in range(4):
+		if _get_phase_key(combat_scene) == "PLAYER_COMMIT":
+			return
 		if continue_button.disabled:
 			_fail("ContinueButton should stay available while advancing to Player Commit.")
 			return
 		continue_button.emit_signal("pressed")
 		await get_tree().process_frame
+
+	if _get_phase_key(combat_scene) != "PLAYER_COMMIT":
+		_fail("Expected smart flow to land on Player Commit.")
 
 
 func _verify_commit_readability(combat_scene: Node) -> void:
@@ -123,6 +128,13 @@ func _get_text(node: Node) -> String:
 	if node.has_method("get_parsed_text"):
 		return String(node.call("get_parsed_text"))
 	return String(node.get("text"))
+
+
+func _get_phase_key(combat_scene: Node) -> String:
+	var session: Node = combat_scene.find_child("CombatSession", true, false)
+	if session == null:
+		return ""
+	return String(session.get("current_phase_key"))
 
 
 func _fail(message: String) -> void:

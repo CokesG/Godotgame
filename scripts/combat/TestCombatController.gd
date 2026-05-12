@@ -37,13 +37,13 @@ const FEEDBACK_PHASE_COLOR := Color(0.72, 0.90, 1.0)
 const FEEDBACK_REVEAL_COLOR := Color(0.90, 0.68, 1.0)
 const FEEDBACK_MOVE_COLOR := Color(0.52, 1.0, 0.62)
 const PHASE_ACTION_LABELS := {
-	"START_TURN": "Start Draw",
-	"DRAW": "Read Intents",
-	"ENEMY_INTENT_PREVIEW": "Commit Cards",
-	"PLAYER_COMMIT": "End Commit",
-	"BLUFF_WAGER": "Reveal",
-	"REVEAL": "Continue",
-	"RESOLVE": "Cleanup",
+	"START_TURN": "Begin Turn",
+	"DRAW": "Begin Turn",
+	"ENEMY_INTENT_PREVIEW": "Begin Turn",
+	"PLAYER_COMMIT": "Resolve Turn",
+	"BLUFF_WAGER": "Reveal Turn",
+	"REVEAL": "Review Results",
+	"RESOLVE": "Next Turn",
 	"CLEANUP": "Next Turn"
 }
 const PHASE_GUIDANCE := {
@@ -882,7 +882,35 @@ func _on_next_phase_pressed() -> void:
 	if not bool(combat_session.call("can_debug_adjust")):
 		_append_log("Combat is over. Reset to start a new loop.")
 		return
-	turn_manager.advance_phase()
+	_advance_play_loop()
+
+
+func _advance_play_loop() -> void:
+	var phase_key: String = String(combat_session.get("current_phase_key"))
+	match phase_key:
+		"START_TURN", "DRAW", "ENEMY_INTENT_PREVIEW":
+			_advance_to_phase("PLAYER_COMMIT", 4)
+		"PLAYER_COMMIT":
+			if bool(deck_manager.call("has_committed_card")):
+				_advance_to_phase("BLUFF_WAGER", 2)
+			else:
+				_advance_to_phase("RESOLVE", 4)
+		"BLUFF_WAGER", "REVEAL":
+			_advance_to_phase("RESOLVE", 3)
+		"RESOLVE", "CLEANUP":
+			_advance_to_phase("PLAYER_COMMIT", 6)
+		_:
+			turn_manager.advance_phase()
+
+
+func _advance_to_phase(target_phase: String, max_steps: int) -> void:
+	for _index in range(max_steps):
+		var current_phase: String = String(combat_session.get("current_phase_key"))
+		if current_phase == target_phase:
+			return
+		if bool(combat_session.get("combat_over")) and target_phase != "RESOLVE":
+			return
+		turn_manager.advance_phase()
 
 
 func _on_reset_pressed() -> void:
@@ -2134,21 +2162,21 @@ func _get_action_prompt(session_state: Dictionary, run_state: Dictionary) -> Str
 	var phase_key := String(session_state.get("current_phase_key", "START_TURN"))
 	match phase_key:
 		"START_TURN":
-			return "Next: refill Energy and draw up."
+			return "Next: begin turn; draw and intent read will auto-complete."
 		"DRAW":
-			return "Next: read enemy intent odds."
+			return "Next: finish draw/read setup and start planning."
 		"ENEMY_INTENT_PREVIEW":
-			return "Next: choose a target and commit your plan."
+			return "Next: start planning with the current target and move preview."
 		"PLAYER_COMMIT":
-			return "Next: spend Energy on damage, Guard, movement, or a face-down commit."
+			return "Next: play cards, then Resolve Turn."
 		"BLUFF_WAGER":
-			return "Next: call the biggest threat, raise if confident, or fold."
+			return "Next: call, raise, or fold; Reveal Turn resolves the plan."
 		"REVEAL":
-			return "Next: reveal resolves attacks, calls, traps, and committed cards."
+			return "Next: reveal resolves into the review step automatically."
 		"RESOLVE":
-			return "Next: check Blood, enemy HP, and the log."
+			return "Next: press Next Turn to cleanup, draw, read, and return to planning."
 		"CLEANUP":
-			return "Next: discard leftovers and start the next turn."
+			return "Next: cleanup rolls into the next planning state."
 		_:
 			return "Next: continue the combat loop."
 
@@ -2189,21 +2217,21 @@ func _get_turn_state_feedback(session_state: Dictionary, run_state: Dictionary) 
 	var phase_key: String = String(session_state.get("current_phase_key", "START_TURN"))
 	match phase_key:
 		"START_TURN":
-			return "State: reset the turn economy, then draw back up."
+			return "State: ready to begin. One press draws, reads intent, and opens planning."
 		"DRAW":
-			return "State: fill the hand before reading enemy intent."
+			return "State: drawing is automatic in the main play flow."
 		"ENEMY_INTENT_PREVIEW":
-			return "State: read top threats, then choose a target and move before committing."
+			return "State: intent read is ready; planning opens next."
 		"PLAYER_COMMIT":
-			return "State: cards are playable now. Watch Energy, Target, and Move before clicking."
+			return "State: planning is live and cards are playable. Spend Energy, then Resolve Turn."
 		"BLUFF_WAGER":
-			return "State: bluff choices are live. Call, raise, or fold before reveal."
+			return "State: bluff choices are live. Reveal Turn runs the payoff."
 		"REVEAL":
-			return "State: reveal is live. Damage, Guard, movement, traps, and calls resolve here."
+			return "State: reveal is resolving into review."
 		"RESOLVE":
-			return "State: resolve aftermath. Check Blood, Guard, enemy HP, and threat outcome."
+			return "State: review aftermath. Next Turn cleans up and returns to planning."
 		"CLEANUP":
-			return "State: cleanup discards leftovers and prepares the next turn."
+			return "State: cleanup is automatic in the main play flow."
 		_:
 			return "State: continue the combat loop."
 
@@ -2340,15 +2368,15 @@ func _get_card_affordance_text(session_state: Dictionary) -> String:
 	var phase_key: String = String(session_state.get("current_phase_key", "START_TURN"))
 	match phase_key:
 		"PLAYER_COMMIT":
-			return "Cards are playable now: attack/read use Target, movement uses Move, Guard/self cards ignore target."
+			return "Cards are playable now: attack/read use Target, movement uses Move, then Resolve Turn."
 		"BLUFF_WAGER":
-			return "Hand is locked while bluff choices resolve the committed plan."
+			return "Hand is locked while bluff choices prepare the reveal."
 		"REVEAL":
-			return "Hand is locked during reveal; watch the play area resolve."
+			return "Hand is locked during reveal; the play area resolves into review."
 		"ENEMY_INTENT_PREVIEW":
-			return "Pick Target and Move now so card clicks make sense on commit."
+			return "Target and Move are ready; planning opens automatically."
 		_:
-			return "Hand is visible for planning; card clicks unlock on Player Commit."
+			return "Hand is visible for planning; Begin Turn opens card play."
 
 
 func _refresh_card_target_preview() -> void:
@@ -2701,6 +2729,9 @@ func _update_debug_visibility() -> void:
 		toggle_debug_button.text = "Hide Debug" if debug_controls_visible else "Show Debug"
 	if toggle_truth_button != null:
 		toggle_truth_button.text = "Hide Truth" if debug_truth_visible else "Show Truth"
+	if reset_button != null:
+		reset_button.visible = debug_controls_visible
+		reset_button.text = "Reset Run"
 	if recipe_panel != null:
 		recipe_panel.visible = debug_controls_visible
 	if run_state_label != null:
