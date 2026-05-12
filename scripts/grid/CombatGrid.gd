@@ -101,7 +101,11 @@ func select_cell(cell: Vector2i) -> void:
 			return
 
 		if _is_enemy_unit(occupant_id):
-			log_requested.emit("%s is not controllable in this prototype." % get_unit_label(occupant_id))
+			_update_status("Target selected: %s. Play an attack/read card to act on it." % get_unit_label(occupant_id))
+			return
+
+		if get_valid_moves_for(PLAYER_ID).has(cell):
+			_update_status("Move target selected: %s. Play a movement/trap card to use it." % format_cell(cell))
 			return
 
 		log_requested.emit("No unit at %s. Select the Gambler-Knight first." % format_cell(cell))

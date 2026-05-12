@@ -73,11 +73,20 @@ func _verify_skinned_layout(combat_scene: Node) -> void:
 	if String(title.get("text")) != "Dead Man's Ante":
 		_fail("ScreenTitle should use the branded title plaque wording.")
 		return
+	if (title as Control).global_position.x > 80.0:
+		_fail("ScreenTitle should stay inside the visible title plaque.")
+		return
 	if (action_cue_panel as Control).get_theme_stylebox("panel") == null:
 		_fail("ActionCuePanel should have a styled panel frame.")
 		return
+	if (action_cue_panel as Control).get_theme_stylebox("panel") is StyleBoxTexture:
+		_fail("ActionCuePanel should not stretch ornate PNG art as a StyleBoxTexture.")
+		return
 	if start_button.get_theme_stylebox("normal") == null:
 		_fail("StartRunButton should have a skinned button state.")
+		return
+	if start_button.get_theme_stylebox("normal") is StyleBoxTexture:
+		_fail("StartRunButton should use a stable flat button skin, not stretched ornate PNG art.")
 		return
 
 

@@ -109,13 +109,13 @@ func _refresh() -> void:
 		]
 
 	var card_color := _get_card_type_color()
-	var style := DEAD_MANS_ANTE_SKIN_SCRIPT.make_card_style(is_previewed, card_color, not is_playable)
+	var style := DEAD_MANS_ANTE_SKIN_SCRIPT.make_card_style(is_previewed, card_color, not is_playable, is_playable)
 	add_theme_stylebox_override("normal", style)
-	add_theme_stylebox_override("hover", DEAD_MANS_ANTE_SKIN_SCRIPT.make_card_style(true, Color(1.0, 0.86, 0.42), false))
+	add_theme_stylebox_override("hover", DEAD_MANS_ANTE_SKIN_SCRIPT.make_card_style(true, Color(1.0, 0.86, 0.42), false, true))
 	add_theme_stylebox_override("pressed", style)
-	add_theme_stylebox_override("disabled", DEAD_MANS_ANTE_SKIN_SCRIPT.make_card_style(false, card_color, true))
+	add_theme_stylebox_override("disabled", DEAD_MANS_ANTE_SKIN_SCRIPT.make_card_style(false, card_color, true, false))
 	add_theme_font_size_override("font_size", 14)
-	add_theme_color_override("font_color", Color(0.96, 0.91, 0.82))
+	add_theme_color_override("font_color", Color(1.0, 0.94, 0.74) if is_playable else Color(0.96, 0.91, 0.82))
 	add_theme_color_override("font_hover_color", Color(1.0, 0.94, 0.78))
 	add_theme_color_override("font_disabled_color", Color(0.62, 0.60, 0.56))
 	modulate = Color.WHITE if is_playable else Color(1.0, 1.0, 1.0, 0.66)

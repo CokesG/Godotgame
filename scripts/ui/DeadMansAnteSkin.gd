@@ -94,43 +94,37 @@ static func apply_chip(button: Button, active: bool, color: Color, tooltip: Stri
 
 
 static func make_panel_style(bg_color: Color = PANEL_BG, border_color: Color = PANEL_BORDER, kind: String = "panel") -> StyleBox:
-	var texture_path := PANEL_FRAME_PATH
-	var texture_margin := 34
 	var content_margin := 10
+	var radius := 6
+	var border_width := 2
 	if kind == "header":
-		texture_path = HEADER_PLAQUE_PATH
-		texture_margin = 42
-		content_margin = 14
+		content_margin = 10
+		radius = 6
+		border_width = 1
 	elif kind == "cue":
-		texture_path = CUE_PLAQUE_PATH
-		texture_margin = 36
 		content_margin = 12
+		radius = 6
 	elif kind == "hand":
-		texture_path = HAND_RAIL_PATH
-		texture_margin = 46
-		content_margin = 14
+		content_margin = 10
+		radius = 5
 
-	return make_texture_style(texture_path, bg_color, border_color, texture_margin, content_margin, 6)
+	return make_flat_style(bg_color, border_color, radius, border_width, content_margin)
 
 
 static func make_button_style(active: bool, pressed: bool = false, disabled: bool = false) -> StyleBox:
-	var path := BUTTON_NORMAL_PATH
 	var bg := BUTTON_BG
 	var border := BUTTON_BORDER
 	if disabled:
-		path = BUTTON_DISABLED_PATH
 		bg = Color(0.075, 0.075, 0.078, 0.92)
 		border = Color(0.26, 0.26, 0.28)
 	elif pressed:
-		path = BUTTON_PRESSED_PATH
 		bg = Color(0.42, 0.14, 0.105, 0.98)
 		border = Color(0.92, 0.44, 0.24)
 	elif active:
-		path = BUTTON_HOVER_PATH
 		bg = BUTTON_ACTIVE_BG
 		border = BUTTON_ACTIVE_BORDER
 
-	return make_texture_style(path, bg, border, 54, 12, 6)
+	return make_flat_style(bg, border, 6, 2, 12)
 
 
 static func make_chip_style(active: bool, color: Color) -> StyleBox:
@@ -139,13 +133,21 @@ static func make_chip_style(active: bool, color: Color) -> StyleBox:
 	return make_flat_style(bg, border, 5, 2, 7)
 
 
-static func make_card_style(previewed: bool, card_color: Color, disabled: bool = false) -> StyleBox:
+static func make_card_style(previewed: bool, card_color: Color, disabled: bool = false, playable: bool = false) -> StyleBox:
 	var bg := Color(0.20, 0.14, 0.10, 0.97) if previewed else Color(0.115, 0.095, 0.080, 0.96)
 	var border := Color(1.0, 0.86, 0.36) if previewed else card_color
+	var border_width := 2
+	if playable and not previewed:
+		bg = Color(0.16, 0.11, 0.075, 0.98).lerp(card_color, 0.12)
+		border = card_color.lerp(Color(1.0, 0.82, 0.32), 0.45)
+		border_width = 3
+	if previewed:
+		border_width = 4
 	if disabled:
 		bg = Color(0.070, 0.066, 0.060, 0.92)
 		border = Color(0.30, 0.30, 0.32)
-	return make_texture_style(CARD_FRAME_PATH, bg, border, 40, 12, 6)
+		border_width = 2
+	return make_flat_style(bg, border, 6, border_width, 12)
 
 
 static func make_action_pip_style(color: Color) -> StyleBox:
@@ -185,22 +187,8 @@ static func make_texture_style(
 	content_margin: int = 8,
 	radius: int = 6
 ) -> StyleBox:
-	if _should_use_runtime_textures() and ResourceLoader.exists(path):
-		var texture_resource := load(path)
-		if texture_resource is Texture2D:
-			var style := StyleBoxTexture.new()
-			style.texture = texture_resource
-			style.texture_margin_left = texture_margin
-			style.texture_margin_top = texture_margin
-			style.texture_margin_right = texture_margin
-			style.texture_margin_bottom = texture_margin
-			style.modulate_color = Color.WHITE.lerp(border_color, 0.10)
-			style.content_margin_left = content_margin
-			style.content_margin_top = content_margin
-			style.content_margin_right = content_margin
-			style.content_margin_bottom = content_margin
-			return style
-
+	# Ornate generated PNGs should be placed in fixed-size TextureRects, not stretched as
+	# arbitrary nine-slice UI. Keep this helper as a guarded fallback for older call sites.
 	return make_flat_style(bg_color, border_color, radius, 2, content_margin)
 
 
