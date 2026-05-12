@@ -135,6 +135,8 @@ var approach_title_label: Label
 var approach_enemy_cards_label: RichTextLabel
 var approach_rule_label: RichTextLabel
 var approach_stakes_label: RichTextLabel
+var run_finale_panel: PanelContainer
+var run_finale_label: RichTextLabel
 var start_run_button: Button
 var next_encounter_button: Button
 var shell_new_run_button: Button
@@ -209,6 +211,7 @@ var previewed_hand_index: int = -1
 var selected_run_path_index: int = -1
 var last_run_path_current_index: int = -1
 var last_run_path_transition_text: String = ""
+var last_results_ceremony_outcome: String = ""
 
 
 func _ready() -> void:
@@ -393,6 +396,19 @@ func _build_ui() -> void:
 	approach_stakes_label.scroll_active = false
 	approach_stakes_label.custom_minimum_size = Vector2(0, 58)
 	approach_layout.add_child(approach_stakes_label)
+
+	run_finale_panel = PanelContainer.new()
+	run_finale_panel.name = "RunFinalePanel"
+	run_finale_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	run_shell_layout.add_child(run_finale_panel)
+
+	run_finale_label = RichTextLabel.new()
+	run_finale_label.name = "RunFinale"
+	run_finale_label.bbcode_enabled = false
+	run_finale_label.fit_content = true
+	run_finale_label.scroll_active = false
+	run_finale_label.custom_minimum_size = Vector2(0, 136)
+	run_finale_panel.add_child(run_finale_label)
 
 	var run_shell_actions := HBoxContainer.new()
 	run_shell_actions.name = "RunShellActions"
@@ -1327,6 +1343,7 @@ func _reset_run_slice() -> void:
 	selected_run_path_index = -1
 	last_run_path_current_index = -1
 	last_run_path_transition_text = ""
+	last_results_ceremony_outcome = ""
 	run_manager.call("reset_run")
 	_reset_playable_combat()
 
@@ -1501,12 +1518,13 @@ func _on_combat_ended(outcome: String) -> void:
 		var cleared_table_name: String = String(pre_victory_state.get("current_node_name", "Table"))
 		run_manager.call("mark_combat_victory", combat_resolver.call("get_state"))
 		var post_victory_state: Dictionary = run_manager.call("get_state")
-		_record_run_ceremony("Victory: %s cleared. Reward choice opens the route forward." % cleared_table_name, FEEDBACK_PHASE_COLOR, run_shell_panel)
 		if String(post_victory_state.get("run_outcome", "running")) == "victory":
-			_record_run_ceremony("Run complete: final table cleared. Results are ready.", FEEDBACK_PHASE_COLOR, run_shell_panel)
+			_ensure_results_ceremony(post_victory_state)
+		else:
+			_record_run_ceremony("Victory: %s cleared. Reward choice opens the route forward." % cleared_table_name, FEEDBACK_PHASE_COLOR, run_shell_panel)
 	else:
 		run_manager.call("mark_combat_defeat")
-		_record_run_ceremony("Defeat: the route ends at this table. Results are ready.", FEEDBACK_DAMAGE_COLOR, run_shell_panel)
+		_ensure_results_ceremony(run_manager.call("get_state"))
 	_refresh_action_controls()
 
 
@@ -1999,6 +2017,7 @@ func _sync_run_flow_from_state(state: Dictionary) -> void:
 	var run_outcome := String(state.get("run_outcome", "running"))
 	if run_outcome != "running":
 		_set_run_flow_state(RUN_FLOW_RESULTS)
+		_ensure_results_ceremony(state)
 	elif bool(state.get("waiting_for_reward", false)):
 		_set_run_flow_state(RUN_FLOW_REWARD)
 	elif bool(state.get("can_start_current_node", false)) and (run_flow_state == RUN_FLOW_REWARD or run_flow_state == RUN_FLOW_NEXT_ENCOUNTER):
@@ -2027,6 +2046,7 @@ func _refresh_run_shell(state: Dictionary) -> void:
 		encounter_preview_label.clear()
 		encounter_preview_label.append_text(_get_encounter_preview_text(state))
 	_refresh_encounter_approach(state)
+	_refresh_run_finale(state)
 
 	if start_run_button != null:
 		start_run_button.visible = run_flow_state == RUN_FLOW_START
@@ -2099,7 +2119,8 @@ func _get_run_shell_detail(state: Dictionary) -> String:
 			]
 		RUN_FLOW_RESULTS:
 			var results: Dictionary = state.get("run_results", {})
-			return "%s | Won %d/%d | Blood %d/%d\nDamage taken %d | Lowest Blood %d | Deck %d cards" % [
+			return "Finale ready: %s | %s.\nWon %d/%d | Blood %d/%d | Damage taken %d | Lowest Blood %d | Deck %d cards.\nExport the summary or start a fresh run." % [
+				results.get("title", "Run Results"),
 				results.get("grade", "Table Stakes"),
 				results.get("combats_won", 0),
 				results.get("total_combats", 0),
@@ -2143,7 +2164,7 @@ func _get_run_continuity_text(state: Dictionary) -> String:
 			]
 		RUN_FLOW_RESULTS:
 			var results: Dictionary = state.get("run_results", {})
-			return "Final result: %s. Export the summary or start a fresh run." % results.get("grade", "Table Stakes")
+			return "Final result: %s. Finale panel explains the run; export the summary or start a fresh run." % results.get("grade", "Table Stakes")
 		_:
 			return "Run continuity is waiting for the next state."
 
@@ -2192,10 +2213,18 @@ func _get_run_ceremony_steps_text(state: Dictionary) -> String:
 			steps.append("[DONE] Map Move")
 			steps.append("[ACTIVE] Approach")
 		RUN_FLOW_RESULTS:
-			steps.append("[DONE] Victory")
-			steps.append("[DONE] Reward")
-			steps.append("[DONE] Map Move")
-			steps.append("[DONE] Results")
+			var outcome: String = String(state.get("run_outcome", "running"))
+			if outcome == "victory":
+				steps.append("[DONE] Final Table")
+				steps.append("[DONE] Boss Victory")
+				steps.append("[ACTIVE] Results")
+			elif outcome == "defeat":
+				steps.append("[DONE] Combat")
+				steps.append("[DONE] Defeat")
+				steps.append("[ACTIVE] Results")
+			else:
+				steps.append("[DONE] Combat")
+				steps.append("[ACTIVE] Results")
 		_:
 			if String(state.get("run_outcome", "running")) == "defeat":
 				steps.append("[DONE] Combat")
@@ -2228,6 +2257,68 @@ func _record_run_ceremony(message: String, color: Color = FEEDBACK_PHASE_COLOR, 
 	if run_ceremony_panel != null:
 		_pulse_canvas_item(run_ceremony_panel, color)
 	_push_feedback(message, color, pulse_node if pulse_node != null else run_ceremony_panel)
+
+
+func _ensure_results_ceremony(state: Dictionary) -> void:
+	var outcome: String = String(state.get("run_outcome", "running"))
+	if outcome == "running" or last_results_ceremony_outcome == outcome:
+		return
+
+	last_results_ceremony_outcome = outcome
+	var results: Dictionary = state.get("run_results", {})
+	if outcome == "victory":
+		_record_run_ceremony("Boss Victory Finale: %s folded. %s results are ready." % [
+			state.get("last_completed_node_name", "Final Table"),
+			results.get("grade", "Run")
+		], FEEDBACK_PHASE_COLOR, run_shell_panel)
+	elif outcome == "defeat":
+		_record_run_ceremony("Defeat Finale: the House stopped the run at %s. Results are ready." % state.get("current_node_name", "this table"), FEEDBACK_DAMAGE_COLOR, run_shell_panel)
+
+
+func _refresh_run_finale(state: Dictionary) -> void:
+	if run_finale_panel == null or run_finale_label == null:
+		return
+
+	var should_show: bool = run_flow_state == RUN_FLOW_RESULTS
+	run_finale_panel.visible = should_show
+	if not should_show:
+		return
+
+	run_finale_label.clear()
+	run_finale_label.append_text(_get_run_finale_text(state))
+	run_finale_label.modulate = FEEDBACK_PHASE_COLOR if String(state.get("run_outcome", "running")) == "victory" else FEEDBACK_DAMAGE_COLOR
+
+
+func _get_run_finale_text(state: Dictionary) -> String:
+	var results: Dictionary = state.get("run_results", {})
+	var outcome: String = String(results.get("outcome", state.get("run_outcome", "running")))
+	if outcome == "victory":
+		return "Boss Victory Finale\nHouse Champion folded. Prototype path cleared with %s.\nTables: %d/%d | Blood %d/%d | Lowest Blood %d | Damage Taken %d\nDeck: %d cards | Rewards: +%d cards / +%d relics\nNext: Export Summary to compare the run, or start a fresh run." % [
+			results.get("grade", "Table Stakes"),
+			results.get("combats_won", 0),
+			results.get("total_combats", 0),
+			results.get("blood", 0),
+			results.get("max_blood", 0),
+			results.get("lowest_blood", 0),
+			results.get("damage_taken_total", 0),
+			results.get("deck_size", 0),
+			results.get("cards_claimed", 0),
+			results.get("relics_claimed", 0)
+		]
+
+	var fallen_table: String = String(state.get("current_node_name", results.get("last_completed_node_name", "this table")))
+	return "Defeat Finale\nThe House takes %s. %s.\nTables Cleared: %d/%d | Blood 0/%d | Lowest Blood %d | Damage Taken %d\nDeck: %d cards | Rewards: +%d cards / +%d relics\nNext: Export Summary to inspect the loss, or start a fresh run." % [
+		fallen_table,
+		results.get("grade", "House Win"),
+		results.get("combats_won", 0),
+		results.get("total_combats", 0),
+		results.get("max_blood", 0),
+		results.get("lowest_blood", 0),
+		results.get("damage_taken_total", 0),
+		results.get("deck_size", 0),
+		results.get("cards_claimed", 0),
+		results.get("relics_claimed", 0)
+	]
 
 
 func _should_show_encounter_preview() -> bool:

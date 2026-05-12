@@ -89,6 +89,16 @@ func _ready() -> void:
 		_fail("Expected ApproachStakes for Phase 27 reward-stakes framing.")
 		return
 
+	var run_finale := combat_scene.find_child("RunFinale", true, false)
+	if run_finale == null:
+		_fail("Expected RunFinale for Phase 29 victory/defeat finale polish.")
+		return
+
+	var run_finale_panel := combat_scene.find_child("RunFinalePanel", true, false)
+	if run_finale_panel == null:
+		_fail("Expected RunFinalePanel for Phase 29 victory/defeat finale polish.")
+		return
+
 	var action_prompt := combat_scene.find_child("ActionPrompt", true, false)
 	if action_prompt == null:
 		_fail("Expected ActionPrompt for Phase 14 next-action clarity.")
