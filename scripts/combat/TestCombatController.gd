@@ -159,6 +159,15 @@ var feedback_banner_label: Label
 var combat_feedback_label: RichTextLabel
 var action_prompt_label: Label
 var first_play_path_label: RichTextLabel
+var live_state_chip_row: HBoxContainer
+var phase_state_chip: Button
+var energy_state_chip: Button
+var target_state_chip: Button
+var move_state_chip: Button
+var threat_state_chip: Button
+var rule_state_chip: Button
+var first_play_step_row: HBoxContainer
+var first_play_step_buttons: Array[Button] = []
 var phase_guidance_label: Label
 var phase_detail_label: Label
 var table_rule_status_label: RichTextLabel
@@ -563,6 +572,20 @@ func _build_ui() -> void:
 	phase_detail_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	guidance_layout.add_child(phase_detail_label)
 
+	live_state_chip_row = HBoxContainer.new()
+	live_state_chip_row.name = "LiveStateChips"
+	live_state_chip_row.add_theme_constant_override("separation", 6)
+	guidance_layout.add_child(live_state_chip_row)
+
+	phase_state_chip = _create_compact_chip("PhaseStateChip", "PHASE START")
+	energy_state_chip = _create_compact_chip("EnergyStateChip", "ENERGY 0/0")
+	target_state_chip = _create_compact_chip("TargetStateChip", "TARGET --")
+	move_state_chip = _create_compact_chip("MoveStateChip", "MOVE --")
+	threat_state_chip = _create_compact_chip("ThreatStateChip", "THREAT ?")
+	rule_state_chip = _create_compact_chip("RuleStateChip", "RULE --")
+	for chip in [phase_state_chip, energy_state_chip, target_state_chip, move_state_chip, threat_state_chip, rule_state_chip]:
+		live_state_chip_row.add_child(chip)
+
 	action_prompt_label = Label.new()
 	action_prompt_label.name = "ActionPrompt"
 	action_prompt_label.text = "Next: start the run."
@@ -577,6 +600,21 @@ func _build_ui() -> void:
 	first_play_path_label.scroll_active = false
 	first_play_path_label.custom_minimum_size = Vector2(0, 48)
 	guidance_layout.add_child(first_play_path_label)
+
+	first_play_step_row = HBoxContainer.new()
+	first_play_step_row.name = "FirstPlayStepButtons"
+	first_play_step_row.add_theme_constant_override("separation", 6)
+	guidance_layout.add_child(first_play_step_row)
+
+	for step in [
+		{"name": "FirstPlayStepOpen", "text": "1 Open"},
+		{"name": "FirstPlayStepTarget", "text": "2 Target"},
+		{"name": "FirstPlayStepCard", "text": "3 Card"},
+		{"name": "FirstPlayStepResolve", "text": "4 Resolve"}
+	]:
+		var step_button := _create_compact_chip(String(step.get("name", "FirstPlayStep")), String(step.get("text", "Step")))
+		first_play_step_buttons.append(step_button)
+		first_play_step_row.add_child(step_button)
 
 	var feedback_panel := PanelContainer.new()
 	feedback_panel.name = "CombatFeedbackPanel"
@@ -1263,7 +1301,9 @@ func _apply_phase35_default_layout(
 	threat_summary_label.custom_minimum_size = Vector2(360, 58)
 	intent_preview_label.custom_minimum_size = Vector2(360, 104)
 	bluff_state_label.custom_minimum_size = Vector2(360, 64)
+	live_state_chip_row.custom_minimum_size = Vector2(0, 34)
 	first_play_path_label.custom_minimum_size = Vector2(0, 50)
+	first_play_step_row.custom_minimum_size = Vector2(0, 34)
 	card_action_hint_label.custom_minimum_size = Vector2(0, 48)
 	card_target_preview_label.custom_minimum_size = Vector2(0, 46)
 
@@ -1320,6 +1360,49 @@ func _style_play_panel(panel: PanelContainer, bg_color: Color, border_color: Col
 	style.content_margin_right = 8
 	style.content_margin_bottom = 8
 	panel.add_theme_stylebox_override("panel", style)
+
+
+func _create_compact_chip(chip_name: String, label: String) -> Button:
+	var chip := Button.new()
+	chip.name = chip_name
+	chip.text = label
+	chip.focus_mode = Control.FOCUS_NONE
+	chip.clip_text = true
+	chip.custom_minimum_size = Vector2(96, 30)
+	chip.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_style_compact_button(chip, false, Color(0.56, 0.56, 0.58), "Compact state.")
+	return chip
+
+
+func _style_compact_button(button: Button, active: bool, color: Color, tooltip: String) -> void:
+	if button == null:
+		return
+
+	button.tooltip_text = tooltip
+	button.add_theme_font_size_override("font_size", 13 if active else 12)
+	button.add_theme_color_override("font_color", Color(1.0, 0.95, 0.82) if active else Color(0.78, 0.77, 0.72))
+	button.add_theme_color_override("font_hover_color", Color(1.0, 0.96, 0.84))
+
+	var style := StyleBoxFlat.new()
+	style.corner_radius_top_left = 5
+	style.corner_radius_top_right = 5
+	style.corner_radius_bottom_left = 5
+	style.corner_radius_bottom_right = 5
+	style.border_width_left = 2
+	style.border_width_top = 2
+	style.border_width_right = 2
+	style.border_width_bottom = 2
+	style.bg_color = Color(0.18, 0.145, 0.095) if active else Color(0.095, 0.095, 0.10)
+	style.border_color = color if active else Color(0.30, 0.30, 0.32)
+	style.content_margin_left = 8
+	style.content_margin_top = 4
+	style.content_margin_right = 8
+	style.content_margin_bottom = 4
+	button.add_theme_stylebox_override("normal", style)
+	var hover_style := style.duplicate()
+	hover_style.bg_color = Color(0.24, 0.19, 0.12) if active else Color(0.12, 0.12, 0.13)
+	button.add_theme_stylebox_override("hover", hover_style)
+	button.add_theme_stylebox_override("pressed", style)
 
 
 func _connect_turn_manager() -> void:
@@ -1869,6 +1952,7 @@ func _on_target_enemy_selected(_index: int) -> void:
 		_push_feedback("Target selected: %s for attack/read cards." % target.get("name", "Enemy"), FEEDBACK_CARD_COLOR, target_enemy_option)
 	_refresh_card_action_hint()
 	_refresh_card_target_preview()
+	_refresh_compact_play_state(run_manager.call("get_state") if run_manager != null else {})
 
 
 func _on_movement_cell_selected(_index: int) -> void:
@@ -1879,6 +1963,7 @@ func _on_movement_cell_selected(_index: int) -> void:
 		_push_feedback("Move selected: %s for movement/trap cards." % combat_grid.call("format_cell", target_cell), FEEDBACK_MOVE_COLOR, movement_cell_option)
 	_refresh_card_action_hint()
 	_refresh_card_target_preview()
+	_refresh_compact_play_state(run_manager.call("get_state") if run_manager != null else {})
 
 
 func _on_card_previewed(hand_index: int) -> void:
@@ -2587,6 +2672,7 @@ func _refresh_action_controls() -> void:
 	_refresh_card_action_hint()
 	_sync_hand_card_interaction()
 	_sync_target_focus()
+	_refresh_compact_play_state(run_state)
 
 
 func _refresh_primary_action_emphasis(shell_blocks_combat: bool, can_continue: bool, phase_key: String) -> void:
@@ -3816,11 +3902,16 @@ func _refresh_targeting_options() -> void:
 	for target in targets:
 		if typeof(target) != TYPE_DICTIONARY:
 			continue
-		target_enemy_option.add_item("Target: %s HP %d/%d" % [
+		var target_label := "Target: %s HP %d/%d" % [
 			target.get("name", "Enemy"),
 			target.get("hp", 0),
 			target.get("max_hp", 0)
-		])
+		]
+		var sprite_value: Variant = target.get("sprite_texture")
+		if sprite_value is Texture2D:
+			target_enemy_option.add_icon_item(sprite_value, target_label)
+		else:
+			target_enemy_option.add_item(target_label)
 		target_enemy_option.set_item_metadata(target_enemy_option.item_count - 1, target)
 		if StringName(target.get("id", &"")) == selected_enemy_id:
 			target_enemy_option.select(target_enemy_option.item_count - 1)
@@ -4112,6 +4203,201 @@ func _get_first_play_active_step(session_state: Dictionary, run_state: Dictionar
 			return "4 Resolve Turn"
 		_:
 			return "Continue"
+
+
+func _refresh_compact_play_state(run_state: Dictionary) -> void:
+	if live_state_chip_row == null or combat_session == null:
+		return
+
+	var session_state: Dictionary = combat_session.call("get_state")
+	var phase_key: String = String(session_state.get("current_phase_key", "START_TURN"))
+	var phase_text: String = phase_key.capitalize().replace("_", " ")
+	var phase_active := run_flow_state == RUN_FLOW_COMBAT
+	phase_state_chip.text = "PHASE %s" % _shorten_chip_text(phase_text, 14)
+	_style_compact_button(phase_state_chip, phase_active, FEEDBACK_PHASE_COLOR, _get_turn_state_feedback(session_state, run_state))
+
+	energy_state_chip.text = "ENERGY %d/%d" % [
+		session_state.get("energy", 0),
+		session_state.get("max_energy", 0)
+	]
+	_style_compact_button(
+		energy_state_chip,
+		phase_key == "PLAYER_COMMIT" and int(session_state.get("energy", 0)) > 0,
+		FEEDBACK_CARD_COLOR,
+		"Energy pays for card clicks during Player Commit."
+	)
+
+	target_state_chip.text = _get_target_chip_text()
+	_style_compact_button(target_state_chip, phase_key == "PLAYER_COMMIT", FEEDBACK_DAMAGE_COLOR, "Attack and read cards use this enemy target.")
+
+	move_state_chip.text = _get_move_chip_text()
+	_style_compact_button(move_state_chip, phase_key == "PLAYER_COMMIT", FEEDBACK_MOVE_COLOR, "Movement and trap cards use this table cell.")
+
+	var threat_chip: Dictionary = _get_threat_chip_snapshot()
+	threat_state_chip.text = String(threat_chip.get("text", "THREAT ?"))
+	_style_compact_button(
+		threat_state_chip,
+		phase_active,
+		threat_chip.get("color", Color(0.80, 0.80, 0.82)),
+		String(threat_chip.get("tooltip", "No enemy read yet."))
+	)
+
+	rule_state_chip.text = _get_rule_chip_text(run_state)
+	_style_compact_button(rule_state_chip, phase_active, Color(0.78, 0.62, 0.30), _get_rule_chip_tooltip(run_state, session_state))
+	_refresh_first_play_step_buttons(session_state, run_state)
+	_sync_live_text_density()
+
+
+func _refresh_first_play_step_buttons(session_state: Dictionary, run_state: Dictionary) -> void:
+	if first_play_step_buttons.size() < 4:
+		return
+
+	var active_indices: Array[int] = _get_active_first_play_step_indices(session_state, run_state)
+	var labels := ["1 Open", "2 Target", "3 Card", "4 Resolve"]
+	var tooltips := [
+		"Open the current table and deal into combat.",
+		"Pick the enemy target or move cell.",
+		"Click a ready hand card.",
+		"Resolve Turn advances the plan."
+	]
+	for index in range(first_play_step_buttons.size()):
+		var button := first_play_step_buttons[index]
+		var active := active_indices.has(index)
+		button.text = labels[index]
+		var tooltip_prefix := "Active step: " if active else "Step: "
+		_style_compact_button(button, active, FEEDBACK_CARD_COLOR, "%s%s" % [tooltip_prefix, tooltips[index]])
+
+
+func _get_active_first_play_step_indices(session_state: Dictionary, _run_state: Dictionary) -> Array[int]:
+	if run_flow_state == RUN_FLOW_START:
+		return [0]
+	if run_flow_state == RUN_FLOW_REWARD or run_flow_state == RUN_FLOW_NEXT_ENCOUNTER or run_flow_state == RUN_FLOW_RESULTS:
+		return []
+	if bool(session_state.get("combat_over", false)):
+		return []
+
+	var phase_key: String = String(session_state.get("current_phase_key", "START_TURN"))
+	match phase_key:
+		"PLAYER_COMMIT":
+			return [1, 2]
+		"BLUFF_WAGER", "REVEAL", "RESOLVE", "CLEANUP":
+			return [3]
+		_:
+			return [0]
+
+
+func _sync_live_text_density() -> void:
+	var compact_live := run_flow_state == RUN_FLOW_COMBAT and not debug_controls_visible
+	if live_state_chip_row != null:
+		live_state_chip_row.visible = true
+	if first_play_step_row != null:
+		first_play_step_row.visible = true
+	if phase_guidance_label != null:
+		phase_guidance_label.visible = not compact_live
+	if phase_detail_label != null:
+		phase_detail_label.visible = not compact_live
+	if action_prompt_label != null:
+		action_prompt_label.visible = not compact_live
+	if first_play_path_label != null:
+		first_play_path_label.visible = not compact_live
+	if turn_status_label != null:
+		turn_status_label.visible = not compact_live
+	if table_rule_status_label != null:
+		table_rule_status_label.visible = not compact_live
+	if threat_summary_label != null:
+		threat_summary_label.visible = not compact_live
+	if card_action_hint_label != null:
+		card_action_hint_label.visible = not compact_live
+	if combat_feedback_label != null:
+		combat_feedback_label.visible = not compact_live
+
+
+func _get_target_chip_text() -> String:
+	var target: Dictionary = _get_selected_enemy_target()
+	if target.is_empty():
+		return "TARGET --"
+	return "TARGET %s" % _shorten_chip_text(String(target.get("name", "Enemy")), 14)
+
+
+func _get_move_chip_text() -> String:
+	var target_cell: Vector2i = _get_selected_move_cell()
+	if target_cell == Vector2i(-1, -1) or combat_grid == null:
+		return "MOVE --"
+	return "MOVE %s" % combat_grid.call("format_cell", target_cell)
+
+
+func _get_threat_chip_snapshot() -> Dictionary:
+	if current_intent_previews.is_empty():
+		return {
+			"text": "THREAT ?",
+			"tooltip": "No enemy read yet.",
+			"color": Color(0.80, 0.80, 0.82)
+		}
+
+	var best_preview: Dictionary = {}
+	var best_option: Dictionary = {}
+	var best_score := -1
+	for preview in current_intent_previews:
+		var options: Array = preview.get("options", [])
+		var option: Dictionary = _get_top_intent_option(options)
+		var score := _get_intent_threat_score(option)
+		if score > best_score:
+			best_score = score
+			best_preview = preview
+			best_option = option
+
+	if best_option.is_empty():
+		return {
+			"text": "THREAT LOW",
+			"tooltip": "No weighted enemy read.",
+			"color": Color(0.55, 0.85, 0.62)
+		}
+
+	var level := _get_threat_level(best_option)
+	return {
+		"text": "THREAT %s" % level,
+		"tooltip": "%s: %s %d%%. %s" % [
+			best_preview.get("enemy_name", "Enemy"),
+			best_option.get("intent_name", "Intent"),
+			best_option.get("percentage", 0),
+			_get_threat_response(best_option)
+		],
+		"color": _get_threat_chip_color(level)
+	}
+
+
+func _get_threat_chip_color(level: String) -> Color:
+	match level:
+		"HIGH":
+			return Color(1.0, 0.38, 0.26)
+		"MED":
+			return Color(1.0, 0.70, 0.32)
+		"SETUP":
+			return Color(0.72, 0.58, 1.0)
+		_:
+			return Color(0.55, 0.85, 0.62)
+
+
+func _get_rule_chip_text(run_state: Dictionary) -> String:
+	var table_modifier: Dictionary = run_state.get("table_modifier", {})
+	var modifier_name := String(table_modifier.get("name", "Rule"))
+	if modifier_name.is_empty():
+		modifier_name = "Rule"
+	return "RULE %s" % _shorten_chip_text(modifier_name, 15)
+
+
+func _get_rule_chip_tooltip(run_state: Dictionary, session_state: Dictionary) -> String:
+	var table_modifier: Dictionary = run_state.get("table_modifier", {})
+	var modifier_name := String(table_modifier.get("name", "Table Rule"))
+	var modifier_summary := String(table_modifier.get("summary", "No special rule is active."))
+	var active_text := _get_table_rule_active_effect_text(run_state.get("table_modifiers", {}), session_state)
+	return "%s: %s Active: %s" % [modifier_name, modifier_summary, active_text]
+
+
+func _shorten_chip_text(value: String, max_length: int) -> String:
+	if value.length() <= max_length:
+		return value
+	return "%s..." % value.substr(0, max(0, max_length - 3))
 
 
 func _refresh_turn_status(run_state: Dictionary) -> void:
@@ -4832,6 +5118,7 @@ func _update_debug_visibility() -> void:
 		truth_title_label.visible = truth_visible
 	if debug_truth_label != null:
 		debug_truth_label.visible = truth_visible
+	_sync_live_text_density()
 	_sync_run_panel_visibility()
 
 
@@ -4854,11 +5141,19 @@ func _refresh_intent_call_options() -> void:
 
 	var options: Array = preview.get("options", [])
 	for option in options:
-		intent_call_option.add_item("%d%% %s" % [
-			option.get("percentage", 0),
-			option.get("intent_name", "Intent")
-		])
-		intent_call_option.set_item_metadata(intent_call_option.item_count - 1, option)
+		if typeof(option) != TYPE_DICTIONARY:
+			continue
+		var option_data: Dictionary = option
+		var intent_label := "%d%% %s" % [
+			option_data.get("percentage", 0),
+			option_data.get("intent_name", "Intent")
+		]
+		var icon_value: Variant = option_data.get("icon_texture")
+		if icon_value is Texture2D:
+			intent_call_option.add_icon_item(icon_value, intent_label)
+		else:
+			intent_call_option.add_item(intent_label)
+		intent_call_option.set_item_metadata(intent_call_option.item_count - 1, option_data)
 
 	if intent_call_option.item_count > 0:
 		intent_call_option.select(0)

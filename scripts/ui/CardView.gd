@@ -65,6 +65,7 @@ func _on_focus_exited() -> void:
 func _refresh() -> void:
 	if card_resource == null:
 		text = "Empty"
+		icon = null
 		return
 
 	var card_name := _get_card_name()
@@ -80,6 +81,11 @@ func _refresh() -> void:
 		rules_text,
 		_get_tag_line()
 	]
+	var illustration_value: Variant = card_resource.get("illustration_texture")
+	icon = illustration_value if illustration_value is Texture2D else null
+	expand_icon = icon != null
+	icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vertical_icon_alignment = VERTICAL_ALIGNMENT_TOP
 	if is_playable:
 		tooltip_text = "Click to play %s during Player Commit. Target: %s%s" % [
 			card_name,

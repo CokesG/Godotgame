@@ -27,6 +27,7 @@ enum TelegraphTier {
 @export var telegraph_tier: TelegraphTier = TelegraphTier.POSSIBLE
 @export var target_lane: int = -1
 @export var target_cell: Vector2i = Vector2i(-1, -1)
+@export var icon_texture: Texture2D
 @export var payload: Dictionary = {}
 @export var tell_tags: Array[StringName] = []
 

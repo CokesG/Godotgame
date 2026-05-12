@@ -1,12 +1,14 @@
-[gd_resource type="Resource" load_steps=5 format=3]
+[gd_resource type="Resource" load_steps=6 format=3]
 
 [ext_resource type="Script" path="res://scripts/enemies/EnemyDefinition.gd" id="1"]
 [ext_resource type="Resource" path="res://resources/intents/hexmonger_blood_hex.tres" id="2"]
 [ext_resource type="Resource" path="res://resources/intents/hexmonger_jinx.tres" id="3"]
 [ext_resource type="Resource" path="res://resources/intents/hexmonger_ward.tres" id="4"]
+[ext_resource type="Texture2D" path="res://art/game/enemies/enemy_hexmonger.png" id="5"]
 
 [resource]
 script = ExtResource("1")
+sprite_texture = ExtResource("5")
 id = &"hexmonger"
 display_name = "Hexmonger"
 role = 8

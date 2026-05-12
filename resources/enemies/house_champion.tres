@@ -1,13 +1,15 @@
-[gd_resource type="Resource" load_steps=6 format=3]
+[gd_resource type="Resource" load_steps=7 format=3]
 
 [ext_resource type="Script" path="res://scripts/enemies/EnemyDefinition.gd" id="1"]
 [ext_resource type="Resource" path="res://resources/intents/champion_royal_flush.tres" id="2"]
 [ext_resource type="Resource" path="res://resources/intents/champion_snap_call.tres" id="3"]
 [ext_resource type="Resource" path="res://resources/intents/champion_stonewall.tres" id="4"]
 [ext_resource type="Resource" path="res://resources/intents/champion_false_tell.tres" id="5"]
+[ext_resource type="Texture2D" path="res://art/game/enemies/enemy_house_champion.png" id="6"]
 
 [resource]
 script = ExtResource("1")
+sprite_texture = ExtResource("6")
 id = &"house_champion"
 display_name = "House Champion"
 role = 11

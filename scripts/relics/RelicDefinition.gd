@@ -12,6 +12,7 @@ enum Rarity {
 @export var display_name: String = ""
 @export_multiline var rules_text: String = ""
 @export var rarity: Rarity = Rarity.COMMON
+@export var icon_texture: Texture2D
 @export var tags: Array[StringName] = []
 @export var modifiers: Dictionary = {}
 @export_multiline var design_note: String = ""

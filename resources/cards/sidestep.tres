@@ -1,9 +1,11 @@
-[gd_resource type="Resource" load_steps=2 format=3]
+[gd_resource type="Resource" load_steps=3 format=3]
 
 [ext_resource type="Script" path="res://scripts/cards/CardDefinition.gd" id="1"]
+[ext_resource type="Texture2D" path="res://art/game/cards/illustrations/card_sidestep.png" id="2"]
 
 [resource]
 script = ExtResource("1")
+illustration_texture = ExtResource("2")
 id = &"sidestep"
 display_name = "Sidestep"
 rules_text = "Move 1 orthogonal cell."

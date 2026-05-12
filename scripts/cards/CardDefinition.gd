@@ -35,6 +35,7 @@ enum TargetType {
 @export var card_type: CardType = CardType.ATTACK
 @export var rarity: Rarity = Rarity.STARTER
 @export var target_type: TargetType = TargetType.ENEMY
+@export var illustration_texture: Texture2D
 @export var tags: Array[StringName] = []
 @export var effects: Array[Dictionary] = []
 @export var upgrade_id: StringName

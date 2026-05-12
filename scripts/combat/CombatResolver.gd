@@ -49,7 +49,8 @@ func reset_combat(enemy_paths: Array, player_hp: int = -1) -> void:
 			"max_hp": int(enemy.get("max_hp")),
 			"hp": int(enemy.get("max_hp")),
 			"guard": 0,
-			"alive": true
+			"alive": true,
+			"sprite_texture": enemy.get("sprite_texture")
 		}
 
 	log_requested.emit("Combat resolver reset with %d enemies." % enemy_order.size())
@@ -182,7 +183,8 @@ func get_alive_enemy_targets() -> Array[Dictionary]:
 				"name": enemy.get("name", "Enemy"),
 				"hp": enemy.get("hp", 0),
 				"max_hp": enemy.get("max_hp", 0),
-				"guard": enemy.get("guard", 0)
+				"guard": enemy.get("guard", 0),
+				"sprite_texture": enemy.get("sprite_texture")
 			})
 	return targets
 
