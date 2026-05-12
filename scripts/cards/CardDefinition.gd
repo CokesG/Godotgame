@@ -35,7 +35,7 @@ enum TargetType {
 @export var card_type: CardType = CardType.ATTACK
 @export var rarity: Rarity = Rarity.STARTER
 @export var target_type: TargetType = TargetType.ENEMY
-@export var illustration_texture: Texture2D
+@export_file("*.png") var illustration_path: String = ""
 @export var tags: Array[StringName] = []
 @export var effects: Array[Dictionary] = []
 @export var upgrade_id: StringName
@@ -54,3 +54,12 @@ func get_debug_summary() -> String:
 		cost,
 		CardType.keys()[card_type].capitalize()
 	]
+
+
+func get_illustration_texture() -> Texture2D:
+	if illustration_path.is_empty():
+		return null
+	var texture := load(illustration_path)
+	if texture is Texture2D:
+		return texture
+	return null

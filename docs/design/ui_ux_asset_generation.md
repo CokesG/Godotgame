@@ -4,6 +4,7 @@ Status: visual direction and asset-production guide
 Last updated: 2026-05-12
 Engine target: Godot 4.6.x
 Design source: `docs/design/dead_mans_ante_mega_prompt.md`
+VFX companion: `docs/design/vfx_particles_effects.md`
 
 ## Purpose
 

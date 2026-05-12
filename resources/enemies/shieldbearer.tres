@@ -1,14 +1,13 @@
-[gd_resource type="Resource" load_steps=6 format=3]
+[gd_resource type="Resource" load_steps=5 format=3]
 
 [ext_resource type="Script" path="res://scripts/enemies/EnemyDefinition.gd" id="1"]
 [ext_resource type="Resource" path="res://resources/intents/shieldbearer_guard.tres" id="2"]
 [ext_resource type="Resource" path="res://resources/intents/shieldbearer_bash.tres" id="3"]
 [ext_resource type="Resource" path="res://resources/intents/shieldbearer_taunt.tres" id="4"]
-[ext_resource type="Texture2D" path="res://art/game/enemies/enemy_shieldbearer.png" id="5"]
 
 [resource]
 script = ExtResource("1")
-sprite_texture = ExtResource("5")
+sprite_path = "res://art/game/enemies/enemy_shieldbearer.png"
 id = &"shieldbearer"
 display_name = "Shieldbearer"
 role = 1

@@ -1,11 +1,10 @@
-[gd_resource type="Resource" load_steps=3 format=3]
+[gd_resource type="Resource" load_steps=2 format=3]
 
 [ext_resource type="Script" path="res://scripts/cards/CardDefinition.gd" id="1"]
-[ext_resource type="Texture2D" path="res://art/game/cards/illustrations/card_snare_card.png" id="2"]
 
 [resource]
 script = ExtResource("1")
-illustration_texture = ExtResource("2")
+illustration_path = "res://art/game/cards/illustrations/card_snare_card.png"
 id = &"snare_card"
 display_name = "Snare Card"
 rules_text = "Place a trap on an empty adjacent cell."

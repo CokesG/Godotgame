@@ -4,6 +4,7 @@ const COMBAT_GRID_SCRIPT := preload("res://scripts/grid/CombatGrid.gd")
 const BLUFF_SYSTEM_SCRIPT := preload("res://scripts/combat/BluffSystem.gd")
 const COMBAT_RESOLVER_SCRIPT := preload("res://scripts/combat/CombatResolver.gd")
 const COMBAT_SESSION_SCRIPT := preload("res://scripts/combat/CombatSession.gd")
+const COMBAT_VFX_SCRIPT := preload("res://scripts/vfx/CombatVFX.gd")
 const DECK_MANAGER_SCRIPT := preload("res://scripts/cards/DeckManager.gd")
 const ENEMY_INTENT_SYSTEM_SCRIPT := preload("res://scripts/enemies/EnemyIntentSystem.gd")
 const HAND_VIEW_SCRIPT := preload("res://scripts/ui/HandView.gd")
@@ -119,6 +120,7 @@ var phase_label: Label
 var turn_label: Label
 var log_label: RichTextLabel
 var combat_grid: Control
+var combat_vfx: Control
 var bluff_system: Node
 var combat_resolver: Node
 var combat_session: Node
@@ -257,9 +259,18 @@ var run_inspector_filter_buttons: Array[Button] = []
 
 func _ready() -> void:
 	_build_ui()
+	_build_vfx_layer()
 	_connect_turn_manager()
 	log_label.clear()
 	_reset_run_slice()
+
+
+func _build_vfx_layer() -> void:
+	combat_vfx = COMBAT_VFX_SCRIPT.new()
+	combat_vfx.name = "CombatVFX"
+	combat_vfx.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(combat_vfx)
+	combat_vfx.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
 
 func _build_ui() -> void:
@@ -1606,10 +1617,13 @@ func _on_card_clicked(hand_index: int) -> void:
 		pending_card_context.clear()
 		return
 
+	var play_context := pending_card_context.duplicate()
+	var source_card_view := _get_hand_card_view(hand_index)
 	if not bool(deck_manager.call("play_card_at", hand_index)):
 		combat_session.call("refund_energy", cost, "%s failed to play" % card_name)
 		pending_card_context.clear()
 	else:
+		_play_card_commit_vfx(card, play_context, source_card_view, false)
 		_mark_recipe_step("play_or_commit")
 
 
@@ -1649,12 +1663,14 @@ func _on_commit_first_card_pressed() -> void:
 	if not bool(combat_session.call("spend_energy", cost, "Commit %s" % card_name)):
 		return
 
+	var source_card_view := _get_hand_card_view(0)
 	var committed: Resource = deck_manager.call("commit_card_at", 0)
 	if committed != null:
 		committed_card_context = context.duplicate()
 		bluff_system.call("set_committed_card", committed)
 		_mark_recipe_step("play_or_commit")
 		_push_feedback("Committed: %s face-down." % _get_card_name(committed), FEEDBACK_CARD_COLOR, bluff_state_label)
+		_play_card_commit_vfx(committed, context, source_card_view, true)
 	else:
 		combat_session.call("refund_energy", cost, "Commit failed")
 
@@ -1684,6 +1700,7 @@ func _on_set_call_pressed() -> void:
 		intent_metadata.get("intent_name", "Intent"),
 		enemy_metadata.get("enemy_name", "Enemy")
 	], FEEDBACK_REVEAL_COLOR, bluff_state_label)
+	_play_intent_flicker_vfx(intent_preview_label, FEEDBACK_REVEAL_COLOR)
 
 
 func _on_raise_pressed() -> void:
@@ -1693,6 +1710,7 @@ func _on_raise_pressed() -> void:
 	if bool(bluff_system.call("raise_wager", 1)):
 		_mark_recipe_step("bluff_choice")
 		_push_feedback("Raise: wager increased.", FEEDBACK_REVEAL_COLOR, bluff_state_label)
+		_play_chip_vfx(bluff_state_label)
 
 
 func _on_fold_pressed() -> void:
@@ -1704,6 +1722,7 @@ func _on_fold_pressed() -> void:
 		committed_card_context.clear()
 		_mark_recipe_step("bluff_choice")
 		_push_feedback("Fold: committed card moved to discard.", FEEDBACK_REVEAL_COLOR, bluff_state_label)
+		_play_smoke_vfx(bluff_state_label)
 
 
 func _on_reset_bluff_pressed() -> void:
@@ -1873,6 +1892,7 @@ func _on_intents_revealed(revealed: Array[Dictionary]) -> void:
 			entry.get("intent_name", "Intent")
 		])
 	_push_feedback("Reveal: %s." % " | ".join(reveal_names), FEEDBACK_REVEAL_COLOR, intent_preview_label)
+	_play_intent_flicker_vfx(intent_preview_label, FEEDBACK_REVEAL_COLOR)
 
 
 func _on_bluff_state_changed(state: Dictionary) -> void:
@@ -2464,6 +2484,7 @@ func _on_grid_unit_moved(unit_id: StringName, from_cell: Vector2i, to_cell: Vect
 		combat_grid.call("format_cell", to_cell)
 	], FEEDBACK_MOVE_COLOR, combat_grid)
 	_flash_grid_unit(unit_id, FEEDBACK_MOVE_COLOR)
+	_play_unit_or_cell_burst(unit_id, to_cell, FEEDBACK_MOVE_COLOR, &"move")
 	_refresh_targeting_options()
 
 
@@ -2483,12 +2504,14 @@ func _resolve_reveal() -> void:
 		var resolved_card: Resource = deck_manager.call("resolve_committed_card")
 		if resolved_card != null:
 			committed_card_context["bluff_state"] = bluff_state
+			var resolved_context := committed_card_context.duplicate()
 			if _is_movement_card(resolved_card):
 				if bool(_resolve_movement_card(resolved_card, committed_card_context)):
 					_apply_card_side_effects(resolved_card)
 			else:
 				combat_resolver.call("apply_card_with_context", resolved_card, committed_card_context)
 				_apply_card_side_effects(resolved_card)
+			_play_card_commit_vfx(resolved_card, resolved_context, bluff_state_label, false)
 			committed_card_context.clear()
 	combat_resolver.call("apply_revealed_intents_with_context", revealed, _build_reveal_context(bluff_state))
 	_mark_recipe_step("reveal_resolve")
@@ -3907,8 +3930,8 @@ func _refresh_targeting_options() -> void:
 			target.get("hp", 0),
 			target.get("max_hp", 0)
 		]
-		var sprite_value: Variant = target.get("sprite_texture")
-		if sprite_value is Texture2D:
+		var sprite_value: Texture2D = _load_runtime_art_texture(String(target.get("sprite_path", "")))
+		if sprite_value != null:
 			target_enemy_option.add_icon_item(sprite_value, target_label)
 		else:
 			target_enemy_option.add_item(target_label)
@@ -4851,6 +4874,182 @@ func _preview_card_grid_focus(card: Resource, context: Dictionary) -> void:
 		_flash_grid_unit(&"player", FEEDBACK_CARD_COLOR)
 
 
+func _play_card_commit_vfx(card: Resource, context: Dictionary, source: CanvasItem, face_down: bool) -> void:
+	if combat_vfx == null:
+		return
+
+	var color := _get_card_vfx_color(card)
+	if _is_live_canvas_item(source) and combat_vfx.has_method("play_card_burst_on"):
+		combat_vfx.call("play_card_burst_on", source, color)
+
+	if face_down:
+		_play_smoke_vfx(source if _is_live_canvas_item(source) else bluff_state_label)
+		return
+
+	var target_position := _get_card_vfx_target_position(card, context, source)
+	var source_position := _get_canvas_item_global_center(source)
+	if source_position == Vector2.ZERO:
+		source_position = _get_canvas_item_global_center(card_action_hint_label)
+
+	match _get_card_vfx_style(card):
+		&"attack":
+			if target_position != Vector2.ZERO and source_position != Vector2.ZERO and combat_vfx.has_method("play_slash_between"):
+				combat_vfx.call("play_slash_between", source_position, target_position, color)
+		&"guard":
+			if target_position != Vector2.ZERO and combat_vfx.has_method("play_guard_pulse_at"):
+				combat_vfx.call("play_guard_pulse_at", target_position, color)
+		&"move":
+			if target_position != Vector2.ZERO and combat_vfx.has_method("play_burst_at"):
+				combat_vfx.call("play_burst_at", target_position, color, &"move")
+		&"read":
+			_play_intent_flicker_vfx(intent_preview_label, color)
+			if target_position != Vector2.ZERO and combat_vfx.has_method("play_ring_at"):
+				combat_vfx.call("play_ring_at", target_position, color, 36.0)
+		&"trap":
+			if target_position != Vector2.ZERO and combat_vfx.has_method("play_burst_at"):
+				combat_vfx.call("play_burst_at", target_position, color, &"smoke")
+		&"ritual":
+			_play_smoke_vfx(source if _is_live_canvas_item(source) else bluff_state_label)
+			_play_chip_vfx(bluff_state_label)
+		&"bluff":
+			_play_chip_vfx(bluff_state_label)
+
+
+func _play_unit_burst(unit_id: StringName, color: Color, style: StringName) -> void:
+	if combat_vfx == null or not combat_vfx.has_method("play_burst_at"):
+		return
+
+	var center := _get_unit_vfx_position(unit_id)
+	if center == Vector2.ZERO:
+		return
+	combat_vfx.call("play_burst_at", center, color, style)
+
+
+func _play_unit_or_cell_burst(unit_id: StringName, cell: Vector2i, color: Color, style: StringName) -> void:
+	if combat_vfx == null or not combat_vfx.has_method("play_burst_at"):
+		return
+
+	var center := _get_unit_vfx_position(unit_id)
+	if center == Vector2.ZERO:
+		center = _get_cell_vfx_position(cell)
+	if center != Vector2.ZERO:
+		combat_vfx.call("play_burst_at", center, color, style)
+
+
+func _play_guard_vfx(unit_id: StringName) -> void:
+	if combat_vfx == null or not combat_vfx.has_method("play_guard_pulse_at"):
+		return
+
+	var center := _get_unit_vfx_position(unit_id)
+	if center != Vector2.ZERO:
+		combat_vfx.call("play_guard_pulse_at", center, FEEDBACK_GUARD_COLOR)
+
+
+func _play_chip_vfx(target: CanvasItem) -> void:
+	if combat_vfx != null and combat_vfx.has_method("play_chip_burst_on") and _is_live_canvas_item(target):
+		combat_vfx.call("play_chip_burst_on", target)
+
+
+func _play_smoke_vfx(target: CanvasItem) -> void:
+	if combat_vfx != null and combat_vfx.has_method("play_curse_smoke_on") and _is_live_canvas_item(target):
+		combat_vfx.call("play_curse_smoke_on", target)
+
+
+func _play_intent_flicker_vfx(target: CanvasItem, color: Color) -> void:
+	if combat_vfx != null and combat_vfx.has_method("play_intent_flicker_on") and _is_live_canvas_item(target):
+		combat_vfx.call("play_intent_flicker_on", target, color)
+
+
+func _get_card_vfx_target_position(card: Resource, context: Dictionary, fallback: CanvasItem) -> Vector2:
+	if _is_attack_or_read_card(card):
+		var target_enemy_id: StringName = StringName(context.get("target_enemy_id", &""))
+		return _get_unit_vfx_position(target_enemy_id)
+
+	if _is_grid_cell_card(card):
+		var target_cell: Vector2i = context.get("target_cell", Vector2i(-1, -1))
+		return _get_cell_vfx_position(target_cell)
+
+	if int(card.get("target_type")) == 1 or int(card.get("card_type")) == 6:
+		return _get_unit_vfx_position(&"player")
+
+	return _get_canvas_item_global_center(fallback)
+
+
+func _get_card_vfx_style(card: Resource) -> StringName:
+	match int(card.get("card_type")):
+		0:
+			return &"attack"
+		1:
+			return &"guard"
+		2:
+			return &"move"
+		3:
+			return &"bluff"
+		4:
+			return &"read"
+		5:
+			return &"trap"
+		6:
+			return &"ritual"
+		_:
+			return &"card"
+
+
+func _get_card_vfx_color(card: Resource) -> Color:
+	match _get_card_vfx_style(card):
+		&"attack":
+			return FEEDBACK_DAMAGE_COLOR
+		&"guard":
+			return FEEDBACK_GUARD_COLOR
+		&"move":
+			return FEEDBACK_MOVE_COLOR
+		&"read":
+			return FEEDBACK_REVEAL_COLOR
+		&"trap":
+			return Color(0.74, 0.40, 0.86)
+		&"ritual":
+			return Color(0.92, 0.24, 0.20)
+		&"bluff":
+			return FEEDBACK_CARD_COLOR
+		_:
+			return FEEDBACK_CARD_COLOR
+
+
+func _get_hand_card_view(hand_index: int) -> Control:
+	if hand_view == null or hand_index < 0 or hand_index >= hand_view.get_child_count():
+		return null
+
+	var child := hand_view.get_child(hand_index)
+	if child is Control:
+		return child as Control
+	return null
+
+
+func _get_unit_vfx_position(unit_id: StringName) -> Vector2:
+	if unit_id.is_empty() or combat_grid == null or not combat_grid.has_method("get_unit_global_center"):
+		return Vector2.ZERO
+	return combat_grid.call("get_unit_global_center", unit_id)
+
+
+func _get_cell_vfx_position(cell: Vector2i) -> Vector2:
+	if combat_grid == null or not combat_grid.has_method("get_cell_global_center"):
+		return Vector2.ZERO
+	return combat_grid.call("get_cell_global_center", cell)
+
+
+func _get_canvas_item_global_center(item: CanvasItem) -> Vector2:
+	if not _is_live_canvas_item(item):
+		return Vector2.ZERO
+	if item is Control:
+		var control: Control = item
+		return control.get_global_rect().get_center()
+	return item.get_global_transform_with_canvas().origin
+
+
+func _is_live_canvas_item(item: CanvasItem) -> bool:
+	return item != null and is_instance_valid(item) and item.is_inside_tree()
+
+
 func _reset_feedback_state() -> void:
 	feedback_history.clear()
 	table_rule_effect_history.clear()
@@ -4968,20 +5167,24 @@ func _emit_actor_delta_feedback(previous_actor: Dictionary, actor: Dictionary, u
 		_push_feedback("%s -%d %s." % [label, hp_lost, hp_label], FEEDBACK_DAMAGE_COLOR, enemy_status_label)
 		_flash_grid_unit(unit_id, FEEDBACK_DAMAGE_COLOR)
 		_float_grid_text(unit_id, "-%d" % hp_lost, FEEDBACK_DAMAGE_COLOR)
+		_play_unit_burst(unit_id, FEEDBACK_DAMAGE_COLOR, &"blood")
 	elif guard_delta < 0:
 		_push_feedback("%s Guard -%d absorbed impact." % [label, abs(guard_delta)], FEEDBACK_GUARD_COLOR, enemy_status_label)
 		_flash_grid_unit(unit_id, FEEDBACK_GUARD_COLOR)
 		_float_grid_text(unit_id, "BLOCK %d" % abs(guard_delta), FEEDBACK_GUARD_COLOR)
+		_play_guard_vfx(unit_id)
 
 	if guard_delta > 0:
 		_push_feedback("%s Guard +%d." % [label, guard_delta], FEEDBACK_GUARD_COLOR, enemy_status_label)
 		_flash_grid_unit(unit_id, FEEDBACK_GUARD_COLOR)
 		_float_grid_text(unit_id, "+%dG" % guard_delta, FEEDBACK_GUARD_COLOR)
+		_play_guard_vfx(unit_id)
 
 	if bool(previous_actor.get("alive", true)) and not bool(actor.get("alive", true)):
 		_push_feedback("%s defeated." % label, FEEDBACK_DAMAGE_COLOR, enemy_status_label)
 		_flash_grid_unit(unit_id, FEEDBACK_DAMAGE_COLOR)
 		_float_grid_text(unit_id, "KO", FEEDBACK_DAMAGE_COLOR)
+		_play_unit_burst(unit_id, Color(0.82, 0.78, 0.66), &"ash")
 
 
 func _capture_combat_feedback_state(state: Dictionary) -> Dictionary:
@@ -5148,8 +5351,8 @@ func _refresh_intent_call_options() -> void:
 			option_data.get("percentage", 0),
 			option_data.get("intent_name", "Intent")
 		]
-		var icon_value: Variant = option_data.get("icon_texture")
-		if icon_value is Texture2D:
+		var icon_value: Texture2D = _load_runtime_art_texture(String(option_data.get("icon_path", "")))
+		if icon_value != null:
 			intent_call_option.add_icon_item(icon_value, intent_label)
 		else:
 			intent_call_option.add_item(intent_label)
@@ -5169,6 +5372,15 @@ func _get_card_cost(card: Resource) -> int:
 	if card == null:
 		return 0
 	return int(card.get("cost"))
+
+
+func _load_runtime_art_texture(path: String) -> Texture2D:
+	if DisplayServer.get_name() == "headless" or path.is_empty():
+		return null
+	var texture := load(path)
+	if texture is Texture2D:
+		return texture
+	return null
 
 
 func _get_card_name(card: Resource) -> String:

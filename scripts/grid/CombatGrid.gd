@@ -211,6 +211,22 @@ func get_unit_position_snapshot() -> Dictionary:
 	return snapshot
 
 
+func get_unit_global_center(unit_id: StringName) -> Vector2:
+	if not unit_positions.has(unit_id):
+		return Vector2.ZERO
+	return get_cell_global_center(unit_positions[unit_id])
+
+
+func get_cell_global_center(cell: Vector2i) -> Vector2:
+	if not cells_by_position.has(cell):
+		return Vector2.ZERO
+
+	var cell_view: Control = cells_by_position[cell]
+	if cell_view == null or not cell_view.is_inside_tree():
+		return Vector2.ZERO
+	return cell_view.get_global_rect().get_center()
+
+
 func is_adjacent(origin: Vector2i, destination: Vector2i) -> bool:
 	var delta := destination - origin
 	return abs(delta.x) + abs(delta.y) == 1

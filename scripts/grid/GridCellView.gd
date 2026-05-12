@@ -10,6 +10,7 @@ var is_selected: bool = false
 var is_valid_target: bool = false
 var is_focus_target: bool = false
 var feedback_tween: Tween
+var focus_tween: Tween
 
 
 func _ready() -> void:
@@ -47,8 +48,12 @@ func set_valid_target(value: bool) -> void:
 
 
 func set_focus_target(value: bool) -> void:
+	if is_focus_target == value:
+		_refresh()
+		return
 	is_focus_target = value
 	_refresh()
+	_animate_focus_target(value)
 
 
 func play_feedback(color: Color) -> void:
@@ -58,6 +63,22 @@ func play_feedback(color: Color) -> void:
 	modulate = color
 	feedback_tween = create_tween()
 	feedback_tween.tween_property(self, "modulate", Color.WHITE, 0.28).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+
+
+func _animate_focus_target(active: bool) -> void:
+	if focus_tween != null and focus_tween.is_valid():
+		focus_tween.kill()
+
+	pivot_offset = size * 0.5 if size != Vector2.ZERO else custom_minimum_size * 0.5
+	z_index = 6 if active else 0
+	if active:
+		focus_tween = create_tween()
+		focus_tween.set_loops()
+		focus_tween.tween_property(self, "scale", Vector2(1.035, 1.035), 0.42).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+		focus_tween.tween_property(self, "scale", Vector2.ONE, 0.42).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	else:
+		focus_tween = create_tween()
+		focus_tween.tween_property(self, "scale", Vector2.ONE, 0.16).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 
 
 func _on_pressed() -> void:

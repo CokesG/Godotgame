@@ -10,6 +10,8 @@ var hand_index: int = -1
 var is_previewed: bool = false
 var is_playable: bool = true
 var disabled_reason: String = ""
+var hover_tween: Tween
+var feedback_tween: Tween
 
 
 func _ready() -> void:
@@ -35,8 +37,11 @@ func _on_pressed() -> void:
 
 
 func set_previewed(value: bool) -> void:
+	if is_previewed == value:
+		return
 	is_previewed = value
 	_refresh()
+	_animate_card_focus(is_previewed and is_playable)
 
 
 func set_playability(value: bool, reason: String = "") -> void:
@@ -44,6 +49,8 @@ func set_playability(value: bool, reason: String = "") -> void:
 	disabled_reason = reason
 	disabled = not is_playable
 	_refresh()
+	if not is_playable:
+		_animate_card_focus(false)
 
 
 func _on_mouse_entered() -> void:
@@ -81,8 +88,7 @@ func _refresh() -> void:
 		rules_text,
 		_get_tag_line()
 	]
-	var illustration_value: Variant = card_resource.get("illustration_texture")
-	icon = illustration_value if illustration_value is Texture2D else null
+	icon = _get_card_illustration_texture() if _should_load_runtime_art() else null
 	expand_icon = icon != null
 	icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	vertical_icon_alignment = VERTICAL_ALIGNMENT_TOP
@@ -126,6 +132,30 @@ func _refresh() -> void:
 	add_theme_color_override("font_hover_color", Color(1.0, 0.94, 0.78))
 	add_theme_color_override("font_disabled_color", Color(0.62, 0.60, 0.56))
 	modulate = Color.WHITE if is_playable else Color(1.0, 1.0, 1.0, 0.66)
+
+
+func play_feedback(color: Color) -> void:
+	if feedback_tween != null and feedback_tween.is_valid():
+		feedback_tween.kill()
+
+	var base_modulate := Color.WHITE if is_playable else Color(1.0, 1.0, 1.0, 0.66)
+	modulate = color
+	feedback_tween = create_tween()
+	feedback_tween.tween_property(self, "modulate", base_modulate, 0.26).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+
+
+func _animate_card_focus(active: bool) -> void:
+	if hover_tween != null and hover_tween.is_valid():
+		hover_tween.kill()
+
+	pivot_offset = size * 0.5 if size != Vector2.ZERO else custom_minimum_size * 0.5
+	z_index = 12 if active else 0
+	var target_scale := Vector2(1.08, 1.08) if active else Vector2.ONE
+	var target_rotation := -2.0 if active else 0.0
+	hover_tween = create_tween()
+	hover_tween.set_parallel(true)
+	hover_tween.tween_property(self, "scale", target_scale, 0.16).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	hover_tween.tween_property(self, "rotation_degrees", target_rotation, 0.16).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 
 
 func _get_card_name() -> String:
@@ -191,6 +221,21 @@ func _get_tag_line() -> String:
 	if labels.is_empty():
 		return "Tags: None"
 	return "Tags: %s" % ", ".join(labels)
+
+
+func _get_card_illustration_texture() -> Texture2D:
+	if card_resource == null:
+		return null
+	if card_resource.has_method("get_illustration_texture"):
+		return card_resource.call("get_illustration_texture")
+	var legacy_value: Variant = card_resource.get("illustration_texture")
+	if legacy_value is Texture2D:
+		return legacy_value
+	return null
+
+
+func _should_load_runtime_art() -> bool:
+	return DisplayServer.get_name() != "headless"
 
 
 func _shorten_rules_text(rules_text: String) -> String:
