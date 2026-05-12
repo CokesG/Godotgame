@@ -33,6 +33,17 @@ func set_previewed_index(hand_index: int) -> void:
 			child.call("set_previewed", index == hand_index)
 
 
+func set_card_playability(entries: Array[Dictionary]) -> void:
+	for index in range(get_child_count()):
+		var child := get_child(index)
+		if not child.has_method("set_playability"):
+			continue
+		var entry: Dictionary = {}
+		if index < entries.size() and typeof(entries[index]) == TYPE_DICTIONARY:
+			entry = entries[index]
+		child.call("set_playability", bool(entry.get("playable", false)), String(entry.get("reason", "Card is locked.")))
+
+
 func _on_card_pressed(hand_index: int) -> void:
 	card_clicked.emit(hand_index)
 

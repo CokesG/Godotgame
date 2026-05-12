@@ -158,6 +158,7 @@ var turn_status_label: RichTextLabel
 var feedback_banner_label: Label
 var combat_feedback_label: RichTextLabel
 var action_prompt_label: Label
+var first_play_path_label: RichTextLabel
 var phase_guidance_label: Label
 var phase_detail_label: Label
 var table_rule_status_label: RichTextLabel
@@ -568,6 +569,14 @@ func _build_ui() -> void:
 	action_prompt_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	action_prompt_label.add_theme_font_size_override("font_size", 16)
 	guidance_layout.add_child(action_prompt_label)
+
+	first_play_path_label = RichTextLabel.new()
+	first_play_path_label.name = "FirstPlayPath"
+	first_play_path_label.bbcode_enabled = false
+	first_play_path_label.fit_content = true
+	first_play_path_label.scroll_active = false
+	first_play_path_label.custom_minimum_size = Vector2(0, 48)
+	guidance_layout.add_child(first_play_path_label)
 
 	var feedback_panel := PanelContainer.new()
 	feedback_panel.name = "CombatFeedbackPanel"
@@ -1254,6 +1263,7 @@ func _apply_phase35_default_layout(
 	threat_summary_label.custom_minimum_size = Vector2(360, 58)
 	intent_preview_label.custom_minimum_size = Vector2(360, 104)
 	bluff_state_label.custom_minimum_size = Vector2(360, 64)
+	first_play_path_label.custom_minimum_size = Vector2(0, 50)
 	card_action_hint_label.custom_minimum_size = Vector2(0, 48)
 	card_target_preview_label.custom_minimum_size = Vector2(0, 46)
 
@@ -1494,6 +1504,7 @@ func _on_toggle_debug_pressed() -> void:
 func _on_card_clicked(hand_index: int) -> void:
 	if not bool(combat_session.call("can_play_cards")):
 		_append_log("Cards can only be played during Player Commit.")
+		_push_feedback("Locked: %s" % _get_global_card_lock_reason(combat_session.call("get_state")), FEEDBACK_PHASE_COLOR, card_action_hint_label)
 		return
 
 	var card: Resource = deck_manager.call("get_card_at", hand_index)
@@ -1624,6 +1635,7 @@ func _on_hand_changed(cards: Array[Resource]) -> void:
 	previewed_hand_index = -1
 	_refresh_card_action_hint()
 	_refresh_card_target_preview()
+	_sync_hand_card_interaction()
 
 
 func _on_piles_changed(counts: Dictionary) -> void:
@@ -1850,11 +1862,21 @@ func _on_session_state_changed(state: Dictionary) -> void:
 
 
 func _on_target_enemy_selected(_index: int) -> void:
+	_sync_target_focus()
+	var target: Dictionary = _get_selected_enemy_target()
+	if not target.is_empty():
+		_flash_grid_unit(StringName(target.get("id", &"")), FEEDBACK_CARD_COLOR)
+		_push_feedback("Target selected: %s for attack/read cards." % target.get("name", "Enemy"), FEEDBACK_CARD_COLOR, target_enemy_option)
 	_refresh_card_action_hint()
 	_refresh_card_target_preview()
 
 
 func _on_movement_cell_selected(_index: int) -> void:
+	_sync_target_focus()
+	var target_cell: Vector2i = _get_selected_move_cell()
+	if target_cell != Vector2i(-1, -1) and combat_grid != null:
+		combat_grid.call("flash_cell", target_cell, FEEDBACK_MOVE_COLOR)
+		_push_feedback("Move selected: %s for movement/trap cards." % combat_grid.call("format_cell", target_cell), FEEDBACK_MOVE_COLOR, movement_cell_option)
 	_refresh_card_action_hint()
 	_refresh_card_target_preview()
 
@@ -2541,6 +2563,7 @@ func _refresh_action_controls() -> void:
 		next_phase_button.text = "Choose Reward"
 	else:
 		next_phase_button.text = "Combat Over" if not can_debug_adjust else String(PHASE_ACTION_LABELS.get(phase_key, "Continue"))
+	_refresh_primary_action_emphasis(shell_blocks_combat, can_debug_adjust, phase_key)
 	reset_grid_button.disabled = not can_debug_adjust
 	draw_button.disabled = not can_debug_adjust
 	discard_hand_button.disabled = not can_debug_adjust
@@ -2562,6 +2585,82 @@ func _refresh_action_controls() -> void:
 	_refresh_turn_status(run_state)
 	_refresh_table_rule_status(run_state)
 	_refresh_card_action_hint()
+	_sync_hand_card_interaction()
+	_sync_target_focus()
+
+
+func _refresh_primary_action_emphasis(shell_blocks_combat: bool, can_continue: bool, phase_key: String) -> void:
+	if start_run_button != null:
+		_apply_dominant_button_style(
+			start_run_button,
+			run_flow_state == RUN_FLOW_START,
+			"Open Opening Table to begin the first fight."
+		)
+	if next_encounter_button != null:
+		_apply_dominant_button_style(
+			next_encounter_button,
+			run_flow_state == RUN_FLOW_NEXT_ENCOUNTER,
+			"Open Next Table to continue the route."
+		)
+	if next_phase_button != null:
+		var active: bool = run_flow_state == RUN_FLOW_COMBAT and can_continue and not shell_blocks_combat
+		var hint: String = _get_continue_button_hint(phase_key)
+		_apply_dominant_button_style(next_phase_button, active, hint)
+
+
+func _apply_dominant_button_style(button: Button, active: bool, hint: String) -> void:
+	if button == null:
+		return
+
+	button.tooltip_text = "Dominant next action: %s" % hint if active else "Locked: %s" % hint
+	button.add_theme_font_size_override("font_size", 19 if active else 16)
+	button.custom_minimum_size = Vector2(240, 46) if active else Vector2(180, 40)
+
+	var style := StyleBoxFlat.new()
+	style.corner_radius_top_left = 6
+	style.corner_radius_top_right = 6
+	style.corner_radius_bottom_left = 6
+	style.corner_radius_bottom_right = 6
+	style.border_width_left = 2
+	style.border_width_top = 2
+	style.border_width_right = 2
+	style.border_width_bottom = 2
+	style.bg_color = Color(0.30, 0.22, 0.10) if active else Color(0.12, 0.12, 0.13)
+	style.border_color = Color(1.0, 0.78, 0.28) if active else Color(0.36, 0.36, 0.38)
+	button.add_theme_stylebox_override("normal", style)
+	var hover_style := style.duplicate()
+	hover_style.bg_color = Color(0.38, 0.27, 0.12) if active else Color(0.16, 0.16, 0.17)
+	button.add_theme_stylebox_override("hover", hover_style)
+	button.add_theme_stylebox_override("pressed", style)
+	var disabled_style := style.duplicate()
+	disabled_style.bg_color = Color(0.08, 0.08, 0.085)
+	disabled_style.border_color = Color(0.24, 0.24, 0.25)
+	button.add_theme_stylebox_override("disabled", disabled_style)
+
+
+func _get_continue_button_hint(phase_key: String) -> String:
+	if run_flow_state == RUN_FLOW_START:
+		return "Open Opening Table is the only live action."
+	if run_flow_state == RUN_FLOW_REWARD:
+		return "Choose or skip the reward before combat continues."
+	if run_flow_state == RUN_FLOW_NEXT_ENCOUNTER:
+		return "Open Next Table from the approach panel."
+	if run_flow_state == RUN_FLOW_RESULTS:
+		return "Review results, export, or start a new run."
+
+	match phase_key:
+		"START_TURN", "DRAW", "ENEMY_INTENT_PREVIEW":
+			return "Begin Turn unlocks target picking and card play."
+		"PLAYER_COMMIT":
+			return "Pick Target or Move, play a card, then Resolve Turn."
+		"BLUFF_WAGER":
+			return "Reveal Turn resolves the committed bluff."
+		"REVEAL":
+			return "Review Results after the reveal finishes."
+		"RESOLVE", "CLEANUP":
+			return "Next Turn cleans up and deals the next planning hand."
+		_:
+			return "Continue the combat loop."
 
 
 func _refresh_run_panel(state: Dictionary) -> void:
@@ -3750,6 +3849,39 @@ func _refresh_targeting_options() -> void:
 		movement_cell_option.select(0)
 	_refresh_card_action_hint()
 	_refresh_card_target_preview()
+	_sync_target_focus()
+
+
+func _sync_target_focus() -> void:
+	if combat_grid == null or not combat_grid.has_method("set_focus_unit"):
+		return
+
+	if run_flow_state != RUN_FLOW_COMBAT or combat_session == null:
+		combat_grid.call("clear_focus")
+		return
+
+	var session_state: Dictionary = combat_session.call("get_state")
+	if bool(session_state.get("combat_over", false)):
+		combat_grid.call("clear_focus")
+		return
+
+	var previewed_card: Resource = deck_manager.call("get_card_at", previewed_hand_index) if deck_manager != null and previewed_hand_index >= 0 else null
+	if previewed_card != null:
+		if _is_grid_cell_card(previewed_card):
+			combat_grid.call("set_focus_cell", _get_selected_move_cell())
+			return
+		if int(previewed_card.get("target_type")) == 1:
+			combat_grid.call("set_focus_unit", &"player")
+			return
+		if _is_attack_or_read_card(previewed_card):
+			combat_grid.call("set_focus_unit", _get_selected_enemy_target_id())
+			return
+
+	var selected_enemy_id: StringName = _get_selected_enemy_target_id()
+	if not selected_enemy_id.is_empty():
+		combat_grid.call("set_focus_unit", selected_enemy_id)
+	else:
+		combat_grid.call("clear_focus")
 
 
 func _build_card_context(card: Resource) -> Dictionary:
@@ -3899,13 +4031,15 @@ func _refresh_guidance() -> void:
 
 	if action_prompt_label != null:
 		action_prompt_label.text = _get_action_prompt(state, run_state)
+	if first_play_path_label != null:
+		_refresh_first_play_path(state, run_state)
 
 	_refresh_recipe_label()
 
 
 func _get_action_prompt(session_state: Dictionary, run_state: Dictionary) -> String:
 	if run_flow_state == RUN_FLOW_START:
-		return "Next: press Open Opening Table to begin the five-table path."
+		return "Next: Open Opening Table. Then pick Target, play a card, and Resolve Turn."
 	if run_flow_state == RUN_FLOW_REWARD:
 		return "Next: choose one reward; the next table starts when rewards are clear."
 	if run_flow_state == RUN_FLOW_NEXT_ENCOUNTER:
@@ -3932,7 +4066,7 @@ func _get_action_prompt(session_state: Dictionary, run_state: Dictionary) -> Str
 		"ENEMY_INTENT_PREVIEW":
 			return "Next: start planning with the current target and move preview."
 		"PLAYER_COMMIT":
-			return "Next: play cards, then Resolve Turn."
+			return "Next: pick Target or Move, click a ready card, then Resolve Turn."
 		"BLUFF_WAGER":
 			return "Next: call, raise, or fold; Reveal Turn resolves the plan."
 		"REVEAL":
@@ -3943,6 +4077,41 @@ func _get_action_prompt(session_state: Dictionary, run_state: Dictionary) -> Str
 			return "Next: cleanup rolls into the next planning state."
 		_:
 			return "Next: continue the combat loop."
+
+
+func _refresh_first_play_path(session_state: Dictionary, run_state: Dictionary) -> void:
+	if first_play_path_label == null:
+		return
+
+	first_play_path_label.clear()
+	first_play_path_label.append_text("First Play Path | ACTIVE: %s\n" % _get_first_play_active_step(session_state, run_state))
+	first_play_path_label.append_text("1 Open Table -> 2 Pick Target -> 3 Play Card -> 4 Resolve Turn")
+
+
+func _get_first_play_active_step(session_state: Dictionary, run_state: Dictionary) -> String:
+	if run_flow_state == RUN_FLOW_START:
+		return "1 Open Table"
+	if run_flow_state == RUN_FLOW_REWARD:
+		return "Reward Choice"
+	if run_flow_state == RUN_FLOW_NEXT_ENCOUNTER:
+		return "Open Next Table"
+	if run_flow_state == RUN_FLOW_RESULTS:
+		return "Run Results"
+	if bool(session_state.get("combat_over", false)):
+		return "Reward or Results"
+
+	var phase_key: String = String(session_state.get("current_phase_key", "START_TURN"))
+	match phase_key:
+		"START_TURN", "DRAW", "ENEMY_INTENT_PREVIEW":
+			return "Begin Turn"
+		"PLAYER_COMMIT":
+			return "2 Pick Target -> 3 Play Card"
+		"BLUFF_WAGER", "REVEAL":
+			return "4 Reveal Turn"
+		"RESOLVE", "CLEANUP":
+			return "4 Resolve Turn"
+		_:
+			return "Continue"
 
 
 func _refresh_turn_status(run_state: Dictionary) -> void:
@@ -4144,6 +4313,73 @@ func _refresh_card_action_hint() -> void:
 	card_action_hint_label.append_text(_get_card_affordance_text(session_state))
 
 
+func _sync_hand_card_interaction() -> void:
+	if hand_view == null or deck_manager == null:
+		return
+	if not hand_view.has_method("set_card_playability"):
+		return
+
+	var session_state: Dictionary = combat_session.call("get_state") if combat_session != null else {}
+	var entries: Array[Dictionary] = []
+	for index in range(hand_view.get_child_count()):
+		var card: Resource = deck_manager.call("get_card_at", index)
+		entries.append(_get_card_playability_entry(card, session_state))
+	hand_view.call("set_card_playability", entries)
+
+
+func _get_card_playability_entry(card: Resource, session_state: Dictionary) -> Dictionary:
+	var global_reason: String = _get_global_card_lock_reason(session_state)
+	if not global_reason.is_empty():
+		return {"playable": false, "reason": global_reason}
+	if card == null:
+		return {"playable": false, "reason": "No card is in this hand slot."}
+
+	var energy: int = int(session_state.get("energy", 0))
+	var cost: int = _get_card_cost(card)
+	if cost > energy:
+		return {"playable": false, "reason": "Needs %d Energy; you have %d." % [cost, energy]}
+
+	var context: Dictionary = _build_card_context(card)
+	if _is_attack_or_read_card(card):
+		var target_enemy_id: StringName = StringName(context.get("target_enemy_id", &""))
+		if target_enemy_id.is_empty() or not bool(combat_resolver.call("has_living_enemy", target_enemy_id)):
+			return {"playable": false, "reason": "Pick a living Target enemy first."}
+	if _is_grid_cell_card(card):
+		var target_cell: Vector2i = context.get("target_cell", Vector2i(-1, -1))
+		if not _is_valid_player_move_target(target_cell):
+			return {"playable": false, "reason": "Pick a legal Move cell first."}
+
+	return {"playable": true, "reason": "Ready: click to play."}
+
+
+func _get_global_card_lock_reason(session_state: Dictionary) -> String:
+	if run_flow_state == RUN_FLOW_START:
+		return "Open Opening Table first."
+	if run_flow_state == RUN_FLOW_REWARD:
+		return "Choose rewards before playing more cards."
+	if run_flow_state == RUN_FLOW_NEXT_ENCOUNTER:
+		return "Open Next Table to deal a new hand."
+	if run_flow_state == RUN_FLOW_RESULTS:
+		return "The run is over until New Run."
+	if bool(session_state.get("combat_over", false)):
+		return "Combat is over."
+
+	var phase_key: String = String(session_state.get("current_phase_key", "START_TURN"))
+	match phase_key:
+		"PLAYER_COMMIT":
+			return ""
+		"START_TURN", "DRAW", "ENEMY_INTENT_PREVIEW":
+			return "Press Begin Turn to unlock card play."
+		"BLUFF_WAGER":
+			return "Bluff choices are active; hand cards are locked."
+		"REVEAL":
+			return "Reveal is resolving; hand cards are locked."
+		"RESOLVE", "CLEANUP":
+			return "Press Next Turn to draw and return to planning."
+		_:
+			return "Card play is locked in this state."
+
+
 func _get_target_affordance_text() -> String:
 	if target_enemy_option == null:
 		return "none"
@@ -4185,7 +4421,7 @@ func _get_card_affordance_text(session_state: Dictionary) -> String:
 	var phase_key: String = String(session_state.get("current_phase_key", "START_TURN"))
 	match phase_key:
 		"PLAYER_COMMIT":
-			return "Cards are playable now: attack/read use Target, movement uses Move, then Resolve Turn."
+			return "Cards are playable now: Step 2 pick Target/Move, Step 3 click a ready card, Step 4 Resolve Turn."
 		"BLUFF_WAGER":
 			return "Hand is locked while bluff choices prepare the reveal."
 		"REVEAL":
@@ -4203,11 +4439,13 @@ func _refresh_card_target_preview() -> void:
 	card_target_preview_label.clear()
 	if previewed_hand_index < 0:
 		card_target_preview_label.append_text("Preview: hover a card to see target, expected effect, and grid focus.")
+		_sync_target_focus()
 		return
 
 	var card: Resource = deck_manager.call("get_card_at", previewed_hand_index) if deck_manager != null else null
 	if card == null:
 		card_target_preview_label.append_text("Preview: no card at this hand slot.")
+		_sync_target_focus()
 		return
 
 	var context: Dictionary = _build_card_context(card)
@@ -4219,6 +4457,7 @@ func _refresh_card_target_preview() -> void:
 	card_target_preview_label.append_text("Target: %s\n" % _get_card_preview_target_text(card, context))
 	card_target_preview_label.append_text("Expected: %s" % _get_card_preview_effect_text(card, context))
 	_preview_card_grid_focus(card, context)
+	_sync_target_focus()
 
 
 func _get_preview_card_type_label(card: Resource) -> String:

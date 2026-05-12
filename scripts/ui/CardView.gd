@@ -8,6 +8,8 @@ signal card_unhovered(hand_index: int)
 var card_resource: Resource
 var hand_index: int = -1
 var is_previewed: bool = false
+var is_playable: bool = true
+var disabled_reason: String = ""
 
 
 func _ready() -> void:
@@ -34,6 +36,13 @@ func _on_pressed() -> void:
 
 func set_previewed(value: bool) -> void:
 	is_previewed = value
+	_refresh()
+
+
+func set_playability(value: bool, reason: String = "") -> void:
+	is_playable = value
+	disabled_reason = reason
+	disabled = not is_playable
 	_refresh()
 
 
@@ -71,11 +80,19 @@ func _refresh() -> void:
 		rules_text,
 		_get_tag_line()
 	]
-	tooltip_text = "Click to play %s during Player Commit. Target: %s%s" % [
-		card_name,
-		target_label,
-		_get_tag_tooltip()
-	]
+	if is_playable:
+		tooltip_text = "Click to play %s during Player Commit. Target: %s%s" % [
+			card_name,
+			target_label,
+			_get_tag_tooltip()
+		]
+	else:
+		tooltip_text = "Locked: %s | %s targets %s%s" % [
+			disabled_reason,
+			card_name,
+			target_label,
+			_get_tag_tooltip()
+		]
 
 	var style := StyleBoxFlat.new()
 	style.corner_radius_top_left = 6
@@ -94,9 +111,15 @@ func _refresh() -> void:
 	hover_style.border_color = Color(1.0, 0.86, 0.42)
 	add_theme_stylebox_override("hover", hover_style)
 	add_theme_stylebox_override("pressed", style)
+	var disabled_style := style.duplicate()
+	disabled_style.bg_color = Color(0.08, 0.075, 0.07)
+	disabled_style.border_color = Color(0.30, 0.30, 0.32)
+	add_theme_stylebox_override("disabled", disabled_style)
 	add_theme_font_size_override("font_size", 14)
 	add_theme_color_override("font_color", Color(0.96, 0.91, 0.82))
 	add_theme_color_override("font_hover_color", Color(1.0, 0.94, 0.78))
+	add_theme_color_override("font_disabled_color", Color(0.62, 0.60, 0.56))
+	modulate = Color.WHITE if is_playable else Color(1.0, 1.0, 1.0, 0.66)
 
 
 func _get_card_name() -> String:

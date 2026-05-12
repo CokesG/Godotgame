@@ -37,6 +37,8 @@ var unit_labels: Dictionary = {}
 var selected_unit_id: StringName = &""
 var valid_move_cells: Array[Vector2i] = []
 var floating_text_layer: Control
+var focus_unit_id: StringName = &""
+var focus_cell: Vector2i = Vector2i(-1, -1)
 
 
 func _ready() -> void:
@@ -50,6 +52,8 @@ func reset_grid(enemy_spawns: Array = []) -> void:
 	unit_labels.clear()
 	selected_unit_id = &""
 	valid_move_cells.clear()
+	focus_unit_id = &""
+	focus_cell = Vector2i(-1, -1)
 
 	place_unit(PLAYER_ID, Vector2i(1, 2), PLAYER_LABEL)
 	var spawns: Array = DEFAULT_ENEMY_SPAWNS if enemy_spawns.is_empty() else enemy_spawns
@@ -256,6 +260,58 @@ func flash_cell(cell: Vector2i, color: Color) -> void:
 		cell_view.call("play_feedback", color)
 
 
+func set_focus_unit(unit_id: StringName) -> void:
+	if unit_id.is_empty() or not unit_positions.has(unit_id):
+		clear_focus()
+		return
+
+	focus_unit_id = unit_id
+	focus_cell = Vector2i(-1, -1)
+	_refresh_cells()
+	_update_status("Active target: %s at %s." % [get_unit_label(unit_id), format_cell(get_unit_position(unit_id))])
+
+
+func set_focus_cell(cell: Vector2i) -> void:
+	if not is_cell_in_bounds(cell):
+		clear_focus()
+		return
+
+	focus_unit_id = &""
+	focus_cell = cell
+	_refresh_cells()
+	_update_status("Active move target: %s." % format_cell(cell))
+
+
+func clear_focus() -> void:
+	focus_unit_id = &""
+	focus_cell = Vector2i(-1, -1)
+	_refresh_cells()
+
+
+func get_focus_snapshot() -> Dictionary:
+	if not focus_unit_id.is_empty() and unit_positions.has(focus_unit_id):
+		var unit_cell: Vector2i = get_unit_position(focus_unit_id)
+		return {
+			"type": "unit",
+			"unit_id": focus_unit_id,
+			"cell": unit_cell,
+			"label": get_unit_label(focus_unit_id)
+		}
+	if is_cell_in_bounds(focus_cell):
+		return {
+			"type": "cell",
+			"unit_id": &"",
+			"cell": focus_cell,
+			"label": format_cell(focus_cell)
+		}
+	return {
+		"type": "none",
+		"unit_id": &"",
+		"cell": Vector2i(-1, -1),
+		"label": ""
+	}
+
+
 func show_floating_text_for_unit(unit_id: StringName, message: String, color: Color) -> void:
 	if not unit_positions.has(unit_id):
 		return
@@ -367,6 +423,13 @@ func _refresh_cells() -> void:
 
 		cell.call("set_selected", not selected_unit_id.is_empty() and cell_position == get_unit_position(selected_unit_id))
 		cell.call("set_valid_target", valid_move_cells.has(cell_position))
+		cell.call("set_focus_target", _is_focus_cell(cell_position))
+
+
+func _is_focus_cell(cell_position: Vector2i) -> bool:
+	if not focus_unit_id.is_empty() and unit_positions.has(focus_unit_id):
+		return get_unit_position(focus_unit_id) == cell_position
+	return focus_cell == cell_position
 
 
 func _get_short_label(unit_id: StringName) -> String:

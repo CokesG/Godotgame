@@ -8,6 +8,7 @@ var occupant_id: StringName = &""
 var occupant_label: String = ""
 var is_selected: bool = false
 var is_valid_target: bool = false
+var is_focus_target: bool = false
 var feedback_tween: Tween
 
 
@@ -45,6 +46,11 @@ func set_valid_target(value: bool) -> void:
 	_refresh()
 
 
+func set_focus_target(value: bool) -> void:
+	is_focus_target = value
+	_refresh()
+
+
 func play_feedback(color: Color) -> void:
 	if feedback_tween != null and feedback_tween.is_valid():
 		feedback_tween.kill()
@@ -60,7 +66,10 @@ func _on_pressed() -> void:
 
 func _refresh() -> void:
 	text = _get_cell_text()
-	tooltip_text = "Cell %d,%d" % [grid_position.x, grid_position.y]
+	if is_focus_target:
+		tooltip_text = "Active target - cell %d,%d" % [grid_position.x, grid_position.y]
+	else:
+		tooltip_text = "Cell %d,%d" % [grid_position.x, grid_position.y]
 
 	var style := StyleBoxFlat.new()
 	style.corner_radius_top_left = 6
@@ -87,6 +96,19 @@ func _refresh() -> void:
 	else:
 		style.bg_color = Color(0.10, 0.085, 0.07)
 		style.border_color = Color(0.34, 0.28, 0.18)
+
+	if is_focus_target:
+		style.border_width_left = 4
+		style.border_width_top = 4
+		style.border_width_right = 4
+		style.border_width_bottom = 4
+		style.border_color = Color(1.0, 0.82, 0.28)
+		if occupant_id == &"player":
+			style.bg_color = Color(0.22, 0.30, 0.45)
+		elif not occupant_id.is_empty():
+			style.bg_color = Color(0.45, 0.18, 0.12)
+		elif is_valid_target:
+			style.bg_color = Color(0.25, 0.46, 0.30)
 
 	add_theme_stylebox_override("normal", style)
 	add_theme_stylebox_override("hover", style)
