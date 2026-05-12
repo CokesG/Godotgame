@@ -855,27 +855,47 @@ func _build_ui() -> void:
 	export_summary_button.pressed.connect(_on_export_summary_pressed)
 	debug_controls.add_child(export_summary_button)
 
-	var body := HBoxContainer.new()
+	var body := VBoxContainer.new()
 	body.name = "CombatBody"
 	body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	body.add_theme_constant_override("separation", 18)
+	body.add_theme_constant_override("separation", 8)
 	layout.add_child(body)
+
+	var table_row := HBoxContainer.new()
+	table_row.name = "TableRow"
+	table_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	table_row.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	table_row.add_theme_constant_override("separation", 12)
+	body.add_child(table_row)
+
+	var table_board_panel := PanelContainer.new()
+	table_board_panel.name = "TableBoardPanel"
+	table_board_panel.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	table_board_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	table_row.add_child(table_board_panel)
 
 	combat_grid = Control.new()
 	combat_grid.name = "CombatGrid"
 	combat_grid.set_script(COMBAT_GRID_SCRIPT)
-	body.add_child(combat_grid)
+	table_board_panel.add_child(combat_grid)
+
+	var opponent_panel := PanelContainer.new()
+	opponent_panel.name = "OpponentCardsPanel"
+	opponent_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	opponent_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	table_row.add_child(opponent_panel)
 
 	var intent_column := VBoxContainer.new()
 	intent_column.name = "IntentColumn"
-	intent_column.custom_minimum_size = Vector2(340, 0)
+	intent_column.custom_minimum_size = Vector2(390, 0)
+	intent_column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	intent_column.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	intent_column.add_theme_constant_override("separation", 8)
-	body.add_child(intent_column)
+	intent_column.add_theme_constant_override("separation", 6)
+	opponent_panel.add_child(intent_column)
 
 	var intent_title := Label.new()
-	intent_title.text = "Enemy Intent Preview"
+	intent_title.text = "Opponent Cards"
 	intent_title.add_theme_font_size_override("font_size", 18)
 	intent_column.add_child(intent_title)
 
@@ -903,6 +923,58 @@ func _build_ui() -> void:
 	threat_summary_label.custom_minimum_size = Vector2(320, 76)
 	intent_column.add_child(threat_summary_label)
 
+	var target_controls_panel := PanelContainer.new()
+	target_controls_panel.name = "TargetControlsPanel"
+	target_controls_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	intent_column.add_child(target_controls_panel)
+
+	var target_controls_layout := VBoxContainer.new()
+	target_controls_layout.name = "TargetControlsLayout"
+	target_controls_layout.add_theme_constant_override("separation", 4)
+	target_controls_panel.add_child(target_controls_layout)
+
+	var target_title := Label.new()
+	target_title.text = "Target Controls"
+	target_title.add_theme_font_size_override("font_size", 16)
+	target_controls_layout.add_child(target_title)
+
+	var target_options_row := HBoxContainer.new()
+	target_options_row.name = "TargetOptionsRow"
+	target_options_row.add_theme_constant_override("separation", 6)
+	target_controls_layout.add_child(target_options_row)
+
+	var enemy_target_box := VBoxContainer.new()
+	enemy_target_box.name = "EnemyTargetBox"
+	enemy_target_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	target_options_row.add_child(enemy_target_box)
+
+	var enemy_target_label := Label.new()
+	enemy_target_label.text = "Enemy"
+	enemy_target_box.add_child(enemy_target_label)
+
+	target_enemy_option = OptionButton.new()
+	target_enemy_option.name = "TargetEnemyOption"
+	target_enemy_option.tooltip_text = "Cards that hit or read enemies use this target."
+	target_enemy_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	target_enemy_option.item_selected.connect(_on_target_enemy_selected)
+	enemy_target_box.add_child(target_enemy_option)
+
+	var move_target_box := VBoxContainer.new()
+	move_target_box.name = "MoveTargetBox"
+	move_target_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	target_options_row.add_child(move_target_box)
+
+	var move_target_label := Label.new()
+	move_target_label.text = "Move"
+	move_target_box.add_child(move_target_label)
+
+	movement_cell_option = OptionButton.new()
+	movement_cell_option.name = "MovementCellOption"
+	movement_cell_option.tooltip_text = "Movement and trap cards use this table cell."
+	movement_cell_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	movement_cell_option.item_selected.connect(_on_movement_cell_selected)
+	move_target_box.add_child(movement_cell_option)
+
 	intent_preview_label = RichTextLabel.new()
 	intent_preview_label.name = "IntentPreview"
 	intent_preview_label.bbcode_enabled = false
@@ -910,21 +982,6 @@ func _build_ui() -> void:
 	intent_preview_label.custom_minimum_size = Vector2(320, 230)
 	intent_preview_label.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	intent_column.add_child(intent_preview_label)
-
-	var target_title := Label.new()
-	target_title.text = "Card Targets"
-	target_title.add_theme_font_size_override("font_size", 18)
-	intent_column.add_child(target_title)
-
-	target_enemy_option = OptionButton.new()
-	target_enemy_option.name = "TargetEnemyOption"
-	target_enemy_option.item_selected.connect(_on_target_enemy_selected)
-	intent_column.add_child(target_enemy_option)
-
-	movement_cell_option = OptionButton.new()
-	movement_cell_option.name = "MovementCellOption"
-	movement_cell_option.item_selected.connect(_on_movement_cell_selected)
-	intent_column.add_child(movement_cell_option)
 
 	truth_title_label = Label.new()
 	truth_title_label.name = "DebugTruthTitle"
@@ -1002,7 +1059,7 @@ func _build_ui() -> void:
 	log_column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	log_column.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	log_column.add_theme_constant_override("separation", 8)
-	body.add_child(log_column)
+	table_row.add_child(log_column)
 	combat_log_column = log_column
 
 	var log_title := Label.new()
@@ -1169,6 +1226,15 @@ func _apply_phase35_default_layout(
 	layout.add_theme_constant_override("separation", 8)
 	title.add_theme_font_size_override("font_size", 22)
 	subtitle.visible = false
+	var table_board_panel: Node = body.find_child("TableBoardPanel", true, false)
+	if table_board_panel is PanelContainer:
+		_style_play_panel(table_board_panel as PanelContainer, Color(0.12, 0.105, 0.085), Color(0.72, 0.56, 0.26))
+	var opponent_panel: Node = body.find_child("OpponentCardsPanel", true, false)
+	if opponent_panel is PanelContainer:
+		_style_play_panel(opponent_panel as PanelContainer, Color(0.10, 0.095, 0.105), Color(0.46, 0.48, 0.56))
+	var target_controls_panel: Node = body.find_child("TargetControlsPanel", true, false)
+	if target_controls_panel is PanelContainer:
+		_style_play_panel(target_controls_panel as PanelContainer, Color(0.13, 0.115, 0.09), Color(0.68, 0.55, 0.28))
 
 	run_header_label.custom_minimum_size = Vector2(0, 42)
 	run_path_label.custom_minimum_size = Vector2(0, 42)
@@ -1178,19 +1244,28 @@ func _apply_phase35_default_layout(
 	encounter_preview_label.custom_minimum_size = Vector2(0, 64)
 	run_ceremony_label.custom_minimum_size = Vector2(0, 72)
 
-	body.custom_minimum_size = Vector2(0, 286)
-	combat_grid.custom_minimum_size = Vector2(380, 286)
-	enemy_status_label.custom_minimum_size = Vector2(300, 86)
-	intent_icon_strip_label.custom_minimum_size = Vector2(300, 54)
-	threat_summary_label.custom_minimum_size = Vector2(300, 58)
-	intent_preview_label.custom_minimum_size = Vector2(300, 122)
-	bluff_state_label.custom_minimum_size = Vector2(300, 76)
+	body.custom_minimum_size = Vector2(0, 430)
+	var table_row: Node = body.find_child("TableRow", true, false)
+	if table_row is Control:
+		(table_row as Control).custom_minimum_size = Vector2(0, 258)
+	combat_grid.custom_minimum_size = Vector2(410, 258)
+	enemy_status_label.custom_minimum_size = Vector2(360, 92)
+	intent_icon_strip_label.custom_minimum_size = Vector2(360, 58)
+	threat_summary_label.custom_minimum_size = Vector2(360, 58)
+	intent_preview_label.custom_minimum_size = Vector2(360, 104)
+	bluff_state_label.custom_minimum_size = Vector2(360, 64)
 	card_action_hint_label.custom_minimum_size = Vector2(0, 48)
-	card_target_preview_label.custom_minimum_size = Vector2(0, 54)
+	card_target_preview_label.custom_minimum_size = Vector2(0, 46)
 
 	var hand_scroll: Node = deck_panel.find_child("HandScroll", true, false)
 	if hand_scroll is Control:
-		(hand_scroll as Control).custom_minimum_size = Vector2(0, 170)
+		(hand_scroll as Control).custom_minimum_size = Vector2(0, 176)
+
+	if deck_panel.get_parent() != body:
+		var previous_parent := deck_panel.get_parent()
+		if previous_parent != null:
+			previous_parent.remove_child(deck_panel)
+		body.add_child(deck_panel)
 
 	next_phase_button.custom_minimum_size = Vector2(220, 44)
 	next_phase_button.add_theme_font_size_override("font_size", 18)
@@ -1206,14 +1281,35 @@ func _apply_phase35_default_layout(
 	layout.move_child(run_path_panel, 3)
 	layout.move_child(primary_controls, 4)
 	layout.move_child(body, 5)
-	layout.move_child(deck_panel, 6)
-	layout.move_child(guidance_panel, 7)
-	layout.move_child(turn_status_panel, 8)
-	layout.move_child(table_rule_panel, 9)
-	layout.move_child(feedback_panel, 10)
-	layout.move_child(run_panel, 11)
-	layout.move_child(debug_drawer_panel, 12)
-	layout.move_child(recipe_panel, 13)
+	layout.move_child(guidance_panel, 6)
+	layout.move_child(turn_status_panel, 7)
+	layout.move_child(table_rule_panel, 8)
+	layout.move_child(feedback_panel, 9)
+	layout.move_child(run_panel, 10)
+	layout.move_child(debug_drawer_panel, 11)
+	layout.move_child(recipe_panel, 12)
+
+
+func _style_play_panel(panel: PanelContainer, bg_color: Color, border_color: Color) -> void:
+	if panel == null:
+		return
+
+	var style := StyleBoxFlat.new()
+	style.bg_color = bg_color
+	style.border_color = border_color
+	style.border_width_left = 2
+	style.border_width_top = 2
+	style.border_width_right = 2
+	style.border_width_bottom = 2
+	style.corner_radius_top_left = 6
+	style.corner_radius_top_right = 6
+	style.corner_radius_bottom_left = 6
+	style.corner_radius_bottom_right = 6
+	style.content_margin_left = 8
+	style.content_margin_top = 8
+	style.content_margin_right = 8
+	style.content_margin_bottom = 8
+	panel.add_theme_stylebox_override("panel", style)
 
 
 func _connect_turn_manager() -> void:
@@ -1629,10 +1725,11 @@ func _on_intent_previews_changed(previews: Array[Dictionary]) -> void:
 		threat_summary_label.append_text(_build_threat_summary(previews))
 
 	intent_preview_label.clear()
+	intent_preview_label.append_text("Intent Cards\n")
 	for preview in previews:
 		var options: Array = preview.get("options", [])
 		var top_option: Dictionary = _get_top_intent_option(options)
-		intent_preview_label.append_text("%s | Top threat: %s %d%%\n" % [
+		intent_preview_label.append_text("[Read] %s | Top: %s %d%%\n" % [
 			preview.get("enemy_name", "Enemy"),
 			_get_threat_level(top_option),
 			top_option.get("percentage", 0)
@@ -3454,7 +3551,7 @@ func _join_reward_reasons(reasons: Array) -> String:
 
 func _build_threat_summary(previews: Array[Dictionary]) -> String:
 	if previews.is_empty():
-		return "Threat: no active enemy previews.\nResponse: advance to read the table."
+		return "Table Read\nThreat: no active enemy previews.\nResponse: advance to read the table."
 
 	var best_preview: Dictionary = {}
 	var best_option: Dictionary = {}
@@ -3473,7 +3570,7 @@ func _build_threat_summary(previews: Array[Dictionary]) -> String:
 	if best_option.is_empty():
 		return "Threat: no weighted intent options.\nResponse: press Continue to roll a fresh read."
 
-	return "Threat: %s %s %d%% %s\nResponse: %s" % [
+	return "Table Read\nThreat: %s %s %d%% %s\nResponse: %s" % [
 		best_preview.get("enemy_name", "Enemy"),
 		_get_threat_level(best_option),
 		best_option.get("percentage", 0),
@@ -3484,18 +3581,19 @@ func _build_threat_summary(previews: Array[Dictionary]) -> String:
 
 func _build_intent_icon_strip(previews: Array[Dictionary]) -> String:
 	if previews.is_empty():
-		return "Intent Icons\n[?] No active enemy reads."
+		return "Intent Icons | Opponent Cards\n[?] No active enemy reads."
 
-	var lines: Array[String] = ["Intent Icons"]
+	var lines: Array[String] = ["Intent Icons | Opponent Cards"]
 	for preview in previews:
 		var options: Array = preview.get("options", [])
 		var top_option: Dictionary = _get_top_intent_option(options)
 		if top_option.is_empty():
 			lines.append("[?] %s no weighted read" % preview.get("enemy_name", "Enemy"))
 			continue
-		lines.append("%s %s %d%% %s" % [
+		lines.append("%s %s | %s %d%% | %s" % [
 			_get_intent_icon_marker(top_option),
 			preview.get("enemy_name", "Enemy"),
+			_get_threat_level(top_option),
 			top_option.get("percentage", 0),
 			_get_lane_preview_text(top_option)
 		])
@@ -3619,7 +3717,7 @@ func _refresh_targeting_options() -> void:
 	for target in targets:
 		if typeof(target) != TYPE_DICTIONARY:
 			continue
-		target_enemy_option.add_item("%s HP %d/%d" % [
+		target_enemy_option.add_item("Target: %s HP %d/%d" % [
 			target.get("name", "Enemy"),
 			target.get("hp", 0),
 			target.get("max_hp", 0)
@@ -3640,7 +3738,7 @@ func _refresh_targeting_options() -> void:
 	for cell in move_cells:
 		if typeof(cell) != TYPE_VECTOR2I:
 			continue
-		movement_cell_option.add_item("Move to %s" % combat_grid.call("format_cell", cell))
+		movement_cell_option.add_item("Move: %s" % combat_grid.call("format_cell", cell))
 		movement_cell_option.set_item_metadata(movement_cell_option.item_count - 1, cell)
 		if cell == selected_cell:
 			movement_cell_option.select(movement_cell_option.item_count - 1)
@@ -3965,7 +4063,7 @@ func _refresh_enemy_status(state: Dictionary) -> void:
 
 	enemy_status_label.clear()
 	var player: Dictionary = state.get("player", {})
-	enemy_status_label.append_text("Blood %d/%d | Guard %d\n" % [
+	enemy_status_label.append_text("Opponent Cards | Blood %d/%d | Guard %d\n" % [
 		player.get("hp", 0),
 		player.get("max_hp", 0),
 		player.get("guard", 0)
@@ -3981,7 +4079,7 @@ func _refresh_enemy_status(state: Dictionary) -> void:
 			continue
 		var enemy_data: Dictionary = enemy
 		var enemy_id: StringName = StringName(enemy_data.get("id", &""))
-		enemy_status_label.append_text("%s HP %d/%d | Guard %d | %s | Threat %s\n" % [
+		enemy_status_label.append_text("[Enemy Card] %s | HP %d/%d | Guard %d | %s\n  Threat: %s\n" % [
 			enemy_data.get("name", "Enemy"),
 			enemy_data.get("hp", 0),
 			enemy_data.get("max_hp", 0),

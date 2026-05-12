@@ -36,6 +36,7 @@ var unit_positions: Dictionary = {}
 var unit_labels: Dictionary = {}
 var selected_unit_id: StringName = &""
 var valid_move_cells: Array[Vector2i] = []
+var floating_text_layer: Control
 
 
 func _ready() -> void:
@@ -267,7 +268,7 @@ func show_floating_text_at_cell(cell: Vector2i, message: String, color: Color) -
 
 	var cell_view: Button = cells_by_position[cell]
 	var label := Label.new()
-	label.name = "FloatingCombatText"
+	label.name = "FloatingCombatTextLabel"
 	label.text = message
 	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	label.z_index = 20
@@ -276,7 +277,8 @@ func show_floating_text_at_cell(cell: Vector2i, message: String, color: Color) -
 	label.add_theme_color_override("font_color", color)
 	label.add_theme_color_override("font_outline_color", Color(0.02, 0.02, 0.02))
 	label.add_theme_constant_override("outline_size", 4)
-	add_child(label)
+	var layer := _get_floating_text_layer()
+	layer.add_child(label)
 
 	var start_position: Vector2 = cell_view.get_global_rect().get_center() - get_global_rect().position + Vector2(-34, -28)
 	label.position = start_position
@@ -297,7 +299,8 @@ func _build_ui() -> void:
 	add_child(frame)
 
 	var title := Label.new()
-	title.text = "3x3 Tactical Grid"
+	title.name = "TableTitle"
+	title.text = "The Table"
 	title.add_theme_font_size_override("font_size", 18)
 	frame.add_child(title)
 
@@ -320,8 +323,22 @@ func _build_ui() -> void:
 
 	status_label = Label.new()
 	status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	status_label.custom_minimum_size = Vector2(336, 0)
+	status_label.custom_minimum_size = Vector2(380, 0)
 	frame.add_child(status_label)
+
+	_get_floating_text_layer()
+
+
+func _get_floating_text_layer() -> Control:
+	if floating_text_layer != null and is_instance_valid(floating_text_layer):
+		return floating_text_layer
+
+	floating_text_layer = Control.new()
+	floating_text_layer.name = "FloatingCombatText"
+	floating_text_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	floating_text_layer.z_index = 30
+	add_child(floating_text_layer)
+	return floating_text_layer
 
 
 func _select_unit(unit_id: StringName) -> void:

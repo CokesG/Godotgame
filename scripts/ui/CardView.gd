@@ -11,7 +11,7 @@ var is_previewed: bool = false
 
 
 func _ready() -> void:
-	custom_minimum_size = Vector2(156, 176)
+	custom_minimum_size = Vector2(168, 188)
 	focus_mode = Control.FOCUS_NONE
 	autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	pressed.connect(_on_pressed)
@@ -60,10 +60,17 @@ func _refresh() -> void:
 
 	var card_name := _get_card_name()
 	var cost := int(card_resource.get("cost"))
-	var rules_text := String(card_resource.get("rules_text"))
+	var rules_text := _shorten_rules_text(String(card_resource.get("rules_text")))
 	var type_label := _get_card_type_label()
 	var target_label := _get_target_label()
-	text = "%s\nCost %d | %s\nTarget: %s\n%s" % [card_name, cost, type_label, target_label, rules_text]
+	text = "%s\nCost %d | %s\nTarget: %s\n%s\n%s" % [
+		card_name,
+		cost,
+		type_label,
+		target_label,
+		rules_text,
+		_get_tag_line()
+	]
 	tooltip_text = "Click to play %s during Player Commit. Target: %s%s" % [
 		card_name,
 		target_label,
@@ -79,12 +86,17 @@ func _refresh() -> void:
 	style.border_width_top = 2
 	style.border_width_right = 2
 	style.border_width_bottom = 2
-	style.bg_color = Color(0.22, 0.18, 0.12) if is_previewed else Color(0.16, 0.14, 0.12)
+	style.bg_color = Color(0.25, 0.19, 0.12) if is_previewed else Color(0.15, 0.13, 0.105)
 	style.border_color = Color(1.0, 0.88, 0.48) if is_previewed else _get_card_type_color()
 	add_theme_stylebox_override("normal", style)
-	add_theme_stylebox_override("hover", style)
+	var hover_style := style.duplicate()
+	hover_style.bg_color = Color(0.24, 0.20, 0.15)
+	hover_style.border_color = Color(1.0, 0.86, 0.42)
+	add_theme_stylebox_override("hover", hover_style)
 	add_theme_stylebox_override("pressed", style)
-	add_theme_font_size_override("font_size", 13)
+	add_theme_font_size_override("font_size", 14)
+	add_theme_color_override("font_color", Color(0.96, 0.91, 0.82))
+	add_theme_color_override("font_hover_color", Color(1.0, 0.94, 0.78))
 
 
 func _get_card_name() -> String:
@@ -135,6 +147,27 @@ func _get_tag_tooltip() -> String:
 	if labels.is_empty():
 		return ""
 	return " | Tags: %s" % ", ".join(labels)
+
+
+func _get_tag_line() -> String:
+	var tags_value = card_resource.get("tags")
+	if typeof(tags_value) != TYPE_ARRAY:
+		return "Tags: None"
+
+	var labels: Array[String] = []
+	for tag in tags_value:
+		var label := String(tag).capitalize().replace("_", " ")
+		if not label.is_empty():
+			labels.append(label)
+	if labels.is_empty():
+		return "Tags: None"
+	return "Tags: %s" % ", ".join(labels)
+
+
+func _shorten_rules_text(rules_text: String) -> String:
+	if rules_text.length() <= 58:
+		return rules_text
+	return "%s..." % rules_text.substr(0, 55)
 
 
 func _get_card_type_color() -> Color:

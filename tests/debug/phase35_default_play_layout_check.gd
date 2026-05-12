@@ -31,13 +31,14 @@ func _verify_default_layout_order(combat_scene: Node) -> void:
 	var layout: Node = combat_scene.find_child("Layout", true, false)
 	var run_shell: Node = combat_scene.find_child("RunShellPanel", true, false)
 	var combat_body: Node = combat_scene.find_child("CombatBody", true, false)
+	var table_row: Node = combat_scene.find_child("TableRow", true, false)
 	var deck_panel: Node = combat_scene.find_child("DeckPanel", true, false)
 	var run_panel: Node = combat_scene.find_child("RunPanel", true, false)
 	var debug_drawer: Node = combat_scene.find_child("DebugDrawer", true, false)
 	var log_column: Node = combat_scene.find_child("LogColumn", true, false)
 	var start_button: Button = combat_scene.find_child("StartRunButton", true, false)
 	var continue_button: Button = combat_scene.find_child("ContinueButton", true, false)
-	if layout == null or run_shell == null or combat_body == null or deck_panel == null:
+	if layout == null or run_shell == null or combat_body == null or table_row == null or deck_panel == null:
 		_fail("Expected core play layout nodes.")
 		return
 	if run_panel == null or debug_drawer == null or log_column == null:
@@ -50,11 +51,14 @@ func _verify_default_layout_order(combat_scene: Node) -> void:
 	if _child_index(layout, run_shell) > _child_index(layout, combat_body):
 		_fail("Run shell should sit before the play area.")
 		return
-	if _child_index(layout, combat_body) > _child_index(layout, deck_panel):
-		_fail("Combat body should sit before the hand/deck panel.")
+	if deck_panel.get_parent() != combat_body:
+		_fail("Hand/deck panel should live inside the combat body play area.")
 		return
-	if _child_index(layout, deck_panel) > _child_index(layout, run_panel):
-		_fail("Hand/deck panel should sit before tuning/reward panels.")
+	if _child_index(combat_body, table_row) > _child_index(combat_body, deck_panel):
+		_fail("Board/intent table row should sit before the hand/deck strip.")
+		return
+	if _child_index(layout, combat_body) > _child_index(layout, run_panel):
+		_fail("Combat body should sit before tuning/reward panels.")
 		return
 	if _child_index(layout, run_panel) > _child_index(layout, debug_drawer):
 		_fail("Run panel should sit before the debug drawer.")

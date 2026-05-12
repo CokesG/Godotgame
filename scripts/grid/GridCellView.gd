@@ -12,7 +12,7 @@ var feedback_tween: Tween
 
 
 func _ready() -> void:
-	custom_minimum_size = Vector2(104, 104)
+	custom_minimum_size = Vector2(116, 116)
 	focus_mode = Control.FOCUS_NONE
 	pressed.connect(_on_pressed)
 	_refresh()
@@ -79,19 +79,21 @@ func _refresh() -> void:
 		style.bg_color = Color(0.20, 0.40, 0.30)
 		style.border_color = Color(0.58, 0.90, 0.64)
 	elif occupant_id == &"player":
-		style.bg_color = Color(0.18, 0.25, 0.38)
+		style.bg_color = Color(0.16, 0.24, 0.36)
 		style.border_color = Color(0.48, 0.66, 0.95)
 	elif not occupant_id.is_empty():
-		style.bg_color = Color(0.38, 0.18, 0.18)
+		style.bg_color = Color(0.36, 0.13, 0.12)
 		style.border_color = Color(0.90, 0.48, 0.48)
 	else:
-		style.bg_color = Color(0.12, 0.12, 0.15)
-		style.border_color = Color(0.35, 0.35, 0.40)
+		style.bg_color = Color(0.10, 0.085, 0.07)
+		style.border_color = Color(0.34, 0.28, 0.18)
 
 	add_theme_stylebox_override("normal", style)
 	add_theme_stylebox_override("hover", style)
 	add_theme_stylebox_override("pressed", style)
 	add_theme_font_size_override("font_size", 18)
+	add_theme_color_override("font_color", Color(0.96, 0.90, 0.78))
+	add_theme_color_override("font_hover_color", Color(1.0, 0.95, 0.82))
 
 
 func _get_cell_text() -> String:
