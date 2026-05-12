@@ -53,6 +53,14 @@ const RUN_NODES := [
 			"res://resources/enemies/skulker.tres",
 			"res://resources/enemies/shieldbearer.tres"
 		],
+		"encounter_intro": "A cramped first table where a Skulker tests your lanes while a Shieldbearer tries to drag the tempo down.",
+		"table_modifier": {
+			"id": "house_rules",
+			"name": "House Rules",
+			"summary": "Opening table starts you with 2 Guard so the first read is forgiving.",
+			"modifiers": {"starting_guard": 2}
+		},
+		"reward_stakes": "Movement, defense, and read cards are favored so the starter deck gains a cleaner table plan.",
 		"reward_tags": [&"movement", &"defense", &"read"]
 	},
 	{
@@ -63,6 +71,14 @@ const RUN_NODES := [
 			"res://resources/enemies/brute.tres",
 			"res://resources/enemies/needle_eye.tres"
 		],
+		"encounter_intro": "The Brute forces raw damage checks while Needle-Eye punishes lazy lane choices from the back rail.",
+		"table_modifier": {
+			"id": "high_ante",
+			"name": "High Ante",
+			"summary": "You get +1 max Energy at this table, but the enemy pair is built to cash in fast.",
+			"modifiers": {"max_energy_bonus": 1}
+		},
+		"reward_stakes": "Attack, Guard, and movement rewards are weighted because this table asks for faster pressure.",
 		"reward_tags": [&"attack", &"guard", &"movement"]
 	},
 	{
@@ -73,6 +89,14 @@ const RUN_NODES := [
 			"res://resources/enemies/hexmonger.tres",
 			"res://resources/enemies/shieldbearer.tres"
 		],
+		"encounter_intro": "Hexmonger muddles your calls while Shieldbearer keeps the curse alive behind a wall of Guard.",
+		"table_modifier": {
+			"id": "hexed_felt",
+			"name": "Hexed Felt",
+			"summary": "Start with -1 Nerve. Reads, traps, and ritual cards matter more here.",
+			"modifiers": {"starting_nerve_bonus": -1}
+		},
+		"reward_stakes": "Ritual, trap, and read rewards are favored to answer the curse instead of simply racing it.",
 		"reward_tags": [&"ritual", &"trap", &"read"]
 	},
 	{
@@ -83,6 +107,14 @@ const RUN_NODES := [
 			"res://resources/enemies/grave_dealer.tres",
 			"res://resources/enemies/skulker.tres"
 		],
+		"encounter_intro": "The Grave Dealer hides the real threat behind Skulker pressure and pays out a relic if you survive.",
+		"table_modifier": {
+			"id": "marked_deal",
+			"name": "Marked Deal",
+			"summary": "Start with +1 Nerve. Correct calls can swing the elite before the relic offer.",
+			"modifiers": {"starting_nerve_bonus": 1}
+		},
+		"reward_stakes": "Bluff, attack, and Nerve rewards are favored, and this elite also offers a relic.",
 		"reward_tags": [&"bluff", &"attack", &"nerve"]
 	},
 	{
@@ -92,6 +124,14 @@ const RUN_NODES := [
 		"enemy_paths": [
 			"res://resources/enemies/house_champion.tres"
 		],
+		"encounter_intro": "The House Champion is the final single-opponent read: fewer bodies, bigger punishment, no post-fight reward.",
+		"table_modifier": {
+			"id": "final_hand",
+			"name": "Final Hand",
+			"summary": "Draw +1 card and start with 3 Guard. This is the last table.",
+			"modifiers": {"hand_target_bonus": 1, "starting_guard": 3}
+		},
+		"reward_stakes": "The payout is the run result. Win here to clear the prototype path.",
 		"reward_tags": []
 	}
 ]
@@ -160,6 +200,37 @@ func get_next_node_name_after_reward() -> String:
 		return "run results"
 	var node: Dictionary = RUN_NODES[next_index]
 	return String(node.get("name", "Next Table"))
+
+
+func get_current_encounter_intro() -> String:
+	var node: Dictionary = get_current_node()
+	return String(node.get("encounter_intro", "Read the enemies before the table opens."))
+
+
+func get_current_table_modifier() -> Dictionary:
+	var node: Dictionary = get_current_node()
+	var modifier_value: Variant = node.get("table_modifier", {})
+	if typeof(modifier_value) != TYPE_DICTIONARY:
+		return {}
+	return Dictionary(modifier_value).duplicate(true)
+
+
+func get_table_modifiers() -> Dictionary:
+	var table_modifier: Dictionary = get_current_table_modifier()
+	var modifiers_value: Variant = table_modifier.get("modifiers", {})
+	if typeof(modifiers_value) != TYPE_DICTIONARY:
+		return {}
+	return Dictionary(modifiers_value).duplicate(true)
+
+
+func get_current_reward_stakes() -> String:
+	var node: Dictionary = get_current_node()
+	return String(node.get("reward_stakes", "Clear the table to improve the run."))
+
+
+func get_current_reward_tag_names() -> Array[String]:
+	var node: Dictionary = get_current_node()
+	return _format_reward_tags(node.get("reward_tags", []))
 
 
 func get_deck_paths() -> Array[String]:
@@ -410,6 +481,11 @@ func get_state() -> Dictionary:
 		"current_node": node,
 		"current_node_name": String(node.get("name", "Complete")),
 		"current_node_kind": String(node.get("kind", "")),
+		"encounter_intro": get_current_encounter_intro(),
+		"table_modifier": get_current_table_modifier(),
+		"table_modifiers": get_table_modifiers(),
+		"reward_stakes": get_current_reward_stakes(),
+		"reward_tag_names": get_current_reward_tag_names(),
 		"player_hp": player_current_hp,
 		"player_max_hp": PLAYER_MAX_HP,
 		"deck_size": deck_paths.size(),
@@ -495,6 +571,15 @@ func _resource_has_any_tag(resource: Resource, tags_to_match: Array) -> bool:
 		if resource_tags.has(StringName(tag)):
 			return true
 	return false
+
+
+func _format_reward_tags(tags: Array) -> Array[String]:
+	var labels: Array[String] = []
+	for tag in tags:
+		var label: String = String(tag).capitalize().replace("_", " ")
+		if not label.is_empty():
+			labels.append(label)
+	return labels
 
 
 func _get_spawn_cells(count: int) -> Array[Vector2i]:

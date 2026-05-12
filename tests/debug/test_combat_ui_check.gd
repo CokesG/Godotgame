@@ -54,6 +54,11 @@ func _ready() -> void:
 		_fail("Expected NextEncounterButton for Phase 21 next-table flow.")
 		return
 
+	var encounter_preview := combat_scene.find_child("EncounterPreview", true, false)
+	if encounter_preview == null:
+		_fail("Expected EncounterPreview for Phase 22 encounter pacing.")
+		return
+
 	var action_prompt := combat_scene.find_child("ActionPrompt", true, false)
 	if action_prompt == null:
 		_fail("Expected ActionPrompt for Phase 14 next-action clarity.")

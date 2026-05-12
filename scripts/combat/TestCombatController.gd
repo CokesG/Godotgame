@@ -124,6 +124,7 @@ var run_shell_panel: PanelContainer
 var run_shell_title_label: Label
 var run_shell_detail_label: RichTextLabel
 var run_continuity_label: RichTextLabel
+var encounter_preview_label: RichTextLabel
 var start_run_button: Button
 var next_encounter_button: Button
 var shell_new_run_button: Button
@@ -269,6 +270,14 @@ func _build_ui() -> void:
 	run_continuity_label.scroll_active = false
 	run_continuity_label.custom_minimum_size = Vector2(0, 48)
 	run_shell_layout.add_child(run_continuity_label)
+
+	encounter_preview_label = RichTextLabel.new()
+	encounter_preview_label.name = "EncounterPreview"
+	encounter_preview_label.bbcode_enabled = false
+	encounter_preview_label.fit_content = true
+	encounter_preview_label.scroll_active = false
+	encounter_preview_label.custom_minimum_size = Vector2(0, 86)
+	run_shell_layout.add_child(encounter_preview_label)
 
 	var run_shell_actions := HBoxContainer.new()
 	run_shell_actions.name = "RunShellActions"
@@ -1466,17 +1475,35 @@ func _show_next_encounter_if_ready() -> void:
 
 
 func _apply_relic_modifiers() -> void:
-	var modifiers: Dictionary = run_manager.call("get_relic_modifiers")
-	combat_session.set("max_energy", 3 + int(modifiers.get("max_energy_bonus", 0)))
-	combat_session.set("hand_target", 5 + int(modifiers.get("hand_target_bonus", 0)))
-	bluff_system.set("starting_nerve", 3 + int(modifiers.get("starting_nerve_bonus", 0)))
+	var modifiers: Dictionary = _get_combined_combat_modifiers()
+	combat_session.set("max_energy", max(1, 3 + int(modifiers.get("max_energy_bonus", 0))))
+	combat_session.set("hand_target", max(1, 5 + int(modifiers.get("hand_target_bonus", 0))))
+	bluff_system.set("starting_nerve", max(1, 3 + int(modifiers.get("starting_nerve_bonus", 0))))
 
 
 func _apply_starting_relic_effects() -> void:
-	var modifiers: Dictionary = run_manager.call("get_relic_modifiers")
+	var modifiers: Dictionary = _get_combined_combat_modifiers()
 	var starting_guard := int(modifiers.get("starting_guard", 0))
 	if starting_guard > 0:
-		combat_resolver.call("add_player_guard", starting_guard, "Relic guard")
+		combat_resolver.call("add_player_guard", starting_guard, _get_current_modifier_source())
+
+
+func _get_combined_combat_modifiers() -> Dictionary:
+	var combined: Dictionary = run_manager.call("get_relic_modifiers") if run_manager != null else {}
+	var table_modifiers: Dictionary = run_manager.call("get_table_modifiers") if run_manager != null else {}
+	for key in table_modifiers.keys():
+		combined[key] = combined.get(key, 0) + table_modifiers[key]
+	return combined
+
+
+func _get_current_modifier_source() -> String:
+	if run_manager == null:
+		return "Table modifier"
+	var table_modifier: Dictionary = run_manager.call("get_current_table_modifier")
+	var modifier_name: String = String(table_modifier.get("name", "Table modifier"))
+	if modifier_name.is_empty():
+		return "Table modifier"
+	return modifier_name
 
 
 func _refresh_action_controls() -> void:
@@ -1728,6 +1755,10 @@ func _refresh_run_shell(state: Dictionary) -> void:
 	if run_continuity_label != null:
 		run_continuity_label.clear()
 		run_continuity_label.append_text(_get_run_continuity_text(state))
+	if encounter_preview_label != null:
+		encounter_preview_label.visible = _should_show_encounter_preview()
+		encounter_preview_label.clear()
+		encounter_preview_label.append_text(_get_encounter_preview_text(state))
 
 	if start_run_button != null:
 		start_run_button.visible = run_flow_state == RUN_FLOW_START
@@ -1763,7 +1794,8 @@ func _get_run_shell_detail(state: Dictionary) -> String:
 	var node_count := int(state.get("current_node_count", 0))
 	match run_flow_state:
 		RUN_FLOW_START:
-			return "The Gambler-Knight enters a five-table prototype run.\nStart when ready: Opening Table begins at %d/%d Blood with a %d-card deck." % [
+			return "The Gambler-Knight enters a five-table prototype run.\nStart when ready: %s begins at %d/%d Blood with a %d-card deck." % [
+				state.get("current_node_name", "Opening Table"),
 				state.get("player_hp", 0),
 				state.get("player_max_hp", 0),
 				state.get("deck_size", 0)
@@ -1784,8 +1816,9 @@ func _get_run_shell_detail(state: Dictionary) -> String:
 			var balance: Dictionary = state.get("balance_snapshot", {})
 			var evaluation: Dictionary = balance.get("evaluation", {})
 			var enemies: Array = state.get("current_enemy_names", [])
-			var enemy_text := "unknown opposition" if enemies.is_empty() else ", ".join(enemies)
-			return "Up next: %s [%s].\nBlood %d/%d | Deck %d | %s | Est. %d turns against %s." % [
+			var enemy_text: String = "unknown opposition" if enemies.is_empty() else ", ".join(enemies)
+			var modifier: Dictionary = state.get("table_modifier", {})
+			return "Up next: %s [%s].\nBlood %d/%d | Deck %d | %s | Est. %d turns against %s.\nTable rule: %s." % [
 				state.get("current_node_name", "Encounter"),
 				state.get("current_node_kind", "combat"),
 				state.get("player_hp", 0),
@@ -1793,7 +1826,8 @@ func _get_run_shell_detail(state: Dictionary) -> String:
 				state.get("deck_size", 0),
 				_get_balance_band_label(String(evaluation.get("rating", "unknown"))),
 				evaluation.get("projected_turns", 0),
-				enemy_text
+				enemy_text,
+				modifier.get("name", "House Rules")
 			]
 		RUN_FLOW_RESULTS:
 			var results: Dictionary = state.get("run_results", {})
@@ -1844,6 +1878,33 @@ func _get_run_continuity_text(state: Dictionary) -> String:
 			return "Final result: %s. Export the summary or start a fresh run." % results.get("grade", "Table Stakes")
 		_:
 			return "Run continuity is waiting for the next state."
+
+
+func _should_show_encounter_preview() -> bool:
+	return run_flow_state == RUN_FLOW_START or run_flow_state == RUN_FLOW_NEXT_ENCOUNTER or run_flow_state == RUN_FLOW_COMBAT
+
+
+func _get_encounter_preview_text(state: Dictionary) -> String:
+	var table_name: String = String(state.get("current_node_name", "Encounter"))
+	var intro: String = String(state.get("encounter_intro", "Read the table before combat starts."))
+	var modifier: Dictionary = state.get("table_modifier", {})
+	var modifier_name: String = String(modifier.get("name", "No table modifier"))
+	var modifier_summary: String = String(modifier.get("summary", "No special rule is active."))
+	var reward_stakes: String = String(state.get("reward_stakes", "Clear the table to improve the run."))
+	var enemies: Array = state.get("current_enemy_names", [])
+	var enemy_text: String = "unknown opposition" if enemies.is_empty() else ", ".join(enemies)
+	var reward_tags: Array = state.get("reward_tag_names", [])
+	var tag_text: String = "Run clear" if reward_tags.is_empty() else ", ".join(reward_tags)
+
+	return "Encounter: %s\nEnemies: %s\nIntro: %s\nModifier: %s - %s\nReward stakes: %s\nReward tags: %s" % [
+		table_name,
+		enemy_text,
+		intro,
+		modifier_name,
+		modifier_summary,
+		reward_stakes,
+		tag_text
+	]
 
 
 func _get_next_table_name_after_reward(state: Dictionary) -> String:
