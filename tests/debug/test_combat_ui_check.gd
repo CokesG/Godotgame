@@ -59,6 +59,26 @@ func _ready() -> void:
 		_fail("Expected EncounterPreview for Phase 22 encounter pacing.")
 		return
 
+	var approach_panel := combat_scene.find_child("EncounterApproachPanel", true, false)
+	if approach_panel == null:
+		_fail("Expected EncounterApproachPanel for Phase 27 approach-table polish.")
+		return
+
+	var approach_enemy_cards := combat_scene.find_child("ApproachEnemyCards", true, false)
+	if approach_enemy_cards == null:
+		_fail("Expected ApproachEnemyCards for Phase 27 enemy-card previews.")
+		return
+
+	var approach_rule := combat_scene.find_child("ApproachTableRule", true, false)
+	if approach_rule == null:
+		_fail("Expected ApproachTableRule for Phase 27 table-rule framing.")
+		return
+
+	var approach_stakes := combat_scene.find_child("ApproachStakes", true, false)
+	if approach_stakes == null:
+		_fail("Expected ApproachStakes for Phase 27 reward-stakes framing.")
+		return
+
 	var action_prompt := combat_scene.find_child("ActionPrompt", true, false)
 	if action_prompt == null:
 		_fail("Expected ActionPrompt for Phase 14 next-action clarity.")

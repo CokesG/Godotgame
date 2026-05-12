@@ -128,6 +128,11 @@ var run_shell_title_label: Label
 var run_shell_detail_label: RichTextLabel
 var run_continuity_label: RichTextLabel
 var encounter_preview_label: RichTextLabel
+var encounter_approach_panel: PanelContainer
+var approach_title_label: Label
+var approach_enemy_cards_label: RichTextLabel
+var approach_rule_label: RichTextLabel
+var approach_stakes_label: RichTextLabel
 var start_run_button: Button
 var next_encounter_button: Button
 var shell_new_run_button: Button
@@ -331,6 +336,47 @@ func _build_ui() -> void:
 	encounter_preview_label.scroll_active = false
 	encounter_preview_label.custom_minimum_size = Vector2(0, 86)
 	run_shell_layout.add_child(encounter_preview_label)
+
+	encounter_approach_panel = PanelContainer.new()
+	encounter_approach_panel.name = "EncounterApproachPanel"
+	encounter_approach_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	run_shell_layout.add_child(encounter_approach_panel)
+
+	var approach_layout := VBoxContainer.new()
+	approach_layout.name = "EncounterApproachLayout"
+	approach_layout.add_theme_constant_override("separation", 6)
+	encounter_approach_panel.add_child(approach_layout)
+
+	approach_title_label = Label.new()
+	approach_title_label.name = "ApproachTitle"
+	approach_title_label.text = "Approach Table"
+	approach_title_label.add_theme_font_size_override("font_size", 18)
+	approach_title_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	approach_layout.add_child(approach_title_label)
+
+	approach_enemy_cards_label = RichTextLabel.new()
+	approach_enemy_cards_label.name = "ApproachEnemyCards"
+	approach_enemy_cards_label.bbcode_enabled = false
+	approach_enemy_cards_label.fit_content = true
+	approach_enemy_cards_label.scroll_active = false
+	approach_enemy_cards_label.custom_minimum_size = Vector2(0, 118)
+	approach_layout.add_child(approach_enemy_cards_label)
+
+	approach_rule_label = RichTextLabel.new()
+	approach_rule_label.name = "ApproachTableRule"
+	approach_rule_label.bbcode_enabled = false
+	approach_rule_label.fit_content = true
+	approach_rule_label.scroll_active = false
+	approach_rule_label.custom_minimum_size = Vector2(0, 64)
+	approach_layout.add_child(approach_rule_label)
+
+	approach_stakes_label = RichTextLabel.new()
+	approach_stakes_label.name = "ApproachStakes"
+	approach_stakes_label.bbcode_enabled = false
+	approach_stakes_label.fit_content = true
+	approach_stakes_label.scroll_active = false
+	approach_stakes_label.custom_minimum_size = Vector2(0, 58)
+	approach_layout.add_child(approach_stakes_label)
 
 	var run_shell_actions := HBoxContainer.new()
 	run_shell_actions.name = "RunShellActions"
@@ -1052,12 +1098,14 @@ func _on_next_encounter_pressed() -> void:
 	var table_count: int = int(state.get("current_node_count", 0))
 	_set_run_flow_state(RUN_FLOW_COMBAT)
 	_append_log("%s is live." % node_name)
+	_append_log("Approach complete: %s dealt from the run map into combat." % node_name)
 	_reset_playable_combat()
 	_push_feedback("Run map: moving to Table %d/%d - %s." % [
 		table_number,
 		table_count,
 		node_name
 	], FEEDBACK_PHASE_COLOR, run_path_label)
+	_push_feedback("Approach: %s dealt into combat. Read enemies, table rule, then begin turn." % node_name, FEEDBACK_PHASE_COLOR, run_shell_panel)
 	_surface_latest_table_rule_effect()
 
 
@@ -1944,6 +1992,7 @@ func _refresh_run_shell(state: Dictionary) -> void:
 		encounter_preview_label.visible = _should_show_encounter_preview()
 		encounter_preview_label.clear()
 		encounter_preview_label.append_text(_get_encounter_preview_text(state))
+	_refresh_encounter_approach(state)
 
 	if start_run_button != null:
 		start_run_button.visible = run_flow_state == RUN_FLOW_START
@@ -2003,7 +2052,7 @@ func _get_run_shell_detail(state: Dictionary) -> String:
 			var enemies: Array = state.get("current_enemy_names", [])
 			var enemy_text: String = "unknown opposition" if enemies.is_empty() else ", ".join(enemies)
 			var modifier: Dictionary = state.get("table_modifier", {})
-			return "Up next: %s [%s].\nBlood %d/%d | Deck %d | %s | Est. %d turns against %s.\nTable rule: %s." % [
+			return "Up next: %s [%s].\nBlood %d/%d | Deck %d | %s | Est. %d turns against %s.\nApproach: review enemy cards, table rule, and reward stakes before dealing in.\nTable rule: %s." % [
 				state.get("current_node_name", "Encounter"),
 				state.get("current_node_kind", "combat"),
 				state.get("player_hp", 0),
@@ -2090,6 +2139,116 @@ func _get_encounter_preview_text(state: Dictionary) -> String:
 		reward_stakes,
 		tag_text
 	]
+
+
+func _refresh_encounter_approach(state: Dictionary) -> void:
+	if encounter_approach_panel == null:
+		return
+
+	var should_show: bool = _should_show_encounter_approach()
+	encounter_approach_panel.visible = should_show
+	if not should_show:
+		return
+
+	var entry: Dictionary = _get_current_run_path_entry(state)
+	var node_index: int = min(int(state.get("current_node_index", 0)) + 1, int(state.get("current_node_count", 0)))
+	var node_count: int = int(state.get("current_node_count", 0))
+	if approach_title_label != null:
+		approach_title_label.text = "Approach Table %d/%d: %s [%s]" % [
+			node_index,
+			node_count,
+			entry.get("name", state.get("current_node_name", "Encounter")),
+			String(entry.get("kind", state.get("current_node_kind", "combat"))).capitalize()
+		]
+
+	if approach_enemy_cards_label != null:
+		approach_enemy_cards_label.clear()
+		approach_enemy_cards_label.append_text(_get_approach_enemy_cards_text(entry))
+
+	if approach_rule_label != null:
+		approach_rule_label.clear()
+		approach_rule_label.append_text(_get_approach_rule_text(entry))
+
+	if approach_stakes_label != null:
+		approach_stakes_label.clear()
+		approach_stakes_label.append_text(_get_approach_stakes_text(entry))
+
+
+func _should_show_encounter_approach() -> bool:
+	return run_flow_state == RUN_FLOW_START or run_flow_state == RUN_FLOW_NEXT_ENCOUNTER
+
+
+func _get_current_run_path_entry(state: Dictionary) -> Dictionary:
+	var path_entries: Array = state.get("run_path", [])
+	var index: int = clampi(int(state.get("current_node_index", 0)), 0, max(0, path_entries.size() - 1))
+	if index >= 0 and index < path_entries.size() and typeof(path_entries[index]) == TYPE_DICTIONARY:
+		return Dictionary(path_entries[index])
+
+	var modifier: Dictionary = state.get("table_modifier", {})
+	return {
+		"name": String(state.get("current_node_name", "Encounter")),
+		"kind": String(state.get("current_node_kind", "combat")),
+		"enemy_cards": state.get("current_enemy_cards", []),
+		"table_modifier_name": String(modifier.get("name", "House Rules")),
+		"table_modifier_summary": String(modifier.get("summary", "No special rule is active.")),
+		"reward_stakes": String(state.get("reward_stakes", "Clear the table to improve the run.")),
+		"reward_tag_names": state.get("reward_tag_names", [])
+	}
+
+
+func _get_approach_enemy_cards_text(entry: Dictionary) -> String:
+	var enemy_cards: Array = entry.get("enemy_cards", [])
+	if enemy_cards.is_empty():
+		return "Enemy Cards\n[Enemy Card] Unknown opposition\nTell: no readable tell yet.\nCounter: enter combat and read the first intent."
+
+	var lines := PackedStringArray()
+	lines.append("Enemy Cards")
+	for value in enemy_cards:
+		if typeof(value) != TYPE_DICTIONARY:
+			continue
+		var enemy: Dictionary = Dictionary(value)
+		var behavior_tags: Array = enemy.get("behavior_tags", [])
+		var intent_names: Array = enemy.get("intent_names", [])
+		lines.append("[Enemy Card] %s | HP %d | %s | Aggro %d%% | Bluff %d%%" % [
+			enemy.get("name", "Enemy"),
+			enemy.get("max_hp", 0),
+			enemy.get("role", "Enemy"),
+			enemy.get("aggression", 0),
+			enemy.get("bluff_chance", 0)
+		])
+		lines.append("Tags: %s | Intents: %s" % [
+			_join_text_array(behavior_tags, "None"),
+			_join_text_array(intent_names, "Unknown")
+		])
+		lines.append("Tell: %s" % enemy.get("tell", "No tell recorded."))
+		lines.append("Counter: %s" % enemy.get("counterplay", "Read intent before committing."))
+	return "\n".join(lines)
+
+
+func _get_approach_rule_text(entry: Dictionary) -> String:
+	return "Table Rule Card: %s\nEffect: %s" % [
+		entry.get("table_modifier_name", "House Rules"),
+		entry.get("table_modifier_summary", "No special rule is active.")
+	]
+
+
+func _get_approach_stakes_text(entry: Dictionary) -> String:
+	var tags: Array = entry.get("reward_tag_names", [])
+	return "Reward Stakes\n%s\nFavored reward gaps: %s" % [
+		entry.get("reward_stakes", "Clear the table to improve the run."),
+		_join_text_array(tags, "Run clear")
+	]
+
+
+func _join_text_array(values: Array, fallback: String) -> String:
+	var parts := PackedStringArray()
+	for value in values:
+		var text: String = String(value)
+		if not text.is_empty():
+			parts.append(text)
+	if parts.is_empty():
+		return fallback
+	return ", ".join(parts)
 
 
 func _get_next_table_name_after_reward(state: Dictionary) -> String:

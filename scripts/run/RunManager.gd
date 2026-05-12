@@ -240,6 +240,7 @@ func get_run_path() -> Array[Dictionary]:
 			"name": String(node.get("name", "Table")),
 			"kind": String(node.get("kind", "combat")),
 			"enemy_names": _get_enemy_names_from_paths(node.get("enemy_paths", [])),
+			"enemy_cards": _get_enemy_cards_from_paths(node.get("enemy_paths", [])),
 			"encounter_intro": String(node.get("encounter_intro", "Read the table before combat starts.")),
 			"table_modifier_name": String(modifier.get("name", "House Rules")),
 			"table_modifier_summary": String(modifier.get("summary", "No special rule is active.")),
@@ -525,6 +526,7 @@ func get_state() -> Dictionary:
 		"last_completed_node_name": last_completed_node_name,
 		"next_node_name_after_reward": get_next_node_name_after_reward(),
 		"current_enemy_names": get_current_enemy_names(),
+		"current_enemy_cards": _get_enemy_cards_from_paths(get_current_enemy_paths()),
 		"combats_won": combats_won,
 		"damage_taken_total": damage_taken_total,
 		"waiting_for_reward": is_waiting_for_reward(),
@@ -649,6 +651,65 @@ func _get_enemy_names_from_paths(enemy_paths_value: Variant) -> Array[String]:
 		var enemy: Resource = load(String(path_value))
 		if enemy != null:
 			names.append(_get_resource_name(enemy))
+	return names
+
+
+func _get_enemy_cards_from_paths(enemy_paths_value: Variant) -> Array[Dictionary]:
+	var cards: Array[Dictionary] = []
+	if typeof(enemy_paths_value) != TYPE_ARRAY:
+		return cards
+
+	for path_value in enemy_paths_value:
+		var enemy: Resource = load(String(path_value))
+		if enemy == null:
+			continue
+
+		var behavior_tags_value: Variant = enemy.get("behavior_tags")
+		var behavior_tags: Array = behavior_tags_value if typeof(behavior_tags_value) == TYPE_ARRAY else []
+		cards.append({
+			"name": _get_resource_name(enemy),
+			"role": _get_enemy_role_label(int(enemy.get("role"))),
+			"max_hp": int(enemy.get("max_hp")),
+			"aggression": int(round(float(enemy.get("aggression")) * 100.0)),
+			"bluff_chance": int(round(float(enemy.get("bluff_chance")) * 100.0)),
+			"behavior_tags": _format_reward_tags(behavior_tags),
+			"intent_names": _get_intent_names(enemy),
+			"tell": String(enemy.get("tell_description")),
+			"counterplay": String(enemy.get("counterplay_note")),
+			"visual_identity": String(enemy.get("visual_identity"))
+		})
+	return cards
+
+
+func _get_enemy_role_label(role_index: int) -> String:
+	var roles := [
+		"Basic Attacker",
+		"Shield",
+		"Trickster",
+		"Summoner",
+		"Sniper",
+		"Brute",
+		"Gambler",
+		"Mimic",
+		"Hex Caster",
+		"Trap Setter",
+		"Elite",
+		"Boss"
+	]
+	if role_index < 0 or role_index >= roles.size():
+		return "Enemy"
+	return roles[role_index]
+
+
+func _get_intent_names(enemy: Resource) -> Array[String]:
+	var names: Array[String] = []
+	var intents_value: Variant = enemy.get("intents")
+	if typeof(intents_value) != TYPE_ARRAY:
+		return names
+
+	for intent in intents_value:
+		if intent != null:
+			names.append(_get_resource_name(intent))
 	return names
 
 
