@@ -145,6 +145,23 @@ func get_current_enemy_paths() -> Array[String]:
 	return paths
 
 
+func get_current_enemy_names() -> Array[String]:
+	var names: Array[String] = []
+	for path in get_current_enemy_paths():
+		var enemy: Resource = load(path)
+		if enemy != null:
+			names.append(_get_resource_name(enemy))
+	return names
+
+
+func get_next_node_name_after_reward() -> String:
+	var next_index := current_node_index + 1
+	if next_index < 0 or next_index >= RUN_NODES.size():
+		return "run results"
+	var node: Dictionary = RUN_NODES[next_index]
+	return String(node.get("name", "Next Table"))
+
+
 func get_deck_paths() -> Array[String]:
 	return deck_paths.duplicate()
 
@@ -401,6 +418,9 @@ func get_state() -> Dictionary:
 		"pending_relic_rewards": _describe_paths(pending_relic_reward_paths),
 		"balance_snapshot": get_balance_snapshot(),
 		"run_results": get_run_results(),
+		"last_completed_node_name": last_completed_node_name,
+		"next_node_name_after_reward": get_next_node_name_after_reward(),
+		"current_enemy_names": get_current_enemy_names(),
 		"combats_won": combats_won,
 		"damage_taken_total": damage_taken_total,
 		"waiting_for_reward": is_waiting_for_reward(),

@@ -94,8 +94,22 @@ func _verify_combat_reward_and_results_shell(combat_scene: Node) -> void:
 	card_reward.emit_signal("pressed")
 	await get_tree().process_frame
 
+	if _get_text(title) != "Next Table":
+		_fail("RunShellTitle should switch to a next-table screen after rewards clear.")
+		return
+	if not _get_text(detail).contains("Raised Stakes"):
+		_fail("RunShellDetail should preview the next table after reward claim.")
+		return
+
+	var next_encounter: Button = combat_scene.find_child("NextEncounterButton", true, false)
+	if next_encounter == null or not bool(next_encounter.get("visible")) or bool(next_encounter.get("disabled")):
+		_fail("NextEncounterButton should become available after rewards clear.")
+		return
+	next_encounter.emit_signal("pressed")
+	await get_tree().process_frame
+
 	if not _get_text(detail).contains("Table 2/5 is live"):
-		_fail("RunShellDetail should advance to the next table after reward claim.")
+		_fail("RunShellDetail should advance to the next table after Deal Next Table.")
 		return
 
 	run_manager.call("mark_combat_defeat")

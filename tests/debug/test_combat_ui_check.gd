@@ -44,6 +44,16 @@ func _ready() -> void:
 		_fail("Expected ShellExportButton for Phase 15 run results export.")
 		return
 
+	var run_continuity := combat_scene.find_child("RunContinuity", true, false)
+	if run_continuity == null:
+		_fail("Expected RunContinuity for Phase 21 run continuity.")
+		return
+
+	var next_encounter_button := combat_scene.find_child("NextEncounterButton", true, false)
+	if next_encounter_button == null:
+		_fail("Expected NextEncounterButton for Phase 21 next-table flow.")
+		return
+
 	var action_prompt := combat_scene.find_child("ActionPrompt", true, false)
 	if action_prompt == null:
 		_fail("Expected ActionPrompt for Phase 14 next-action clarity.")
