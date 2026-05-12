@@ -135,6 +135,7 @@ var combat_feedback_label: RichTextLabel
 var action_prompt_label: Label
 var phase_guidance_label: Label
 var phase_detail_label: Label
+var table_rule_status_label: RichTextLabel
 var recipe_panel: PanelContainer
 var recipe_label: RichTextLabel
 var run_state_label: RichTextLabel
@@ -189,6 +190,7 @@ var recipe_progress: Dictionary = {}
 var pending_card_context: Dictionary = {}
 var committed_card_context: Dictionary = {}
 var feedback_history: Array[String] = []
+var table_rule_effect_history: Array[String] = []
 var last_combat_feedback_state: Dictionary = {}
 var previewed_hand_index: int = -1
 
@@ -335,6 +337,19 @@ func _build_ui() -> void:
 	turn_status_label.scroll_active = false
 	turn_status_label.custom_minimum_size = Vector2(0, 70)
 	turn_status_panel.add_child(turn_status_label)
+
+	var table_rule_panel := PanelContainer.new()
+	table_rule_panel.name = "TableRulePanel"
+	table_rule_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	layout.add_child(table_rule_panel)
+
+	table_rule_status_label = RichTextLabel.new()
+	table_rule_status_label.name = "TableRuleStatus"
+	table_rule_status_label.bbcode_enabled = false
+	table_rule_status_label.fit_content = true
+	table_rule_status_label.scroll_active = false
+	table_rule_status_label.custom_minimum_size = Vector2(0, 76)
+	table_rule_panel.add_child(table_rule_status_label)
 
 	var guidance_panel := PanelContainer.new()
 	guidance_panel.name = "TurnGuidance"
@@ -1194,6 +1209,7 @@ func _reset_playable_combat() -> void:
 	bluff_system.call("reset_bluff")
 	_apply_starting_relic_effects()
 	turn_manager.reset_combat()
+	_surface_latest_table_rule_effect()
 	if run_flow_state != RUN_FLOW_START:
 		_set_run_flow_state(RUN_FLOW_COMBAT)
 	_refresh_action_controls()
@@ -1479,13 +1495,75 @@ func _apply_relic_modifiers() -> void:
 	combat_session.set("max_energy", max(1, 3 + int(modifiers.get("max_energy_bonus", 0))))
 	combat_session.set("hand_target", max(1, 5 + int(modifiers.get("hand_target_bonus", 0))))
 	bluff_system.set("starting_nerve", max(1, 3 + int(modifiers.get("starting_nerve_bonus", 0))))
+	_record_table_setup_modifier_effects()
 
 
 func _apply_starting_relic_effects() -> void:
 	var modifiers: Dictionary = _get_combined_combat_modifiers()
-	var starting_guard := int(modifiers.get("starting_guard", 0))
+	var starting_guard: int = int(modifiers.get("starting_guard", 0))
 	if starting_guard > 0:
 		combat_resolver.call("add_player_guard", starting_guard, _get_current_modifier_source())
+		if _get_current_table_modifiers().has("starting_guard"):
+			_record_table_rule_effect("grants %d opening Guard" % starting_guard)
+
+
+func _record_table_setup_modifier_effects() -> void:
+	var table_modifiers: Dictionary = _get_current_table_modifiers()
+	if table_modifiers.has("max_energy_bonus"):
+		var energy_bonus: int = int(table_modifiers.get("max_energy_bonus", 0))
+		if energy_bonus != 0:
+			_record_table_rule_effect("%s max Energy; cap is %d" % [
+				_format_signed_number(energy_bonus),
+				int(combat_session.get("max_energy"))
+			])
+
+	if table_modifiers.has("hand_target_bonus"):
+		var hand_bonus: int = int(table_modifiers.get("hand_target_bonus", 0))
+		if hand_bonus != 0:
+			_record_table_rule_effect("%s opening hand size; draw target is %d" % [
+				_format_signed_number(hand_bonus),
+				int(combat_session.get("hand_target"))
+			])
+
+	if table_modifiers.has("starting_nerve_bonus"):
+		var nerve_bonus: int = int(table_modifiers.get("starting_nerve_bonus", 0))
+		if nerve_bonus != 0:
+			_record_table_rule_effect("%s starting Nerve; Nerve starts at %d" % [
+				_format_signed_number(nerve_bonus),
+				int(bluff_system.get("starting_nerve"))
+			])
+
+
+func _record_table_rule_effect(effect_text: String) -> void:
+	if effect_text.is_empty():
+		return
+
+	var modifier_name: String = _get_current_modifier_source()
+	var message: String = "Table Rule: %s %s." % [modifier_name, effect_text]
+	if not table_rule_effect_history.has(message):
+		table_rule_effect_history.push_front(message)
+		while table_rule_effect_history.size() > 4:
+			table_rule_effect_history.pop_back()
+	_push_feedback(message, FEEDBACK_PHASE_COLOR, table_rule_status_label)
+	_refresh_table_rule_status(run_manager.call("get_state") if run_manager != null else {})
+
+
+func _surface_latest_table_rule_effect() -> void:
+	if table_rule_effect_history.is_empty():
+		return
+
+	var message: String = table_rule_effect_history[0]
+	if feedback_banner_label != null:
+		feedback_banner_label.text = message
+		_pulse_canvas_item(feedback_banner_label, FEEDBACK_PHASE_COLOR)
+	if table_rule_status_label != null:
+		_pulse_canvas_item(table_rule_status_label, FEEDBACK_PHASE_COLOR)
+
+
+func _get_current_table_modifiers() -> Dictionary:
+	if run_manager == null:
+		return {}
+	return run_manager.call("get_table_modifiers")
 
 
 func _get_combined_combat_modifiers() -> Dictionary:
@@ -1504,6 +1582,12 @@ func _get_current_modifier_source() -> String:
 	if modifier_name.is_empty():
 		return "Table modifier"
 	return modifier_name
+
+
+func _format_signed_number(value: int) -> String:
+	if value > 0:
+		return "+%d" % value
+	return "%d" % value
 
 
 func _refresh_action_controls() -> void:
@@ -1553,6 +1637,7 @@ func _refresh_action_controls() -> void:
 		_refresh_run_panel(run_state)
 	_refresh_run_shell(run_state)
 	_refresh_turn_status(run_state)
+	_refresh_table_rule_status(run_state)
 	_refresh_card_action_hint()
 
 
@@ -2382,6 +2467,55 @@ func _refresh_turn_status(run_state: Dictionary) -> void:
 	turn_status_label.append_text(_get_turn_state_feedback(session_state, run_state))
 
 
+func _refresh_table_rule_status(run_state: Dictionary) -> void:
+	if table_rule_status_label == null:
+		return
+
+	var table_modifier: Dictionary = run_state.get("table_modifier", {})
+	var modifier_name: String = String(table_modifier.get("name", "No table rule"))
+	var modifier_summary: String = String(table_modifier.get("summary", "No special rule is active."))
+	var table_modifiers: Dictionary = run_state.get("table_modifiers", {})
+	var session_state: Dictionary = combat_session.call("get_state") if combat_session != null else {}
+
+	table_rule_status_label.clear()
+	table_rule_status_label.append_text("Table Rule: %s\n" % modifier_name)
+	table_rule_status_label.append_text("%s\n" % modifier_summary)
+	table_rule_status_label.append_text("Active: %s" % _get_table_rule_active_effect_text(table_modifiers, session_state))
+	if not table_rule_effect_history.is_empty():
+		table_rule_status_label.append_text("\nTriggered: %s" % table_rule_effect_history[0])
+
+
+func _get_table_rule_active_effect_text(table_modifiers: Dictionary, session_state: Dictionary) -> String:
+	if table_modifiers.is_empty():
+		return "no active modifier payload"
+
+	var parts: Array[String] = []
+	var current_max_energy: int = int(session_state.get("max_energy", int(combat_session.get("max_energy")) if combat_session != null else 0))
+	var current_hand_target: int = int(session_state.get("hand_target", int(combat_session.get("hand_target")) if combat_session != null else 0))
+	var current_starting_nerve: int = int(bluff_system.get("starting_nerve")) if bluff_system != null else 0
+	if table_modifiers.has("starting_guard"):
+		parts.append("%d opening Guard" % int(table_modifiers.get("starting_guard", 0)))
+	if table_modifiers.has("max_energy_bonus"):
+		parts.append("%s max Energy -> %d" % [
+			_format_signed_number(int(table_modifiers.get("max_energy_bonus", 0))),
+			current_max_energy
+		])
+	if table_modifiers.has("hand_target_bonus"):
+		parts.append("%s hand size -> %d" % [
+			_format_signed_number(int(table_modifiers.get("hand_target_bonus", 0))),
+			current_hand_target
+		])
+	if table_modifiers.has("starting_nerve_bonus"):
+		parts.append("%s starting Nerve -> %d" % [
+			_format_signed_number(int(table_modifiers.get("starting_nerve_bonus", 0))),
+			current_starting_nerve
+		])
+
+	if parts.is_empty():
+		return "rule has no setup effect"
+	return ", ".join(parts)
+
+
 func _get_turn_state_feedback(session_state: Dictionary, run_state: Dictionary) -> String:
 	if run_flow_state == RUN_FLOW_START:
 		return "State: Start Run is live. Combat buttons and card clicks wait until the table opens."
@@ -2696,6 +2830,7 @@ func _preview_card_grid_focus(card: Resource, context: Dictionary) -> void:
 
 func _reset_feedback_state() -> void:
 	feedback_history.clear()
+	table_rule_effect_history.clear()
 	last_combat_feedback_state.clear()
 	previewed_hand_index = -1
 	if feedback_banner_label != null:

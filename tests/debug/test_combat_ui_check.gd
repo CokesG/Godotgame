@@ -69,6 +69,11 @@ func _ready() -> void:
 		_fail("Expected TurnStatus for Phase 17 turn-state readability.")
 		return
 
+	var table_rule_status := combat_scene.find_child("TableRuleStatus", true, false)
+	if table_rule_status == null:
+		_fail("Expected TableRuleStatus for Phase 23 table modifier readability.")
+		return
+
 	var feedback_banner := combat_scene.find_child("FeedbackBanner", true, false)
 	if feedback_banner == null:
 		_fail("Expected FeedbackBanner for Phase 18 combat feel.")
