@@ -168,6 +168,7 @@ var balance_report_label: RichTextLabel
 var run_results_label: RichTextLabel
 var run_export_readback_label: RichTextLabel
 var run_history_label: RichTextLabel
+var run_panel_container: PanelContainer
 var run_inspector_panel: PanelContainer
 var run_inspector_filter_row: HBoxContainer
 var run_inspector_label: RichTextLabel
@@ -179,6 +180,7 @@ var card_reward_buttons: Array[Button] = []
 var relic_reward_buttons: Array[Button] = []
 var skip_rewards_button: Button
 var combat_state_label: RichTextLabel
+var combat_log_column: VBoxContainer
 var bluff_state_label: RichTextLabel
 var enemy_call_option: OptionButton
 var intent_call_option: OptionButton
@@ -606,8 +608,10 @@ func _build_ui() -> void:
 
 	var run_panel := PanelContainer.new()
 	run_panel.name = "RunPanel"
+	run_panel.visible = false
 	run_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	layout.add_child(run_panel)
+	run_panel_container = run_panel
 
 	var run_layout := VBoxContainer.new()
 	run_layout.name = "RunLayout"
@@ -635,6 +639,7 @@ func _build_ui() -> void:
 	run_results_label.bbcode_enabled = false
 	run_results_label.fit_content = true
 	run_results_label.scroll_active = false
+	run_results_label.visible = false
 	run_results_label.custom_minimum_size = Vector2(0, 74)
 	run_layout.add_child(run_results_label)
 
@@ -998,6 +1003,7 @@ func _build_ui() -> void:
 	log_column.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	log_column.add_theme_constant_override("separation", 8)
 	body.add_child(log_column)
+	combat_log_column = log_column
 
 	var log_title := Label.new()
 	log_title.text = "Combat Log"
@@ -1065,6 +1071,27 @@ func _build_ui() -> void:
 	hand_view.name = "HandView"
 	hand_view.set_script(HAND_VIEW_SCRIPT)
 	hand_scroll.add_child(hand_view)
+	_apply_phase35_default_layout(
+		layout,
+		title,
+		subtitle,
+		run_path_panel,
+		run_shell_panel,
+		turn_label,
+		phase_label,
+		resource_state_label,
+		turn_status_panel,
+		table_rule_panel,
+		guidance_panel,
+		feedback_panel,
+		recipe_panel,
+		run_panel,
+		primary_controls,
+		debug_drawer_panel,
+		body,
+		deck_panel,
+		log_column
+	)
 
 	deck_manager = Node.new()
 	deck_manager.name = "DeckManager"
@@ -1116,6 +1143,77 @@ func _build_ui() -> void:
 	run_manager.connect("log_requested", _on_log_requested)
 	run_manager.connect("state_changed", _on_run_state_changed)
 	_update_debug_visibility()
+
+
+func _apply_phase35_default_layout(
+	layout: VBoxContainer,
+	title: Label,
+	subtitle: Label,
+	run_path_panel: Control,
+	run_shell_panel: Control,
+	turn_label: Control,
+	phase_label: Control,
+	resource_state_label: Control,
+	turn_status_panel: Control,
+	table_rule_panel: Control,
+	guidance_panel: Control,
+	feedback_panel: Control,
+	recipe_panel: Control,
+	run_panel: Control,
+	primary_controls: Control,
+	debug_drawer_panel: Control,
+	body: Control,
+	deck_panel: Control,
+	log_column: Control
+) -> void:
+	layout.add_theme_constant_override("separation", 8)
+	title.add_theme_font_size_override("font_size", 22)
+	subtitle.visible = false
+
+	run_header_label.custom_minimum_size = Vector2(0, 42)
+	run_path_label.custom_minimum_size = Vector2(0, 42)
+	run_path_preview_label.custom_minimum_size = Vector2(0, 64)
+	run_shell_detail_label.custom_minimum_size = Vector2(0, 42)
+	run_continuity_label.custom_minimum_size = Vector2(0, 32)
+	encounter_preview_label.custom_minimum_size = Vector2(0, 64)
+	run_ceremony_label.custom_minimum_size = Vector2(0, 72)
+
+	body.custom_minimum_size = Vector2(0, 286)
+	combat_grid.custom_minimum_size = Vector2(380, 286)
+	enemy_status_label.custom_minimum_size = Vector2(300, 86)
+	intent_icon_strip_label.custom_minimum_size = Vector2(300, 54)
+	threat_summary_label.custom_minimum_size = Vector2(300, 58)
+	intent_preview_label.custom_minimum_size = Vector2(300, 122)
+	bluff_state_label.custom_minimum_size = Vector2(300, 76)
+	card_action_hint_label.custom_minimum_size = Vector2(0, 48)
+	card_target_preview_label.custom_minimum_size = Vector2(0, 54)
+
+	var hand_scroll: Node = deck_panel.find_child("HandScroll", true, false)
+	if hand_scroll is Control:
+		(hand_scroll as Control).custom_minimum_size = Vector2(0, 170)
+
+	next_phase_button.custom_minimum_size = Vector2(220, 44)
+	next_phase_button.add_theme_font_size_override("font_size", 18)
+	toggle_debug_button.custom_minimum_size = Vector2(112, 36)
+
+	turn_label.visible = false
+	phase_label.visible = false
+	resource_state_label.visible = false
+	log_column.visible = false
+
+	layout.move_child(run_header_label, 1)
+	layout.move_child(run_shell_panel, 2)
+	layout.move_child(run_path_panel, 3)
+	layout.move_child(primary_controls, 4)
+	layout.move_child(body, 5)
+	layout.move_child(deck_panel, 6)
+	layout.move_child(guidance_panel, 7)
+	layout.move_child(turn_status_panel, 8)
+	layout.move_child(table_rule_panel, 9)
+	layout.move_child(feedback_panel, 10)
+	layout.move_child(run_panel, 11)
+	layout.move_child(debug_drawer_panel, 12)
+	layout.move_child(recipe_panel, 13)
 
 
 func _connect_turn_manager() -> void:
@@ -1871,6 +1969,7 @@ func _refresh_export_readback_label() -> void:
 	if last_export_path.is_empty() and last_export_readback.is_empty():
 		run_export_readback_label.visible = false
 		run_export_readback_label.modulate = Color.WHITE
+		_sync_run_panel_visibility()
 		return
 
 	run_export_readback_label.visible = true
@@ -1889,6 +1988,7 @@ func _refresh_export_readback_label() -> void:
 	run_export_readback_label.append_text("Key: %s\n" % last_export_readback.get("result_key", "unkeyed_run"))
 	run_export_readback_label.append_text("Route: %s\n" % _get_export_route_readback_text(route_summary))
 	run_export_readback_label.append_text("File: %s" % last_export_path.get_file())
+	_sync_run_panel_visibility()
 
 
 func _refresh_run_history_label(force_show: bool = false) -> void:
@@ -1900,10 +2000,12 @@ func _refresh_run_history_label(force_show: bool = false) -> void:
 	run_history_label.clear()
 	if run_manager == null:
 		run_history_label.visible = false
+		_sync_run_panel_visibility()
 		return
 	if not force_show and not run_history_requested and last_run_history_rows.is_empty():
 		run_history_label.visible = false
 		run_history_label.modulate = Color.WHITE
+		_sync_run_panel_visibility()
 		return
 
 	last_run_history_report = run_manager.call("get_run_history_comparison", 6)
@@ -1959,6 +2061,7 @@ func _refresh_run_history_label(force_show: bool = false) -> void:
 		var delta_label := String(row.get("delta_label", ""))
 		if not delta_label.is_empty():
 			run_history_label.append_text("   Change: %s\n" % delta_label)
+	_sync_run_panel_visibility()
 
 
 func _refresh_run_inspector_label(force_show: bool = false) -> void:
@@ -1972,11 +2075,13 @@ func _refresh_run_inspector_label(force_show: bool = false) -> void:
 		run_inspector_panel.visible = false
 		if run_inspector_filter_row != null:
 			run_inspector_filter_row.visible = false
+		_sync_run_panel_visibility()
 		return
 	if not force_show and not run_inspector_requested:
 		run_inspector_panel.visible = false
 		if run_inspector_filter_row != null:
 			run_inspector_filter_row.visible = false
+		_sync_run_panel_visibility()
 		return
 
 	last_run_inspection_report = run_manager.call("get_run_inspection_report", 5)
@@ -2013,6 +2118,7 @@ func _refresh_run_inspector_label(force_show: bool = false) -> void:
 	_append_run_inspector_reward_rows(last_run_inspection_report.get("recent_rewards", []))
 	_append_run_inspector_pending_rows(last_run_inspection_report.get("pending_rewards", []))
 	_append_run_inspector_history_rows(last_run_inspection_report.get("history_rows", []))
+	_sync_run_panel_visibility()
 
 
 func _refresh_run_inspector_filter_buttons() -> void:
@@ -2325,6 +2431,7 @@ func _refresh_action_controls() -> void:
 	var shell_blocks_combat := run_flow_state != RUN_FLOW_COMBAT
 
 	next_phase_button.disabled = shell_blocks_combat or not can_debug_adjust
+	next_phase_button.visible = run_flow_state == RUN_FLOW_COMBAT
 	if run_flow_state == RUN_FLOW_START:
 		next_phase_button.text = "Open Opening Table"
 	elif run_flow_state == RUN_FLOW_NEXT_ENCOUNTER:
@@ -2480,6 +2587,7 @@ func _refresh_run_panel(state: Dictionary) -> void:
 		skip_rewards_button.disabled = not bool(state.get("waiting_for_reward", false))
 		skip_rewards_button.visible = bool(state.get("waiting_for_reward", false))
 		skip_rewards_button.text = "Skip Reward - keep deck lean" if bool(state.get("waiting_for_reward", false)) else "Skip Rewards"
+	_sync_run_panel_visibility()
 
 
 func _refresh_playtest_report(batch: Dictionary) -> void:
@@ -4332,6 +4440,33 @@ func _get_next_recipe_step_label() -> String:
 	return ""
 
 
+func _sync_run_panel_visibility() -> void:
+	if run_panel_container == null:
+		return
+
+	var has_visible_reward := false
+	for button in card_reward_buttons:
+		if button != null and bool(button.get("visible")):
+			has_visible_reward = true
+			break
+	if not has_visible_reward:
+		for button in relic_reward_buttons:
+			if button != null and bool(button.get("visible")):
+				has_visible_reward = true
+				break
+
+	var has_player_panel := false
+	has_player_panel = has_player_panel or (reward_prompt_label != null and bool(reward_prompt_label.get("visible")))
+	has_player_panel = has_player_panel or (reward_impact_label != null and bool(reward_impact_label.get("visible")))
+	has_player_panel = has_player_panel or has_visible_reward
+	has_player_panel = has_player_panel or (skip_rewards_button != null and bool(skip_rewards_button.get("visible")))
+	has_player_panel = has_player_panel or (run_results_label != null and bool(run_results_label.get("visible")))
+	has_player_panel = has_player_panel or (run_export_readback_label != null and bool(run_export_readback_label.get("visible")))
+	has_player_panel = has_player_panel or (run_history_label != null and bool(run_history_label.get("visible")))
+	has_player_panel = has_player_panel or (run_inspector_panel != null and bool(run_inspector_panel.get("visible")))
+	run_panel_container.visible = debug_controls_visible or has_player_panel
+
+
 func _update_debug_visibility() -> void:
 	if debug_drawer_panel != null:
 		debug_drawer_panel.visible = debug_controls_visible
@@ -4352,12 +4487,15 @@ func _update_debug_visibility() -> void:
 		balance_report_label.visible = debug_controls_visible
 	if playtest_report_label != null:
 		playtest_report_label.visible = debug_controls_visible
+	if combat_log_column != null:
+		combat_log_column.visible = debug_controls_visible
 
 	var truth_visible := debug_controls_visible and debug_truth_visible
 	if truth_title_label != null:
 		truth_title_label.visible = truth_visible
 	if debug_truth_label != null:
 		debug_truth_label.visible = truth_visible
+	_sync_run_panel_visibility()
 
 
 func _refresh_enemy_call_options() -> void:
