@@ -1,6 +1,6 @@
 # Dead Man's Ante - VFX, Particles, And Effects Guide
 
-Status: prototype VFX plan and implementation notes
+Status: prototype VFX plan and Phase 44 responsiveness pass wired
 Last updated: 2026-05-12
 Companion art guide: `docs/design/ui_ux_asset_generation.md`
 
@@ -41,7 +41,7 @@ Current procedural effects:
 | `play_guard_pulse_at` | Guard gain or guard impact feedback |
 | `play_target_lock_on` / `play_target_lock_at` | Enemy target hover, target selection, and attack impact lock-on |
 | `play_reward_shimmer_on` | Recommended reward card shimmer |
-| `play_button_sheen_on` | Dominant action button hover sheen |
+| `play_button_sheen_on` | Dominant action button hover/press sheen |
 | `play_chip_burst_on` | Raise/call/bluff wager feedback |
 | `play_curse_smoke_on` | Face-down commit, fold, trap, curse, ritual feedback |
 | `play_intent_flicker_on` | Intent reveal/call uncertainty feedback |
@@ -179,10 +179,10 @@ No modern neon casino, no sci-fi, no photorealism, no fake text, no watermark, n
 
 ## First Prototype Checklist
 
-- Card hover/lift exists.
+- Card hover/lift and immediate press flash exist.
 - Card drag/drop can be layered later.
 - Card play to center has burst and travel feedback.
-- Tile highlight and focus pulse exist.
+- Tile highlight, target-card press lock-on, and focus pulse exist.
 - Attack slash exists.
 - Damage number exists.
 - Enemy hit flash exists.

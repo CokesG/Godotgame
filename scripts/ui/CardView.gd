@@ -21,6 +21,7 @@ func _ready() -> void:
 	_apply_compact_metrics()
 	focus_mode = Control.FOCUS_NONE
 	autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	button_down.connect(_on_button_down)
 	pressed.connect(_on_pressed)
 	mouse_entered.connect(_on_mouse_entered)
 	mouse_exited.connect(_on_mouse_exited)
@@ -43,7 +44,14 @@ func set_compact_mode(value: bool) -> void:
 	_refresh()
 
 
+func _on_button_down() -> void:
+	if is_playable:
+		play_feedback(Color(1.0, 0.78, 0.32))
+
+
 func _on_pressed() -> void:
+	if is_playable:
+		play_feedback(Color(1.0, 0.78, 0.32))
 	card_pressed.emit(hand_index)
 
 

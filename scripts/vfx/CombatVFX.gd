@@ -64,13 +64,13 @@ func play_card_fly_between(start_global: Vector2, end_global: Vector2, color: Co
 	card.add_child(title)
 	add_child(card)
 
-	var travel_time := 0.26
+	var travel_time := 0.32
 	var tween := card.create_tween()
 	tween.set_parallel(true)
 	tween.tween_property(card, "position", end - card.size * 0.5, travel_time).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
-	tween.tween_property(card, "scale", Vector2(0.74, 0.74), travel_time).from(Vector2(1.08, 1.08)).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tween.tween_property(card, "scale", Vector2(0.82, 0.82), travel_time).from(Vector2(1.14, 1.14)).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 	tween.tween_property(card, "rotation_degrees", -7.0 if face_down else 7.0, travel_time).from(-4.0).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
-	tween.tween_property(card, "modulate:a", 0.0, 0.14).set_delay(0.18).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	tween.tween_property(card, "modulate:a", 0.0, 0.16).set_delay(0.22).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 	tween.finished.connect(func() -> void:
 		if is_instance_valid(card):
 			card.queue_free()
@@ -87,10 +87,16 @@ func play_burst_on(target: CanvasItem, color: Color, style: StringName = &"spark
 func play_burst_at(global_position: Vector2, color: Color, style: StringName = &"spark") -> void:
 	var center := _to_layer_position(global_position)
 	var count := DEFAULT_PARTICLE_COUNT
-	if style == &"smoke":
+	if style == &"blood":
+		count = 20
+	elif style == &"guard":
+		count = 16
+	elif style == &"card":
+		count = 16
+	elif style == &"smoke":
 		count = 16
 	elif style == &"chip":
-		count = 10
+		count = 14
 	elif style == &"ash":
 		count = 18
 
@@ -221,21 +227,22 @@ func play_button_sheen_on(target: CanvasItem, color: Color = Color(1.0, 0.78, 0.
 	if rect == Rect2():
 		return
 
+	play_ring_at(rect.get_center(), color, max(24.0, min(rect.size.x, rect.size.y) * 0.42))
 	var start := _to_layer_position(rect.position)
 	var end := _to_layer_position(rect.end)
 	var sheen := ColorRect.new()
 	sheen.name = "VFXButtonSheen"
 	sheen.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	sheen.z_index = 96
-	sheen.color = Color(color.r, color.g, color.b, 0.56)
-	sheen.size = Vector2(max(18.0, (end.x - start.x) * 0.18), 3.0)
+	sheen.color = Color(color.r, color.g, color.b, 0.74)
+	sheen.size = Vector2(max(24.0, (end.x - start.x) * 0.22), 5.0)
 	sheen.position = Vector2(start.x, lerpf(start.y, end.y, 0.18))
 	add_child(sheen)
 
 	var tween := sheen.create_tween()
 	tween.set_parallel(true)
-	tween.tween_property(sheen, "position:x", end.x - sheen.size.x, 0.24).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
-	tween.tween_property(sheen, "modulate:a", 0.0, 0.24).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	tween.tween_property(sheen, "position:x", end.x - sheen.size.x, 0.2).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tween.tween_property(sheen, "modulate:a", 0.0, 0.2).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 	tween.finished.connect(func() -> void:
 		if is_instance_valid(sheen):
 			sheen.queue_free()

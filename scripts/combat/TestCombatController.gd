@@ -1286,6 +1286,9 @@ func _build_ui() -> void:
 	hand_action_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	hand_action_status_label.custom_minimum_size = Vector2(0, 28)
 	hand_action_status_label.add_theme_font_size_override("font_size", 15)
+	hand_action_status_label.add_theme_color_override("font_shadow_color", Color(0.0, 0.0, 0.0, 0.68))
+	hand_action_status_label.add_theme_constant_override("shadow_offset_x", 1)
+	hand_action_status_label.add_theme_constant_override("shadow_offset_y", 1)
 	deck_layout.add_child(hand_action_status_label)
 
 	card_action_hint_label = RichTextLabel.new()
@@ -1756,6 +1759,10 @@ func _on_card_clicked(hand_index: int) -> void:
 		_append_log("No card at hand index %d." % hand_index)
 		return
 
+	var source_card_view := _get_hand_card_view(hand_index)
+	if source_card_view != null and source_card_view.has_method("play_feedback"):
+		source_card_view.call("play_feedback", FEEDBACK_CARD_COLOR)
+
 	var cost := _get_card_cost(card)
 	var card_name := _get_card_name(card)
 	pending_card_context = _build_card_context(card)
@@ -1769,7 +1776,6 @@ func _on_card_clicked(hand_index: int) -> void:
 		return
 
 	var play_context := pending_card_context.duplicate()
-	var source_card_view := _get_hand_card_view(hand_index)
 	if not bool(deck_manager.call("play_card_at", hand_index)):
 		combat_session.call("refund_energy", cost, "%s failed to play" % card_name)
 		pending_card_context.clear()
@@ -2669,6 +2675,19 @@ func _on_enemy_target_card_pressed(enemy_id: StringName) -> void:
 	_select_enemy_target_by_id(enemy_id, source_button)
 
 
+func _on_enemy_target_card_button_down(enemy_id: StringName, source_button: Button) -> void:
+	if enemy_id.is_empty() or run_flow_state != RUN_FLOW_COMBAT:
+		return
+
+	if combat_grid != null and combat_grid.has_method("set_focus_unit"):
+		combat_grid.call("set_focus_unit", enemy_id)
+	_play_target_lock_vfx(enemy_id, source_button)
+	if source_button != null:
+		_flash_canvas_item(source_button, FEEDBACK_CARD_COLOR, 0.16)
+	if combat_vfx != null and combat_vfx.has_method("play_button_sheen_on") and _is_live_canvas_item(source_button):
+		combat_vfx.call("play_button_sheen_on", source_button, FEEDBACK_DAMAGE_COLOR)
+
+
 func _on_enemy_target_card_hovered(enemy_id: StringName, source_button: Button) -> void:
 	if enemy_id.is_empty() or run_flow_state != RUN_FLOW_COMBAT:
 		return
@@ -2677,7 +2696,7 @@ func _on_enemy_target_card_hovered(enemy_id: StringName, source_button: Button) 
 		combat_grid.call("set_focus_unit", enemy_id)
 	_play_target_lock_vfx(enemy_id, source_button)
 	if source_button != null:
-		_pulse_canvas_item(source_button, FEEDBACK_CARD_COLOR)
+		_flash_canvas_item(source_button, FEEDBACK_CARD_COLOR, 0.18)
 
 
 func _on_enemy_target_card_unhovered(_enemy_id: StringName) -> void:
@@ -2996,11 +3015,12 @@ func _apply_dominant_button_style(button: Button, active: bool, hint: String) ->
 
 
 func _ensure_button_hover_vfx(button: Button) -> void:
-	if button == null or bool(button.get_meta("phase43_hover_vfx_connected", false)):
+	if button == null or bool(button.get_meta("phase44_action_vfx_connected", false)):
 		return
 
 	button.mouse_entered.connect(_on_juicy_button_hovered.bind(button))
-	button.set_meta("phase43_hover_vfx_connected", true)
+	button.button_down.connect(_on_juicy_button_pressed.bind(button))
+	button.set_meta("phase44_action_vfx_connected", true)
 
 
 func _on_juicy_button_hovered(button: Button) -> void:
@@ -3009,7 +3029,16 @@ func _on_juicy_button_hovered(button: Button) -> void:
 
 	if combat_vfx != null and combat_vfx.has_method("play_button_sheen_on"):
 		combat_vfx.call("play_button_sheen_on", button, FEEDBACK_CARD_COLOR)
-	_pulse_canvas_item(button, FEEDBACK_CARD_COLOR)
+	_flash_canvas_item(button, FEEDBACK_CARD_COLOR, 0.18)
+
+
+func _on_juicy_button_pressed(button: Button) -> void:
+	if button == null or not button.is_inside_tree() or bool(button.get("disabled")):
+		return
+
+	if combat_vfx != null and combat_vfx.has_method("play_button_sheen_on"):
+		combat_vfx.call("play_button_sheen_on", button, FEEDBACK_REVEAL_COLOR)
+	_flash_canvas_item(button, FEEDBACK_CARD_COLOR, 0.14)
 
 
 func _get_continue_button_hint(phase_key: String) -> String:
@@ -5274,6 +5303,7 @@ func _refresh_enemy_target_cards(state: Dictionary) -> void:
 		button.text = _get_enemy_target_card_text(enemy_data, enemy_id == selected_enemy_id)
 		button.tooltip_text = "Click to target %s for attack/read cards." % enemy_data.get("name", "Enemy")
 		button.pressed.connect(_on_enemy_target_card_pressed.bind(enemy_id))
+		button.button_down.connect(_on_enemy_target_card_button_down.bind(enemy_id, button))
 		button.mouse_entered.connect(_on_enemy_target_card_hovered.bind(enemy_id, button))
 		button.mouse_exited.connect(_on_enemy_target_card_unhovered.bind(enemy_id))
 		_style_enemy_target_card_button(button, enemy_data, enemy_id == selected_enemy_id)
@@ -5401,7 +5431,7 @@ func _refresh_hand_action_status(entries: Array[Dictionary], session_state: Dict
 
 	var global_reason := _get_global_card_lock_reason(session_state)
 	if not global_reason.is_empty():
-		hand_action_status_label.text = "Cards locked: %s" % global_reason
+		hand_action_status_label.text = "Cards locked: %s Next: %s" % [global_reason, _get_locked_cards_next_action(global_reason)]
 		hand_action_status_label.add_theme_color_override("font_color", Color(0.82, 0.76, 0.68))
 		return
 
@@ -5415,10 +5445,13 @@ func _refresh_hand_action_status(entries: Array[Dictionary], session_state: Dict
 		blocked_reasons[reason] = int(blocked_reasons.get(reason, 0)) + 1
 
 	if ready_count > 0:
-		hand_action_status_label.text = "Ready: %d lit card%s. Click a glowing card, or change target first." % [
-			ready_count,
-			"" if ready_count == 1 else "s"
-		]
+		if _is_first_table_coach_active() and bool(first_play_coach_steps.get("card", false)) and not bool(first_play_coach_steps.get("resolve", false)):
+			hand_action_status_label.text = "Ready: card played. Press Resolve Turn, or play another lit card."
+		else:
+			hand_action_status_label.text = "Ready: 1 Target | 2 Play %d lit card%s | 3 Resolve." % [
+				ready_count,
+				"" if ready_count == 1 else "s"
+			]
 		hand_action_status_label.add_theme_color_override("font_color", Color(1.0, 0.86, 0.42))
 		return
 
@@ -5429,8 +5462,30 @@ func _refresh_hand_action_status(entries: Array[Dictionary], session_state: Dict
 		if count > top_count:
 			top_count = count
 			top_reason = String(reason)
-	hand_action_status_label.text = "Blocked: %s" % top_reason
+	hand_action_status_label.text = "Blocked: %s Next: %s" % [top_reason, _get_blocked_cards_next_action(top_reason)]
 	hand_action_status_label.add_theme_color_override("font_color", FEEDBACK_DAMAGE_COLOR)
+
+
+func _get_locked_cards_next_action(reason: String) -> String:
+	if reason.contains("Open Opening Table"):
+		return "press Open Opening Table."
+	if reason.contains("Choose rewards"):
+		return "pick or skip a reward."
+	if reason.contains("Open Next Table"):
+		return "press Open Next Table."
+	if reason.contains("Press Begin Turn"):
+		return "press Begin Turn."
+	return "follow the lit action button."
+
+
+func _get_blocked_cards_next_action(reason: String) -> String:
+	if reason.contains("Target enemy"):
+		return "click an enemy target card."
+	if reason.contains("Move cell"):
+		return "click a legal table cell."
+	if reason.contains("Energy"):
+		return "press Resolve Turn."
+	return "click target, then a lit card."
 
 
 func _get_card_playability_entry(card: Resource, session_state: Dictionary) -> Dictionary:
@@ -5933,6 +5988,15 @@ func _style_feedback_banner(color: Color) -> void:
 	feedback_banner_label.add_theme_color_override("font_shadow_color", color.darkened(0.45))
 	feedback_banner_label.add_theme_constant_override("shadow_offset_x", 1)
 	feedback_banner_label.add_theme_constant_override("shadow_offset_y", 1)
+
+
+func _flash_canvas_item(item: CanvasItem, color: Color, duration: float = 0.2) -> void:
+	if item == null or not item.is_inside_tree():
+		return
+
+	item.modulate = color
+	var tween := create_tween()
+	tween.tween_property(item, "modulate", Color.WHITE, duration).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 
 
 func _pulse_canvas_item(item: CanvasItem, color: Color) -> void:
