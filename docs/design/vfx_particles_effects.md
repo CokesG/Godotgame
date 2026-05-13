@@ -1,7 +1,7 @@
 # Dead Man's Ante - VFX, Particles, And Effects Guide
 
-Status: prototype VFX plan and Phase 44 responsiveness pass wired
-Last updated: 2026-05-12
+Status: prototype VFX plan and Phase 45 source assets wired
+Last updated: 2026-05-13
 Companion art guide: `docs/design/ui_ux_asset_generation.md`
 
 ## Goal
@@ -92,14 +92,21 @@ The first pass uses procedural Godot nodes so it is easy to tune timing. Later p
 
 ## Additional Art Needed
 
-No additional art is required for the current prototype pass. The existing card, board, enemy, icon, and relic PNGs are enough.
+No additional art is required for the current prototype pass. The existing card, board, enemy, icon, relic PNGs, and Phase 45 SVG source sprites are enough.
 
-Recommended next art when we want polish:
+Phase 45 added these source assets:
 
-- One transparent particle atlas with blood droplet, ash fleck, chip glint, smoke puff, shield shard, and ghost flame sprites.
-- One slash sprite strip with 6 to 8 frames.
-- One ritual circle sprite or mask.
-- One card burn/dissolve mask.
+- `res://art/game/vfx/vfx_particle_atlas.svg`
+- `res://art/game/vfx/vfx_slash_strip.svg`
+- `res://art/game/vfx/vfx_ritual_circle.svg`
+- `res://art/game/vfx/vfx_card_burn_mask.svg`
+
+Recommended next art wiring when we want polish:
+
+- Import the particle atlas as texture regions for blood, ash, chip glint, smoke puff, shield shard, poison mote, and ghost flame particles.
+- Swap procedural slash lines to the slash strip.
+- Animate the ritual-circle draw sprite.
+- Apply the burn/dissolve mask to exhaust and defeat beats.
 - Optional transparent Remotion-rendered sprite sheet for premium chip scatter, smoke curl, and ritual-circle draw timing.
 
 Keep these assets text-free and style-matched to `art/generated_raw/style_anchor_batch_001.png`.

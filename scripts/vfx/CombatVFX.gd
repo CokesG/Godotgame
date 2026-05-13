@@ -2,12 +2,25 @@ class_name CombatVFX
 extends Control
 
 const DEFAULT_PARTICLE_COUNT := 12
+const POLISH_ASSET_PATHS := [
+	"res://art/game/vfx/vfx_particle_atlas.svg",
+	"res://art/game/vfx/vfx_slash_strip.svg",
+	"res://art/game/vfx/vfx_ritual_circle.svg",
+	"res://art/game/vfx/vfx_card_burn_mask.svg"
+]
 
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	z_index = 90
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+
+
+func get_polish_asset_paths() -> Array[String]:
+	var paths: Array[String] = []
+	for path in POLISH_ASSET_PATHS:
+		paths.append(String(path))
+	return paths
 
 
 func play_card_burst_on(target: CanvasItem, color: Color) -> void:

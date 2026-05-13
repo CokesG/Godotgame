@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="448" height="64" viewBox="0 0 448 64">
+  <rect width="448" height="64" fill="none"/>
+  <g id="blood" transform="translate(0,0)">
+    <path d="M33 9 C24 22 17 31 17 42 C17 53 25 60 33 60 C43 60 50 53 50 42 C50 31 42 22 33 9 Z" fill="#8f1118"/>
+    <path d="M33 17 C28 27 24 34 24 42 C24 48 28 52 33 52 C39 52 43 48 43 42 C43 34 38 27 33 17 Z" fill="#e83a32"/>
+  </g>
+  <g id="ash" transform="translate(64,0)">
+    <path d="M16 35 L28 22 L35 34 L49 17 L43 45 L54 51 L27 51 L12 58 Z" fill="#d8d2c6" opacity="0.86"/>
+    <circle cx="44" cy="18" r="3" fill="#fff3d8" opacity="0.68"/>
+  </g>
+  <g id="chip_glint" transform="translate(128,0)">
+    <circle cx="32" cy="32" r="18" fill="#c58a24"/>
+    <circle cx="32" cy="32" r="11" fill="none" stroke="#f9d36b" stroke-width="4"/>
+    <path d="M32 6 L36 25 L56 32 L36 39 L32 58 L28 39 L8 32 L28 25 Z" fill="#ffe9a4" opacity="0.82"/>
+  </g>
+  <g id="smoke" transform="translate(192,0)">
+    <circle cx="22" cy="38" r="14" fill="#5a4668" opacity="0.42"/>
+    <circle cx="35" cy="29" r="17" fill="#826e92" opacity="0.34"/>
+    <circle cx="47" cy="41" r="12" fill="#302438" opacity="0.44"/>
+    <path d="M26 49 C21 40 24 30 34 25 C45 19 41 12 35 8" fill="none" stroke="#b09abb" stroke-width="4" opacity="0.38"/>
+  </g>
+  <g id="shield_shard" transform="translate(256,0)">
+    <path d="M31 6 L54 17 L47 44 L31 59 L15 44 L8 17 Z" fill="#6cc7ff" opacity="0.38"/>
+    <path d="M31 10 L46 19 L42 39 L31 50 L20 39 L16 19 Z" fill="#bdeaff" opacity="0.74"/>
+    <path d="M31 11 L31 49" stroke="#ffffff" stroke-width="3" opacity="0.7"/>
+  </g>
+  <g id="poison_mote" transform="translate(320,0)">
+    <circle cx="32" cy="32" r="15" fill="#4dca6a" opacity="0.72"/>
+    <circle cx="26" cy="25" r="5" fill="#c4ff8f" opacity="0.9"/>
+    <circle cx="43" cy="39" r="4" fill="#182f1c" opacity="0.5"/>
+    <path d="M32 13 C42 21 46 32 39 49 C52 39 53 21 32 13 Z" fill="#9cff6e" opacity="0.5"/>
+  </g>
+  <g id="ghost_flame" transform="translate(384,0)">
+    <path d="M32 58 C17 47 18 33 28 20 C32 15 35 9 34 4 C49 17 51 32 43 45 C40 51 38 55 32 58 Z" fill="#9d78ff" opacity="0.68"/>
+    <path d="M32 54 C25 47 26 37 33 28 C36 24 37 20 36 16 C44 27 43 40 36 49 C35 51 34 53 32 54 Z" fill="#f4d7ff" opacity="0.88"/>
+  </g>
+</svg>

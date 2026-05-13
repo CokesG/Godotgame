@@ -10,6 +10,7 @@ const ENEMY_INTENT_SYSTEM_SCRIPT := preload("res://scripts/enemies/EnemyIntentSy
 const HAND_VIEW_SCRIPT := preload("res://scripts/ui/HandView.gd")
 const DEAD_MANS_ANTE_SKIN_SCRIPT := preload("res://scripts/ui/DeadMansAnteSkin.gd")
 const RUN_MANAGER_SCRIPT := preload("res://scripts/run/RunManager.gd")
+const TEST_COMBAT_COPY_SCRIPT := preload("res://scripts/combat/TestCombatCopy.gd")
 const STARTER_CARD_PATHS := [
 	"res://resources/cards/quick_slash.tres",
 	"res://resources/cards/low_stab.tres",
@@ -39,81 +40,10 @@ const FEEDBACK_CARD_COLOR := Color(1.0, 0.78, 0.36)
 const FEEDBACK_PHASE_COLOR := Color(0.72, 0.90, 1.0)
 const FEEDBACK_REVEAL_COLOR := Color(0.90, 0.68, 1.0)
 const FEEDBACK_MOVE_COLOR := Color(0.52, 1.0, 0.62)
-const PHASE_ACTION_LABELS := {
-	"START_TURN": "Begin Turn",
-	"DRAW": "Begin Turn",
-	"ENEMY_INTENT_PREVIEW": "Begin Turn",
-	"PLAYER_COMMIT": "Resolve Turn",
-	"BLUFF_WAGER": "Reveal Turn",
-	"REVEAL": "Review Results",
-	"RESOLVE": "Next Turn",
-	"CLEANUP": "Next Turn"
-}
-const PHASE_GUIDANCE := {
-	"START_TURN": {
-		"title": "Start Turn",
-		"detail": "Energy refreshes. Continue to fill the hand."
-	},
-	"DRAW": {
-		"title": "Draw",
-		"detail": "The hand fills toward five cards automatically."
-	},
-	"ENEMY_INTENT_PREVIEW": {
-		"title": "Read",
-		"detail": "Compare enemy odds and tells before committing."
-	},
-	"PLAYER_COMMIT": {
-		"title": "Commit",
-		"detail": "Choose targets, click cards to play them, or commit the first card face-down."
-	},
-	"BLUFF_WAGER": {
-		"title": "Bluff",
-		"detail": "Set a call, raise if confident, or fold the committed card."
-	},
-	"REVEAL": {
-		"title": "Reveal",
-		"detail": "Enemy intent and committed cards resolve once this phase begins."
-	},
-	"RESOLVE": {
-		"title": "Resolve",
-		"detail": "Review HP, Guard, traps, and the combat log."
-	},
-	"CLEANUP": {
-		"title": "Cleanup",
-		"detail": "Leftover hand cards are discarded before the next turn."
-	}
-}
-const RECIPE_STEPS := [
-	{
-		"id": "read_intents",
-		"label": "Read one enemy intent preview"
-	},
-	{
-		"id": "play_or_commit",
-		"label": "Play a card or commit one face-down"
-	},
-	{
-		"id": "bluff_choice",
-		"label": "Set a call, raise, or fold"
-	},
-	{
-		"id": "reveal_resolve",
-		"label": "Resolve the reveal"
-	},
-	{
-		"id": "cleanup",
-		"label": "Clean up and start the next turn"
-	}
-]
-const RUN_INSPECTOR_FILTERS := [
-	{"id": "all", "label": "All"},
-	{"id": "attack", "label": "Attack"},
-	{"id": "guard", "label": "Guard"},
-	{"id": "movement", "label": "Move"},
-	{"id": "read", "label": "Read"},
-	{"id": "trap", "label": "Trap"},
-	{"id": "ritual", "label": "Ritual"}
-]
+const PHASE_ACTION_LABELS := TEST_COMBAT_COPY_SCRIPT.PHASE_ACTION_LABELS
+const PHASE_GUIDANCE := TEST_COMBAT_COPY_SCRIPT.PHASE_GUIDANCE
+const RECIPE_STEPS := TEST_COMBAT_COPY_SCRIPT.RECIPE_STEPS
+const RUN_INSPECTOR_FILTERS := TEST_COMBAT_COPY_SCRIPT.RUN_INSPECTOR_FILTERS
 
 @onready var turn_manager: Node = $TurnManager
 
@@ -1789,10 +1719,10 @@ func _on_card_played(card: Resource) -> void:
 	_record_first_play_step("card")
 	if _is_movement_card(card):
 		if bool(_resolve_movement_card(card, pending_card_context)):
-			_apply_card_side_effects(card)
+			_apply_card_side_effects(card, pending_card_context)
 	else:
 		combat_resolver.call("apply_card_with_context", card, pending_card_context)
-		_apply_card_side_effects(card)
+		_apply_card_side_effects(card, pending_card_context)
 	pending_card_context.clear()
 	_refresh_targeting_options()
 
@@ -2792,12 +2722,13 @@ func _resolve_reveal() -> void:
 			var resolved_context := committed_card_context.duplicate()
 			if _is_movement_card(resolved_card):
 				if bool(_resolve_movement_card(resolved_card, committed_card_context)):
-					_apply_card_side_effects(resolved_card)
+					_apply_card_side_effects(resolved_card, committed_card_context)
 			else:
 				combat_resolver.call("apply_card_with_context", resolved_card, committed_card_context)
-				_apply_card_side_effects(resolved_card)
+				_apply_card_side_effects(resolved_card, committed_card_context)
 			_play_card_commit_vfx(resolved_card, resolved_context, bluff_state_label, false)
 			committed_card_context.clear()
+	_apply_enemy_grid_moves(revealed)
 	combat_resolver.call("apply_revealed_intents_with_context", revealed, _build_reveal_context(bluff_state))
 	_mark_recipe_step("reveal_resolve")
 	_refresh_action_controls()
@@ -4529,6 +4460,7 @@ func _resolve_movement_card(card: Resource, context: Dictionary) -> bool:
 		return false
 
 	if bool(combat_grid.call("move_unit", &"player", target_cell)):
+		context["movement_resolved"] = true
 		_append_log("%s moves the Gambler-Knight to %s." % [
 			_get_card_name(card),
 			combat_grid.call("format_cell", target_cell)
@@ -4538,10 +4470,13 @@ func _resolve_movement_card(card: Resource, context: Dictionary) -> bool:
 	return false
 
 
-func _apply_card_side_effects(card: Resource) -> void:
+func _apply_card_side_effects(card: Resource, context: Dictionary = {}) -> void:
 	var card_id: StringName = StringName(card.get("id"))
 	var card_name := _get_card_name(card)
 	match card_id:
+		&"hook_step":
+			combat_resolver.call("apply_follow_up_damage", 2, "%s follow-up" % card_name, context)
+			_play_unit_burst(StringName(context.get("target_enemy_id", &"")), FEEDBACK_DAMAGE_COLOR, &"blood")
 		&"blood_ritual":
 			bluff_system.call("gain_nerve", 2, card_name)
 		&"marked_card":
@@ -4550,6 +4485,59 @@ func _apply_card_side_effects(card: Resource) -> void:
 			bluff_system.call("gain_nerve", 1, card_name)
 		&"shadow_step":
 			combat_resolver.call("add_player_guard", 2, card_name)
+
+
+func _apply_enemy_grid_moves(revealed: Array) -> void:
+	if combat_grid == null:
+		return
+
+	var moved_any := false
+	for entry in revealed:
+		if typeof(entry) != TYPE_DICTIONARY:
+			continue
+		var entry_data: Dictionary = Dictionary(entry)
+		var payload: Dictionary = entry_data.get("payload", {})
+		if not payload.has("move"):
+			continue
+
+		var enemy_id: StringName = StringName(entry_data.get("enemy_id", &""))
+		if enemy_id.is_empty() or not bool(combat_resolver.call("has_living_enemy", enemy_id)):
+			continue
+
+		var move_cells: Array = combat_grid.call("get_empty_adjacent_cells_for", enemy_id)
+		if move_cells.is_empty():
+			_append_log("%s tries to reposition, but the table has no open adjacent cell." % entry_data.get("enemy_name", "Enemy"))
+			continue
+
+		var destination: Vector2i = _pick_enemy_reposition_cell(enemy_id, move_cells)
+		if bool(combat_grid.call("move_unit", enemy_id, destination)):
+			moved_any = true
+			_append_log("%s repositions to %s." % [
+				entry_data.get("enemy_name", "Enemy"),
+				combat_grid.call("format_cell", destination)
+			])
+			_play_unit_or_cell_burst(enemy_id, destination, FEEDBACK_MOVE_COLOR, &"move")
+
+	if moved_any:
+		_refresh_targeting_options()
+
+
+func _pick_enemy_reposition_cell(enemy_id: StringName, move_cells: Array) -> Vector2i:
+	var player_cell: Vector2i = combat_grid.call("get_unit_position", &"player")
+	var origin: Vector2i = combat_grid.call("get_unit_position", enemy_id)
+	var best_cell: Vector2i = move_cells[0]
+	var best_score := -9999
+	for value in move_cells:
+		if typeof(value) != TYPE_VECTOR2I:
+			continue
+		var candidate: Vector2i = value
+		var distance_from_player: int = abs(candidate.x - player_cell.x) + abs(candidate.y - player_cell.y)
+		var forward_bias: int = origin.y - candidate.y
+		var score: int = distance_from_player * 10 + forward_bias
+		if score > best_score:
+			best_score = score
+			best_cell = candidate
+	return best_cell
 
 
 func _is_valid_player_move_target(target_cell: Vector2i) -> bool:

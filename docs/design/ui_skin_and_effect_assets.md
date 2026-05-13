@@ -1,7 +1,7 @@
 # Dead Man's Ante - UI Skin And Effect Asset Plan
 
-Status: Phase 40 first Godot skin pass wired
-Last updated: 2026-05-12
+Status: Phase 45 first VFX source asset pass wired
+Last updated: 2026-05-13
 
 ## What Is Wired Now
 
@@ -36,16 +36,27 @@ art/game/ui/skin/ui_divider_gold.png
 
 These are derived from the existing generated style-anchor sheets so they match the current art direction.
 
-## Additional Art Needed Next
-
-The current prototype does not need more static card/board/enemy art before it can become playable and fun. The highest-value next assets are small reusable effect sprites:
+## Added VFX Source Assets
 
 ```text
-1. transparent particle atlas: blood, ash, chip glint, smoke puff, shield shard, poison mote, ghost flame
-2. 6-8 frame slash sprite strip
-3. ritual circle draw sprite sheet
-4. card burn/dissolve mask
-5. face-down commit/reveal card back flash
+art/game/vfx/vfx_particle_atlas.svg
+art/game/vfx/vfx_slash_strip.svg
+art/game/vfx/vfx_ritual_circle.svg
+art/game/vfx/vfx_card_burn_mask.svg
+```
+
+These are lightweight source assets for the next polish pass. Runtime VFX still uses procedural Godot nodes, but `CombatVFX.gd` now registers the asset paths so tests and future import work have one place to look.
+
+## Additional Art Needed Next
+
+The current prototype does not need more static card/board/enemy art before it can become playable and fun. The highest-value next asset work is to convert the new source sprites into imported texture regions or animated strips:
+
+```text
+1. slice the transparent particle atlas into reusable particle textures
+2. wire the slash strip into an AnimatedSprite2D or texture-region slash effect
+3. animate the ritual circle draw timing
+4. use the burn mask for exhaust/discard dissolve
+5. add a face-down commit/reveal card back flash
 ```
 
 Use image generation for those source sprites. Use Remotion only when authored timing matters, such as chip scatter, smoke curl loops, ritual-circle draw timing, and reveal snap studies. Export Remotion results as transparent PNG sequences or sprite sheets, then import them into Godot.
