@@ -34,10 +34,14 @@ Current procedural effects:
 | Effect | Runtime Use |
 | --- | --- |
 | `play_card_burst_on` | Card play/commit impact at the source card |
+| `play_card_fly_between` | A transient card ghost travels from hand/source to target |
 | `play_slash_between` | Attack/read card travel line toward the target |
 | `play_burst_at` | Blood, ash, guard, movement, chip, and smoke particles |
 | `play_ring_at` | Reveal, guard, and card impact rings |
 | `play_guard_pulse_at` | Guard gain or guard impact feedback |
+| `play_target_lock_on` / `play_target_lock_at` | Enemy target hover, target selection, and attack impact lock-on |
+| `play_reward_shimmer_on` | Recommended reward card shimmer |
+| `play_button_sheen_on` | Dominant action button hover sheen |
 | `play_chip_burst_on` | Raise/call/bluff wager feedback |
 | `play_curse_smoke_on` | Face-down commit, fold, trap, curse, ritual feedback |
 | `play_intent_flicker_on` | Intent reveal/call uncertainty feedback |
@@ -177,11 +181,11 @@ No modern neon casino, no sci-fi, no photorealism, no fake text, no watermark, n
 
 - Card hover/lift exists.
 - Card drag/drop can be layered later.
-- Card play to center has burst feedback.
+- Card play to center has burst and travel feedback.
 - Tile highlight and focus pulse exist.
 - Attack slash exists.
 - Damage number exists.
 - Enemy hit flash exists.
 - Guard pulse exists.
-- Card discard movement is still future work.
+- Card discard movement is still future work after the hand-to-target travel beat.
 - Intent reveal flicker exists.

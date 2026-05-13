@@ -266,6 +266,7 @@ var run_inspector_requested: bool = false
 var run_inspector_card_filter: String = "all"
 var run_inspector_filter_buttons: Array[Button] = []
 var last_action_cue_key: String = ""
+var last_reward_shimmer_key: String = ""
 var first_play_coach_steps: Dictionary = {}
 var first_play_coach_complete: bool = false
 
@@ -2668,6 +2669,21 @@ func _on_enemy_target_card_pressed(enemy_id: StringName) -> void:
 	_select_enemy_target_by_id(enemy_id, source_button)
 
 
+func _on_enemy_target_card_hovered(enemy_id: StringName, source_button: Button) -> void:
+	if enemy_id.is_empty() or run_flow_state != RUN_FLOW_COMBAT:
+		return
+
+	if combat_grid != null and combat_grid.has_method("set_focus_unit"):
+		combat_grid.call("set_focus_unit", enemy_id)
+	_play_target_lock_vfx(enemy_id, source_button)
+	if source_button != null:
+		_pulse_canvas_item(source_button, FEEDBACK_CARD_COLOR)
+
+
+func _on_enemy_target_card_unhovered(_enemy_id: StringName) -> void:
+	_sync_target_focus()
+
+
 func _select_enemy_target_by_id(enemy_id: StringName, source: Node = null) -> bool:
 	if target_enemy_option == null or enemy_id.is_empty():
 		return false
@@ -2684,6 +2700,7 @@ func _select_enemy_target_by_id(enemy_id: StringName, source: Node = null) -> bo
 
 	_record_first_play_step("target")
 	_flash_grid_unit(enemy_id, FEEDBACK_CARD_COLOR)
+	_play_target_lock_vfx(enemy_id, source as CanvasItem if source is CanvasItem else null)
 	_push_feedback("Target selected: %s. Attack/read cards will hit this card." % target.get("name", "Enemy"), FEEDBACK_CARD_COLOR, source if source != null else target_enemy_option)
 	_refresh_card_action_hint()
 	_refresh_card_target_preview()
@@ -2975,6 +2992,24 @@ func _apply_dominant_button_style(button: Button, active: bool, hint: String) ->
 	button.add_theme_font_size_override("font_size", 19 if active else 16)
 	button.custom_minimum_size = Vector2(240, 46) if active else Vector2(180, 40)
 	DEAD_MANS_ANTE_SKIN_SCRIPT.apply_button(button, active, button.tooltip_text)
+	_ensure_button_hover_vfx(button)
+
+
+func _ensure_button_hover_vfx(button: Button) -> void:
+	if button == null or bool(button.get_meta("phase43_hover_vfx_connected", false)):
+		return
+
+	button.mouse_entered.connect(_on_juicy_button_hovered.bind(button))
+	button.set_meta("phase43_hover_vfx_connected", true)
+
+
+func _on_juicy_button_hovered(button: Button) -> void:
+	if button == null or not button.is_inside_tree() or bool(button.get("disabled")):
+		return
+
+	if combat_vfx != null and combat_vfx.has_method("play_button_sheen_on"):
+		combat_vfx.call("play_button_sheen_on", button, FEEDBACK_CARD_COLOR)
+	_pulse_canvas_item(button, FEEDBACK_CARD_COLOR)
 
 
 func _get_continue_button_hint(phase_key: String) -> String:
@@ -3261,6 +3296,7 @@ func _refresh_run_panel(state: Dictionary) -> void:
 		skip_rewards_button.disabled = not bool(state.get("waiting_for_reward", false))
 		skip_rewards_button.visible = bool(state.get("waiting_for_reward", false))
 		skip_rewards_button.text = "Skip Reward - keep deck lean" if bool(state.get("waiting_for_reward", false)) else "Skip Rewards"
+	_maybe_play_reward_shimmer(state, card_rewards)
 	_sync_run_panel_visibility()
 
 
@@ -3287,6 +3323,42 @@ func _refresh_playtest_report(batch: Dictionary) -> void:
 		playtest_report_label.append_text("\nWatch: no repeated danger nodes in the current sims.")
 	else:
 		playtest_report_label.append_text("\nWatch: %s" % ", ".join(danger_nodes))
+
+
+func _maybe_play_reward_shimmer(state: Dictionary, card_rewards: Array) -> void:
+	if combat_vfx == null or not combat_vfx.has_method("play_reward_shimmer_on"):
+		return
+	if run_flow_state != RUN_FLOW_REWARD or not bool(state.get("waiting_for_reward", false)) or card_rewards.is_empty():
+		last_reward_shimmer_key = ""
+		return
+	if card_reward_buttons.is_empty() or card_reward_buttons[0] == null:
+		return
+
+	var first_reward: Dictionary = card_rewards[0] if typeof(card_rewards[0]) == TYPE_DICTIONARY else {}
+	var key := "%s|%s|%s" % [
+		state.get("current_node_index", 0),
+		first_reward.get("id", first_reward.get("name", "reward")),
+		state.get("deck_size", 0)
+	]
+	if key == last_reward_shimmer_key:
+		return
+	last_reward_shimmer_key = key
+	call_deferred("_play_reward_shimmer_deferred", 0)
+
+
+func _play_reward_shimmer_deferred(button_index: int) -> void:
+	await get_tree().process_frame
+	await get_tree().process_frame
+
+	if combat_vfx == null or not combat_vfx.has_method("play_reward_shimmer_on"):
+		return
+	if button_index < 0 or button_index >= card_reward_buttons.size():
+		return
+
+	var button := card_reward_buttons[button_index]
+	if button == null or not _is_live_canvas_item(button) or not bool(button.get("visible")) or bool(button.get("disabled")):
+		return
+	combat_vfx.call("play_reward_shimmer_on", button)
 
 
 func _refresh_debug_summary(state: Dictionary, evaluation: Dictionary, fast_run: Dictionary, playtest_batch: Dictionary) -> void:
@@ -5202,6 +5274,8 @@ func _refresh_enemy_target_cards(state: Dictionary) -> void:
 		button.text = _get_enemy_target_card_text(enemy_data, enemy_id == selected_enemy_id)
 		button.tooltip_text = "Click to target %s for attack/read cards." % enemy_data.get("name", "Enemy")
 		button.pressed.connect(_on_enemy_target_card_pressed.bind(enemy_id))
+		button.mouse_entered.connect(_on_enemy_target_card_hovered.bind(enemy_id, button))
+		button.mouse_exited.connect(_on_enemy_target_card_unhovered.bind(enemy_id))
 		_style_enemy_target_card_button(button, enemy_data, enemy_id == selected_enemy_id)
 		enemy_target_cards_row.add_child(button)
 		enemy_target_card_buttons.append(button)
@@ -5602,35 +5676,49 @@ func _play_card_commit_vfx(card: Resource, context: Dictionary, source: CanvasIt
 		return
 
 	var color := _get_card_vfx_color(card)
+	var target_position := _get_card_vfx_target_position(card, context, source)
+	var source_position := _get_canvas_item_global_center(source)
+	if source_position == Vector2.ZERO:
+		source_position = _get_canvas_item_global_center(card_action_hint_label)
+	if target_position == Vector2.ZERO:
+		target_position = source_position + Vector2(0, -82)
+
 	if _is_live_canvas_item(source) and combat_vfx.has_method("play_card_burst_on"):
 		combat_vfx.call("play_card_burst_on", source, color)
+	if source_position != Vector2.ZERO and target_position != Vector2.ZERO and combat_vfx.has_method("play_card_fly_between"):
+		combat_vfx.call("play_card_fly_between", source_position, target_position, color, _get_card_name(card), face_down)
 
 	if face_down:
 		_play_smoke_vfx(source if _is_live_canvas_item(source) else bluff_state_label)
 		return
 
-	var target_position := _get_card_vfx_target_position(card, context, source)
-	var source_position := _get_canvas_item_global_center(source)
-	if source_position == Vector2.ZERO:
-		source_position = _get_canvas_item_global_center(card_action_hint_label)
-
 	match _get_card_vfx_style(card):
 		&"attack":
 			if target_position != Vector2.ZERO and source_position != Vector2.ZERO and combat_vfx.has_method("play_slash_between"):
 				combat_vfx.call("play_slash_between", source_position, target_position, color)
+			if target_position != Vector2.ZERO and combat_vfx.has_method("play_burst_at"):
+				combat_vfx.call("play_burst_at", target_position, color, &"blood")
+			if target_position != Vector2.ZERO and combat_vfx.has_method("play_target_lock_at"):
+				combat_vfx.call("play_target_lock_at", target_position, color)
 		&"guard":
 			if target_position != Vector2.ZERO and combat_vfx.has_method("play_guard_pulse_at"):
 				combat_vfx.call("play_guard_pulse_at", target_position, color)
 		&"move":
 			if target_position != Vector2.ZERO and combat_vfx.has_method("play_burst_at"):
 				combat_vfx.call("play_burst_at", target_position, color, &"move")
+			if target_position != Vector2.ZERO and combat_vfx.has_method("play_ring_at"):
+				combat_vfx.call("play_ring_at", target_position, color, 30.0)
 		&"read":
 			_play_intent_flicker_vfx(intent_preview_label, color)
 			if target_position != Vector2.ZERO and combat_vfx.has_method("play_ring_at"):
 				combat_vfx.call("play_ring_at", target_position, color, 36.0)
+			if target_position != Vector2.ZERO and combat_vfx.has_method("play_target_lock_at"):
+				combat_vfx.call("play_target_lock_at", target_position, color)
 		&"trap":
 			if target_position != Vector2.ZERO and combat_vfx.has_method("play_burst_at"):
 				combat_vfx.call("play_burst_at", target_position, color, &"smoke")
+			if target_position != Vector2.ZERO and combat_vfx.has_method("play_ring_at"):
+				combat_vfx.call("play_ring_at", target_position, color, 32.0)
 		&"ritual":
 			_play_smoke_vfx(source if _is_live_canvas_item(source) else bluff_state_label)
 			_play_chip_vfx(bluff_state_label)
@@ -5666,6 +5754,18 @@ func _play_guard_vfx(unit_id: StringName) -> void:
 	var center := _get_unit_vfx_position(unit_id)
 	if center != Vector2.ZERO:
 		combat_vfx.call("play_guard_pulse_at", center, FEEDBACK_GUARD_COLOR)
+
+
+func _play_target_lock_vfx(unit_id: StringName, source: CanvasItem = null) -> void:
+	if combat_vfx == null:
+		return
+
+	if _is_live_canvas_item(source) and combat_vfx.has_method("play_target_lock_on"):
+		combat_vfx.call("play_target_lock_on", source, FEEDBACK_CARD_COLOR)
+
+	var center := _get_unit_vfx_position(unit_id)
+	if center != Vector2.ZERO and combat_vfx.has_method("play_target_lock_at"):
+		combat_vfx.call("play_target_lock_at", center, FEEDBACK_CARD_COLOR)
 
 
 func _play_chip_vfx(target: CanvasItem) -> void:

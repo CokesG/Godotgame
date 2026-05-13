@@ -33,7 +33,7 @@ func _verify_vfx_layer(combat_scene: Node) -> void:
 		_fail("Expected CombatVFX overlay to be attached to TestCombat.")
 		return
 
-	for method_name in ["play_card_burst_on", "play_slash_between", "play_burst_at", "play_guard_pulse_at", "play_curse_smoke_on"]:
+	for method_name in ["play_card_burst_on", "play_card_fly_between", "play_slash_between", "play_burst_at", "play_guard_pulse_at", "play_target_lock_on", "play_reward_shimmer_on", "play_button_sheen_on", "play_curse_smoke_on"]:
 		if not vfx_layer.has_method(method_name):
 			_fail("CombatVFX missing method %s." % method_name)
 			return
