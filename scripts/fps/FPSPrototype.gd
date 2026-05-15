@@ -153,9 +153,9 @@ func spawn_impact(position: Vector3, normal: Vector3, critical: bool = false) ->
 	mesh.radius = 0.07 if critical else 0.045
 	mesh.height = 0.09 if critical else 0.06
 	spark.mesh = mesh
-	spark.global_position = position + normal.normalized() * 0.03
 	spark.material_override = _make_emissive_material(Color(1.0, 0.72, 0.20) if critical else Color(0.65, 0.95, 1.0), 1.9)
 	effects_root.add_child(spark)
+	spark.global_position = position + normal.normalized() * 0.03
 	var tween := create_tween()
 	tween.set_parallel(true)
 	tween.tween_property(spark, "scale", Vector3(2.2, 2.2, 2.2), 0.12).from(Vector3(0.35, 0.35, 0.35))
@@ -176,8 +176,8 @@ func spawn_combat_text(position: Vector3, text: String, critical: bool, defeated
 	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	label.outline_size = 8
 	label.outline_modulate = Color(0.06, 0.03, 0.02, 0.88)
-	label.global_position = position
 	effects_root.add_child(label)
+	label.global_position = position
 	var tween := create_tween()
 	tween.set_parallel(true)
 	tween.tween_property(label, "global_position", position + Vector3(0.0, 0.65, 0.0), 0.55).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
@@ -623,11 +623,36 @@ func _add_box(node_name: String, pos: Vector3, size: Vector3, material: Material
 	return root
 
 
+func _map_cell_to_world(cell: Vector2i) -> Vector3:
+	var x := (float(cell.x) - 1.0) * 7.4
+	var z_values := [-10.8, -2.2, 6.4]
+	var z := float(z_values[clampi(cell.y, 0, 2)])
+	return Vector3(x, 0.03, z)
+
+
+func _get_feature_color(feature: Dictionary, key: String, fallback: Color) -> Color:
+	var color_value: Variant = feature.get(key, fallback)
+	if typeof(color_value) == TYPE_COLOR:
+		return color_value
+	return fallback
+
+
 func _make_material(color: Color, metallic: float, roughness: float) -> StandardMaterial3D:
 	var mat := StandardMaterial3D.new()
 	mat.albedo_color = color
 	mat.metallic = metallic
 	mat.roughness = roughness
+	return mat
+
+
+func _make_marker_material(color: Color, energy: float) -> StandardMaterial3D:
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(color.r, color.g, color.b, 0.42)
+	mat.emission_enabled = true
+	mat.emission = color
+	mat.emission_energy_multiplier = energy
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.roughness = 0.58
 	return mat
 
 
