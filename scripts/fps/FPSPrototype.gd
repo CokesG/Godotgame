@@ -527,7 +527,7 @@ func _use_dash_ability(ability: Dictionary) -> bool:
 	if player == null or not player.has_method("dash_forward"):
 		return false
 	player.call("dash_forward", float(ability.get("strength", 12.5)))
-	_spawn_ability_ring(player.global_position, Color(0.34, 0.95, 1.0), 1.6)
+	_spawn_ability_ring(player.global_position, _blend_ability_class_color("dash", Color(0.34, 0.95, 1.0)), 1.6)
 	if objective_mode == "extract" and objective_extract_collected and not objective_completed:
 		_add_objective_score(4.0, "Dash rotated toward extract.")
 	return true
@@ -538,7 +538,7 @@ func _use_guard_shimmer_ability(ability: Dictionary) -> bool:
 		return false
 	if player.has_method("add_armor"):
 		player.call("add_armor", int(ability.get("armor", 5)))
-	_spawn_ability_ring(player.global_position, Color(0.55, 0.78, 1.0), 2.1)
+	_spawn_ability_ring(player.global_position, _blend_ability_class_color("guard_shimmer", Color(0.55, 0.78, 1.0)), 2.1)
 	if objective_mode == "hold_pot" and _is_player_near(_get_objective_position(), 4.0):
 		_add_objective_score(5.0, "Guarded the pot.")
 	elif objective_mode == "defend":
@@ -554,7 +554,7 @@ func _use_read_reveal_ability(ability: Dictionary) -> bool:
 	for enemy in get_living_enemies():
 		if enemy.has_method("reveal_for"):
 			enemy.call("reveal_for", duration)
-	_spawn_ability_ring(player.global_position + Vector3(0.0, 0.12, -2.0), Color(0.22, 0.95, 1.0), 3.0)
+	_spawn_ability_ring(player.global_position + Vector3(0.0, 0.12, -2.0), _blend_ability_class_color("reveal_target", Color(0.22, 0.95, 1.0)), 3.0)
 	if objective_mode == "duel" and not objective_target_defeated:
 		_add_objective_score(8.0, "Read card exposed the duel target.")
 	return true
@@ -567,7 +567,7 @@ func _use_snare_field_ability(ability: Dictionary) -> bool:
 	var radius := float(ability.get("radius", 4.2))
 	var center: Vector3 = player.global_position + (-player.global_basis.z).normalized() * 5.4
 	center.y = 0.05
-	_spawn_ability_ring(center, Color(0.92, 0.48, 1.0), radius)
+	_spawn_ability_ring(center, _blend_ability_class_color("snare_field", Color(0.92, 0.48, 1.0)), radius)
 	var snared := 0
 	for enemy in get_living_enemies():
 		if enemy.global_position.distance_to(center) <= radius and enemy.has_method("apply_snare"):
@@ -582,7 +582,7 @@ func _use_overclock_ability(ability: Dictionary) -> bool:
 	if player == null or player.weapon == null or not player.weapon.has_method("apply_temporary_overclock"):
 		return false
 	player.weapon.call("apply_temporary_overclock", float(ability.get("duration", 4.0)), 0.78, 1.20)
-	_spawn_ability_ring(player.global_position, Color(1.0, 0.58, 0.24), 2.0)
+	_spawn_ability_ring(player.global_position, _blend_ability_class_color("blood_overclock", Color(1.0, 0.58, 0.24)), 2.0)
 	if objective_mode == "boss_gate":
 		_add_objective_score(6.0, "Overclock pressured the Boss Gate.")
 	return true
@@ -595,7 +595,7 @@ func _use_bait_ping_ability(ability: Dictionary) -> bool:
 	for enemy in get_living_enemies():
 		if enemy.has_method("apply_bait"):
 			enemy.call("apply_bait", duration)
-	_spawn_ability_ring(player.global_position, Color(1.0, 0.86, 0.35), 3.4)
+	_spawn_ability_ring(player.global_position, _blend_ability_class_color("bait_ping", Color(1.0, 0.86, 0.35)), 3.4)
 	if objective_mode == "hold_pot" or objective_mode == "defend":
 		_add_objective_score(5.0, "Bait card delayed enemy pressure.")
 	return true
@@ -3207,6 +3207,7 @@ func _refresh_ui() -> void:
 		objective_progress_bar.value = _get_objective_progress_ratio()
 	if loadout_label != null:
 		var summary := get_active_loadout_summary()
+		loadout_label.add_theme_color_override("font_color", _get_class_accent_color())
 		loadout_label.text = "%s %s | %s | Armor %d | Chips %d" % [
 			summary.get("hero", "Gambler-Knight"),
 			summary.get("hero_role", "Duelist"),
@@ -3260,9 +3261,10 @@ func _build_ability_card_panel(index: int) -> PanelContainer:
 	panel.custom_minimum_size = Vector2(94, 34)
 	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	var active := index < active_abilities.size()
+	var class_color := _get_class_accent_color()
 	panel.add_theme_stylebox_override("panel", _make_hud_panel_style(
 		Color(0.050, 0.060, 0.064, 0.70) if active else Color(0.025, 0.026, 0.026, 0.64),
-		Color(0.42, 0.96, 1.0, 0.54) if active else Color(0.26, 0.28, 0.30, 0.46),
+		Color(class_color.r, class_color.g, class_color.b, 0.66) if active else Color(0.26, 0.28, 0.30, 0.46),
 		5,
 		1
 	))
@@ -3285,14 +3287,24 @@ func _build_ability_card_panel(index: int) -> PanelContainer:
 		var entry: Dictionary = active_abilities[index]
 		var ability: Dictionary = entry.get("ability", {})
 		var kind := String(ability.get("kind", ""))
+		var icon_frame := PanelContainer.new()
+		icon_frame.name = "AbilityIconFrame%d" % (index + 1)
+		icon_frame.custom_minimum_size = Vector2(0, 15)
+		icon_frame.add_theme_stylebox_override("panel", _make_hud_panel_style(
+			_get_ability_color(kind),
+			Color(class_color.r, class_color.g, class_color.b, 0.86),
+			4,
+			1
+		))
+		stack.add_child(icon_frame)
 		var icon := Label.new()
 		icon.name = "AbilityIcon%d" % (index + 1)
-		icon.text = _get_ability_icon_label(kind)
+		icon.text = "%s %s" % [_get_ability_glyph(kind), _get_ability_icon_label(kind)]
 		icon.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		icon.add_theme_font_size_override("font_size", 10)
-		icon.add_theme_color_override("font_color", Color(0.04, 0.035, 0.028))
-		icon.add_theme_stylebox_override("normal", _make_hud_panel_style(_get_ability_color(kind), Color(1.0, 1.0, 1.0, 0.16), 4, 1))
-		stack.add_child(icon)
+		icon.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		icon.add_theme_font_size_override("font_size", 9)
+		icon.add_theme_color_override("font_color", Color(0.025, 0.020, 0.016))
+		icon_frame.add_child(icon)
 		label.text = _get_card_hud_ability_text(index)
 		label.add_theme_color_override("font_color", Color(0.88, 0.98, 1.0) if _is_ability_ready(index) else Color(0.58, 0.66, 0.70))
 		panel.tooltip_text = "Live card power from %s" % String(entry.get("card_name", "slotted card"))
@@ -3330,22 +3342,62 @@ func _get_ability_icon_label(kind: String) -> String:
 			return "CARD"
 
 
+func _get_ability_glyph(kind: String) -> String:
+	match kind:
+		"dash":
+			return ">>"
+		"guard_shimmer":
+			return "[]"
+		"reveal_target":
+			return "?"
+		"snare_field":
+			return "X"
+		"blood_overclock":
+			return "!!"
+		"bait_ping":
+			return "B"
+		_:
+			return "*"
+
+
 func _get_ability_color(kind: String) -> Color:
 	match kind:
 		"dash":
-			return Color(0.32, 0.92, 1.0, 0.88)
+			return _blend_ability_class_color(kind, Color(0.32, 0.92, 1.0, 0.88))
 		"guard_shimmer":
-			return Color(0.58, 0.76, 1.0, 0.88)
+			return _blend_ability_class_color(kind, Color(0.58, 0.76, 1.0, 0.88))
 		"reveal_target":
-			return Color(0.28, 1.0, 0.82, 0.88)
+			return _blend_ability_class_color(kind, Color(0.28, 1.0, 0.82, 0.88))
 		"snare_field":
-			return Color(0.92, 0.52, 1.0, 0.88)
+			return _blend_ability_class_color(kind, Color(0.92, 0.52, 1.0, 0.88))
 		"blood_overclock":
-			return Color(1.0, 0.42, 0.24, 0.88)
+			return _blend_ability_class_color(kind, Color(1.0, 0.42, 0.24, 0.88))
 		"bait_ping":
-			return Color(1.0, 0.82, 0.30, 0.88)
+			return _blend_ability_class_color(kind, Color(1.0, 0.82, 0.30, 0.88))
 		_:
-			return Color(0.72, 0.78, 0.84, 0.88)
+			return _blend_ability_class_color(kind, Color(0.72, 0.78, 0.84, 0.88))
+
+
+func _get_class_accent_color() -> Color:
+	var accent_value: Variant = active_hero_profile.get("accent", Color(1.0, 0.76, 0.30))
+	if typeof(accent_value) == TYPE_COLOR:
+		return accent_value
+	return Color(1.0, 0.76, 0.30)
+
+
+func _blend_ability_class_color(kind: String, base_color: Color) -> Color:
+	var accent := _get_class_accent_color()
+	var amount := 0.26
+	match active_hero_class_id:
+		"hex_sharpshooter":
+			amount = 0.34 if kind == "reveal_target" or kind == "snare_field" else 0.22
+		"blood_wager":
+			amount = 0.36 if kind == "blood_overclock" or kind == "guard_shimmer" else 0.24
+		_:
+			amount = 0.30 if kind == "dash" or kind == "guard_shimmer" else 0.20
+	var color := base_color.lerp(accent, amount)
+	color.a = base_color.a
+	return color
 
 
 func _get_ability_cooldown_ratio(index: int) -> float:

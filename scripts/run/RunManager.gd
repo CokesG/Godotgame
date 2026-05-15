@@ -25,6 +25,33 @@ const STARTER_DECK_PATHS := [
 	"res://resources/cards/snare_card.tres",
 	"res://resources/cards/blood_ritual.tres"
 ]
+const CLASS_STARTER_DECKS := {
+	"gambler_knight": STARTER_DECK_PATHS,
+	"hex_sharpshooter": [
+		"res://resources/cards/quick_slash.tres",
+		"res://resources/cards/sure_cut.tres",
+		"res://resources/cards/read_tell.tres",
+		"res://resources/cards/marked_card.tres",
+		"res://resources/cards/snare_card.tres",
+		"res://resources/cards/tripwire.tres",
+		"res://resources/cards/sidestep.tres",
+		"res://resources/cards/shadow_step.tres",
+		"res://resources/cards/false_opening.tres",
+		"res://resources/cards/guard_up.tres"
+	],
+	"blood_wager": [
+		"res://resources/cards/quick_slash.tres",
+		"res://resources/cards/all_in_cut.tres",
+		"res://resources/cards/blood_ritual.tres",
+		"res://resources/cards/second_wind.tres",
+		"res://resources/cards/iron_vow.tres",
+		"res://resources/cards/black_shield.tres",
+		"res://resources/cards/house_edge.tres",
+		"res://resources/cards/false_opening.tres",
+		"res://resources/cards/hook_step.tres",
+		"res://resources/cards/low_stab.tres"
+	]
+}
 const CARD_REWARD_POOL := [
 	"res://resources/cards/sure_cut.tres",
 	"res://resources/cards/center_cut.tres",
@@ -143,6 +170,7 @@ const RUN_NODES := [
 ]
 
 var current_node_index: int = 0
+var current_hero_class_id := "gambler_knight"
 var player_current_hp: int = PLAYER_MAX_HP
 var deck_paths: Array[String] = []
 var relic_paths: Array[String] = []
@@ -159,11 +187,12 @@ var reward_history: Array[Dictionary] = []
 var last_reward_decision: Dictionary = {}
 
 
-func reset_run() -> void:
+func reset_run(hero_class_id: String = "gambler_knight") -> void:
 	current_node_index = 0
+	current_hero_class_id = hero_class_id if CLASS_STARTER_DECKS.has(hero_class_id) else "gambler_knight"
 	player_current_hp = PLAYER_MAX_HP
 	deck_paths.clear()
-	for path in STARTER_DECK_PATHS:
+	for path in get_class_starter_deck_paths(current_hero_class_id):
 		deck_paths.append(String(path))
 	relic_paths.clear()
 	pending_card_reward_paths.clear()
@@ -177,8 +206,17 @@ func reset_run() -> void:
 	lowest_blood = PLAYER_MAX_HP
 	reward_history.clear()
 	last_reward_decision.clear()
-	log_requested.emit("Run reset: Gambler-Knight antes into a five-fight prototype path.")
+	log_requested.emit("Run reset: %s antes into a five-fight prototype path." % current_hero_class_id.replace("_", " ").capitalize())
 	_emit_state()
+
+
+func get_class_starter_deck_paths(hero_class_id: String = "") -> Array[String]:
+	var safe_id := current_hero_class_id if hero_class_id.is_empty() else hero_class_id
+	var raw_paths: Array = CLASS_STARTER_DECKS.get(safe_id, STARTER_DECK_PATHS)
+	var paths: Array[String] = []
+	for path in raw_paths:
+		paths.append(String(path))
+	return paths
 
 
 func get_current_node() -> Dictionary:
@@ -761,6 +799,7 @@ func get_state() -> Dictionary:
 		"run_path": get_run_path(),
 		"reward_stakes": get_current_reward_stakes(),
 		"reward_tag_names": get_current_reward_tag_names(),
+		"hero_class": current_hero_class_id,
 		"player_hp": player_current_hp,
 		"player_max_hp": PLAYER_MAX_HP,
 		"deck_size": deck_paths.size(),
@@ -787,6 +826,7 @@ func get_state() -> Dictionary:
 func get_snapshot() -> Dictionary:
 	return {
 		"current_node_index": current_node_index,
+		"hero_class": current_hero_class_id,
 		"player_current_hp": player_current_hp,
 		"deck_paths": deck_paths.duplicate(),
 		"relic_paths": relic_paths.duplicate(),
@@ -809,6 +849,9 @@ func restore_snapshot(snapshot: Dictionary) -> void:
 		return
 
 	current_node_index = clampi(int(snapshot.get("current_node_index", current_node_index)), 0, RUN_NODES.size() - 1)
+	current_hero_class_id = String(snapshot.get("hero_class", current_hero_class_id))
+	if not CLASS_STARTER_DECKS.has(current_hero_class_id):
+		current_hero_class_id = "gambler_knight"
 	player_current_hp = clampi(int(snapshot.get("player_current_hp", player_current_hp)), 0, PLAYER_MAX_HP)
 	deck_paths = _string_array(snapshot.get("deck_paths", deck_paths))
 	relic_paths = _string_array(snapshot.get("relic_paths", relic_paths))

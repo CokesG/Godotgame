@@ -80,6 +80,8 @@ var pile_counts_label: Label
 var resource_state_label: Label
 var shooter_economy_label: Label
 var objective_plan_label: Label
+var start_hero_class_option: OptionButton
+var start_hero_class_summary_label: Label
 var hero_class_option: OptionButton
 var hero_class_summary_label: Label
 var arena_payout_panel: PanelContainer
@@ -452,6 +454,8 @@ func _build_ui() -> void:
 	run_shell_detail_label.scroll_active = false
 	run_shell_detail_label.custom_minimum_size = Vector2(0, 56)
 	run_shell_layout.add_child(run_shell_detail_label)
+
+	_build_start_hero_class_selector(run_shell_layout)
 
 	opening_click_prompt_label = Label.new()
 	opening_click_prompt_label.name = "OpeningClickPrompt"
@@ -1685,10 +1689,7 @@ func _build_hero_class_selector(parent: VBoxContainer) -> void:
 	hero_class_option = OptionButton.new()
 	hero_class_option.name = "HeroClassOption"
 	hero_class_option.custom_minimum_size = Vector2(190, 34)
-	for index in range(HERO_CLASS_OPTIONS.size()):
-		var entry: Dictionary = HERO_CLASS_OPTIONS[index]
-		hero_class_option.add_item("%s - %s" % [String(entry.get("label", "Class")), String(entry.get("role", "Role"))], index)
-		hero_class_option.set_item_metadata(index, String(entry.get("id", "gambler_knight")))
+	_populate_hero_class_option(hero_class_option)
 	hero_class_option.item_selected.connect(_on_hero_class_selected)
 	row.add_child(hero_class_option)
 
@@ -1701,11 +1702,65 @@ func _build_hero_class_selector(parent: VBoxContainer) -> void:
 	_refresh_hero_class_selector()
 
 
+func _build_start_hero_class_selector(parent: VBoxContainer) -> void:
+	var panel := PanelContainer.new()
+	panel.name = "StartHeroClassPanel"
+	_style_play_panel(panel, Color(0.045, 0.038, 0.035, 0.72), Color(0.78, 0.55, 0.22, 0.62))
+	parent.add_child(panel)
+
+	var row := HBoxContainer.new()
+	row.name = "StartHeroClassSelector"
+	row.add_theme_constant_override("separation", 10)
+	panel.add_child(row)
+
+	var label := Label.new()
+	label.text = "CHOOSE FIGHTER"
+	label.custom_minimum_size = Vector2(118, 0)
+	label.add_theme_color_override("font_color", Color(1.0, 0.82, 0.38))
+	row.add_child(label)
+
+	start_hero_class_option = OptionButton.new()
+	start_hero_class_option.name = "StartHeroClassOption"
+	start_hero_class_option.custom_minimum_size = Vector2(220, 34)
+	_populate_hero_class_option(start_hero_class_option)
+	start_hero_class_option.item_selected.connect(_on_start_hero_class_selected)
+	row.add_child(start_hero_class_option)
+
+	start_hero_class_summary_label = Label.new()
+	start_hero_class_summary_label.name = "StartHeroClassSummary"
+	start_hero_class_summary_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	start_hero_class_summary_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	start_hero_class_summary_label.add_theme_font_size_override("font_size", 12)
+	start_hero_class_summary_label.add_theme_color_override("font_color", Color(0.84, 0.96, 1.0))
+	row.add_child(start_hero_class_summary_label)
+	_refresh_hero_class_selector()
+
+
+func _populate_hero_class_option(option: OptionButton) -> void:
+	option.clear()
+	for index in range(HERO_CLASS_OPTIONS.size()):
+		var entry: Dictionary = HERO_CLASS_OPTIONS[index]
+		option.add_item("%s - %s" % [String(entry.get("label", "Class")), String(entry.get("role", "Role"))], index)
+		option.set_item_metadata(index, String(entry.get("id", "gambler_knight")))
+
+
 func _on_hero_class_selected(index: int) -> void:
-	if hero_class_option == null:
+	_select_hero_class_from_option(hero_class_option, index)
+
+
+func _on_start_hero_class_selected(index: int) -> void:
+	_select_hero_class_from_option(start_hero_class_option, index)
+
+
+func _select_hero_class_from_option(option: OptionButton, index: int) -> void:
+	if option == null:
 		return
-	var metadata: Variant = hero_class_option.get_item_metadata(index)
+	var metadata: Variant = option.get_item_metadata(index)
 	selected_hero_class_id = String(metadata) if metadata != null else "gambler_knight"
+	if run_flow_state == RUN_FLOW_START and run_manager != null:
+		run_manager.call("reset_run", selected_hero_class_id)
+		_reset_playable_combat()
+		_push_feedback("Class deck ready: %s." % _get_selected_hero_class_label(), FEEDBACK_CARD_COLOR, start_hero_class_summary_label)
 	_refresh_hero_class_selector()
 	_refresh_loadout_ui()
 
@@ -1716,8 +1771,15 @@ func _refresh_hero_class_selector() -> void:
 			if String(hero_class_option.get_item_metadata(index)) == selected_hero_class_id:
 				hero_class_option.select(index)
 				break
+	if start_hero_class_option != null:
+		for index in range(start_hero_class_option.item_count):
+			if String(start_hero_class_option.get_item_metadata(index)) == selected_hero_class_id:
+				start_hero_class_option.select(index)
+				break
 	if hero_class_summary_label != null:
 		hero_class_summary_label.text = _get_selected_hero_class_summary()
+	if start_hero_class_summary_label != null:
+		start_hero_class_summary_label.text = _get_selected_hero_class_summary()
 
 
 func _get_selected_hero_class_summary() -> String:
@@ -1725,6 +1787,13 @@ func _get_selected_hero_class_summary() -> String:
 		if String(entry.get("id", "")) == selected_hero_class_id:
 			return "%s: %s" % [String(entry.get("role", "Role")), String(entry.get("summary", ""))]
 	return "Duelist: +2 armor, card powers cool down faster."
+
+
+func _get_selected_hero_class_label() -> String:
+	for entry in HERO_CLASS_OPTIONS:
+		if String(entry.get("id", "")) == selected_hero_class_id:
+			return String(entry.get("label", "Gambler-Knight"))
+	return "Gambler-Knight"
 
 
 func _apply_phase35_default_layout(
@@ -2036,8 +2105,13 @@ func _on_reset_pressed() -> void:
 func _on_start_run_pressed() -> void:
 	if run_flow_state != RUN_FLOW_START:
 		return
+	var run_state: Dictionary = run_manager.call("get_state")
+	if String(run_state.get("hero_class", selected_hero_class_id)) != selected_hero_class_id:
+		run_manager.call("reset_run", selected_hero_class_id)
+		_reset_playable_combat()
 	_set_run_flow_state(RUN_FLOW_COMBAT)
 	_advance_to_phase("PLAYER_COMMIT", 4)
+	_sync_hand_card_interaction()
 	_record_first_play_step("open")
 	_append_log("Opening Table dealt: pick a target and play a card.")
 	_push_feedback("Opening Table dealt: pick a target and play a card.", FEEDBACK_PHASE_COLOR, run_path_label)
@@ -3454,7 +3528,7 @@ func _reset_run_slice() -> void:
 	last_run_inspection_report.clear()
 	run_inspector_requested = false
 	run_inspector_card_filter = "all"
-	run_manager.call("reset_run")
+	run_manager.call("reset_run", selected_hero_class_id)
 	_reset_playable_combat()
 
 
@@ -6920,6 +6994,9 @@ func _sync_live_text_density() -> void:
 	var deck_panel_node := find_child("DeckPanel", true, false)
 	if deck_panel_node is Control:
 		(deck_panel_node as Control).visible = run_flow_state == RUN_FLOW_COMBAT
+	var start_class_panel := find_child("StartHeroClassPanel", true, false)
+	if start_class_panel is Control:
+		(start_class_panel as Control).visible = run_flow_state == RUN_FLOW_START
 	if pile_counts_label != null:
 		pile_counts_label.visible = not compact_live
 	var run_path_panel := find_child("RunPathPanel", true, false)
