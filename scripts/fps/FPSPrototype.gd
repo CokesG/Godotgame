@@ -4,6 +4,7 @@ extends Node3D
 const FPS_PLAYER_SCRIPT := preload("res://scripts/fps/FPSPlayer.gd")
 const FPS_DRONE_SCRIPT := preload("res://scripts/fps/FPSDrone.gd")
 const TACTICAL_MAP_SCRIPT := preload("res://scripts/grid/TacticalMapDefinition.gd")
+const CARD_TABLE_SCENE := "res://scenes/combat/TestCombat.tscn"
 
 const DEFAULT_BRIDGE_PAYLOAD := {
 	"weapon_card": "",
@@ -1484,7 +1485,7 @@ func _show_wave_rewards() -> void:
 	reward_panel.visible = true
 	if reward_label != null:
 		var clear_time := float(Time.get_ticks_msec() - wave_started_msec) / 1000.0
-		reward_label.text = "[center][b]Wave %d Cleared[/b]\n%.1fs  %d shots  %.0f%% hit rate[/center]" % [
+		reward_label.text = "[center][b]Wave %d Cleared[/b]\n%.1fs  %d shots  %.0f%% hit rate\nChoose a payout to return to the table.[/center]" % [
 			wave_index,
 			clear_time,
 			shots_fired,
@@ -1505,9 +1506,9 @@ func _show_wave_rewards() -> void:
 
 func _build_reward_options() -> Array[Dictionary]:
 	return [
-		{"label": "+Damage", "kind": "damage", "amount": 3},
-		{"label": "+Armor", "kind": "armor", "amount": 10},
-		{"label": "+Ammo", "kind": "ammo", "amount": 18}
+		{"label": "Damage Payout", "kind": "damage", "amount": 3, "chip_bonus": 2},
+		{"label": "Armor Payout", "kind": "armor", "amount": 10, "chip_bonus": 1},
+		{"label": "Ammo Payout", "kind": "ammo", "amount": 18, "chip_bonus": 1}
 	]
 
 
@@ -1515,26 +1516,68 @@ func _select_reward(index: int) -> void:
 	if index < 0 or index >= reward_options.size():
 		return
 	var reward: Dictionary = reward_options[index]
-	match String(reward.get("kind", "")):
-		"damage":
-			if player != null and player.weapon != null:
-				player.weapon.damage += int(reward.get("amount", 0))
-				player.weapon.critical_damage += int(reward.get("amount", 0)) * 2
-		"armor":
-			if player != null and player.has_method("add_armor"):
-				player.call("add_armor", int(reward.get("amount", 0)))
-		"ammo":
-			if player != null and player.weapon != null:
-				player.weapon.reserve += int(reward.get("amount", 0))
-				player.weapon.reserve_ammo += int(reward.get("amount", 0))
+	active_reward_index = index
+	var result := _build_arena_result(reward)
 	rewards_pending = false
 	if reward_panel != null:
 		reward_panel.visible = false
-	wave_index += 1
-	kills = 0
-	if player != null and player.has_method("set_gameplay_input_enabled"):
-		player.call("set_gameplay_input_enabled", true)
-	_spawn_wave()
+	_return_to_card_table(result)
+
+
+func get_arena_result_preview(reward_index: int = 0) -> Dictionary:
+	var options := _build_reward_options()
+	var safe_index := clampi(reward_index, 0, maxi(0, options.size() - 1))
+	var reward: Dictionary = options[safe_index] if not options.is_empty() else {}
+	return _build_arena_result(reward)
+
+
+func _build_arena_result(reward: Dictionary) -> Dictionary:
+	var clear_time := float(Time.get_ticks_msec() - wave_started_msec) / 1000.0 if wave_started_msec > 0 else 0.0
+	var remaining_health := int(player.get("health")) if player != null else 0
+	var remaining_armor := int(player.get("armor")) if player != null else 0
+	return {
+		"source": "fps_arena",
+		"map_name": String(tactical_map.get("name", "Crossfire Table")),
+		"cleared": true,
+		"wave": wave_index,
+		"kills": kills,
+		"clear_time": clear_time,
+		"shots_fired": shots_fired,
+		"shots_hit": shots_hit,
+		"hit_rate": _get_hit_rate(),
+		"critical_hits": critical_hits,
+		"damage_dealt": damage_dealt,
+		"damage_taken": damage_taken,
+		"remaining_health": remaining_health,
+		"remaining_armor": remaining_armor,
+		"loadout": get_active_loadout_summary(),
+		"selected_reward": reward.duplicate(true),
+		"chips_awarded": _calculate_arena_chips(reward),
+		"cards_to_draw": 5
+	}
+
+
+func _calculate_arena_chips(reward: Dictionary) -> int:
+	var chips := 4 + kills
+	if _get_hit_rate() >= 0.50:
+		chips += 2
+	if damage_taken <= 20:
+		chips += 1
+	chips += int(reward.get("chip_bonus", 0))
+	return maxi(1, chips)
+
+
+func _return_to_card_table(result: Dictionary) -> void:
+	var scene_path := CARD_TABLE_SCENE
+	var bridge := get_node_or_null("/root/ArenaBridge")
+	if bridge != null:
+		if bridge.has_method("set_result"):
+			bridge.call("set_result", result)
+		if bridge.has_method("get_return_scene_path"):
+			scene_path = String(bridge.call("get_return_scene_path"))
+	var tree := get_tree()
+	if tree != null:
+		tree.change_scene_to_file(scene_path)
 
 
 func _on_weapon_fired(_from: Vector3, _to: Vector3) -> void:

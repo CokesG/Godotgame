@@ -46,6 +46,7 @@ Current FPS ability contract:
 - `Read Tell` and read cards reveal enemy outlines/marks.
 - `Snare Card` and trap cards create a snare field.
 - The current FPS bindings are `Q`, `E`, `C`, and `V` for the first four bridged abilities.
+- The Escape settings panel now includes custom keybind rows for movement, fire, reload, restart, and the four ability slots. Escape remains fixed so the player can always reopen settings.
 
 For the board-flow/UI contract, see `docs/design/board_flow_shooter_fusion.md`. That document is the source of truth for how the existing card-board interface should evolve around the movement/combat work happening in the other implementation thread.
 
