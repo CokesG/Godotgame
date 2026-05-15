@@ -24,6 +24,12 @@ func _verify_menu_scene() -> void:
 	await get_tree().process_frame
 	if menu.find_child("FullGameButton", true, false) == null:
 		_fail("Main menu should expose Full Game Experience.")
+	if menu.find_child("CardPrepButton", true, false) == null:
+		_fail("Main menu should expose Card Prep With Sample Hand.")
+	if menu.find_child("SlottedFPSButton", true, false) == null:
+		_fail("Main menu should expose FPS With Slotted Weapon.")
+	if menu.find_child("PayoutDemoButton", true, false) == null:
+		_fail("Main menu should expose FPS Return Payout.")
 	if menu.find_child("ShooterArenaButton", true, false) == null:
 		_fail("Main menu should expose Shooter Arena.")
 	if menu.find_child("MapViewerButton", true, false) == null:

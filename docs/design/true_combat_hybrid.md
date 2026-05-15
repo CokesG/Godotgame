@@ -60,6 +60,7 @@ Current FPS ability contract:
 - Right-stick look now has sensitivity, deadzone, and response-curve settings.
 - Settings include one-click `Default FPS`, `Tactical`, `Controller`, and `Left-Handed` presets.
 - The FPS HUD includes a lower card-power rail so weapon, chip/armor/ammo economy, and the first four slotted ability cards stay visible during live combat.
+- The dev hub includes shortcuts for raw FPS sandbox, seeded FPS loadout, card prep, and seeded return payout so this loop can be tested without replaying the whole run.
 - FPS reward selection now builds an arena result with map name, wave, kills, hit rate, damage, selected reward, chips awarded, and next-hand draw count, then returns to `TestCombat` through `ArenaBridge`.
 - `TestCombat` consumes pending arena results on load, shows `ArenaPayoutPanel`, applies the chip award, blocks normal card actions until `Start Next Hand`, and leaves the player on a fresh prep hand.
 - `ArenaBridge`, `DeckManager`, and `RunManager` expose snapshot/restore hooks so the table can preserve exact deck piles, loadout piles, run node, rewards, relics, Blood, carryover payouts, and defeat state across the arena scene swap.

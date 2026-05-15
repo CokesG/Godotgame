@@ -323,7 +323,7 @@ func test_run_manager_can_snapshot_restore_and_mark_arena_defeat() -> void:
 	run_manager.call("restore_snapshot", snapshot)
 	var restored_state: Dictionary = run_manager.call("get_state")
 	assert_eq(String(restored_state.get("run_outcome", "")), "running", "Run restore should recover the pre-arena outcome.")
-	assert_eq(int(restored_state.get("blood", -1)), 30, "Run restore should recover player Blood.")
+	assert_eq(int(restored_state.get("player_hp", -1)), 30, "Run restore should recover player Blood.")
 
 
 func test_combat_controller_exports_shooter_loadout_payload() -> void:
@@ -347,6 +347,8 @@ func test_combat_controller_exports_shooter_loadout_payload() -> void:
 	assert_true(int(economy.get("armor", 0)) >= 6, "Arena carryover armor should feed the next payload.")
 	var bonuses: Dictionary = payload.get("payout_bonuses", {})
 	assert_eq(int(bonuses.get("weapon_damage", 0)), 2, "Arena damage payout should be visible in the payload.")
+	var weapon_payload: Dictionary = (loadout[0] as Dictionary).get("weapon", {}) if (loadout[0] as Dictionary).has("weapon") else (loadout[1] as Dictionary).get("weapon", {})
+	assert_true(int(weapon_payload.get("damage", 0)) >= 30, "Arena damage payout should boost the next weapon profile.")
 
 
 func test_arena_bridge_stores_and_hands_payload_to_fps() -> void:
@@ -399,6 +401,8 @@ func test_fps_prototype_consumes_bridge_payload_as_active_loadout() -> void:
 	prototype.set("damage_taken", 10)
 	var result_preview: Dictionary = prototype.call("get_arena_result_preview", 0)
 	assert_eq(String(result_preview.get("source", "")), "fps_arena", "FPS payout previews should identify the arena source.")
+	assert_eq(String(result_preview.get("outcome", "")), "win", "FPS payout previews should include a win outcome.")
+	assert_true(int(result_preview.get("objective_score", 0)) > 0, "FPS payout previews should include objective scoring.")
 	assert_eq(String((result_preview.get("selected_reward", {}) as Dictionary).get("label", "")), "Damage Payout", "FPS payout previews should include the selected reward.")
 	assert_true(int(result_preview.get("chips_awarded", 0)) >= 10, "FPS payout previews should calculate a useful chip award.")
 

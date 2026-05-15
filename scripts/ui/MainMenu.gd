@@ -68,8 +68,10 @@ func _build_ui() -> void:
 
 	_add_divider(nav)
 	nav.add_child(_make_button("Full Game Experience", CARD_SCENE, "FullGameButton"))
-	nav.add_child(_make_button("Card Board + Loadout", CARD_SCENE, "CardLabButton"))
-	nav.add_child(_make_button("Shooter Arena", SHOOTER_SCENE, "ShooterArenaButton"))
+	nav.add_child(_make_button("Card Prep With Sample Hand", CARD_SCENE, "CardPrepButton"))
+	nav.add_child(_make_action_button("FPS With Slotted Weapon", "SlottedFPSButton", _open_fps_with_sample_loadout))
+	nav.add_child(_make_action_button("FPS Return Payout", "PayoutDemoButton", _open_payout_demo))
+	nav.add_child(_make_button("Shooter Arena Sandbox", SHOOTER_SCENE, "ShooterArenaButton"))
 	nav.add_child(_make_button("Tactical Map Viewer", MAP_VIEWER_SCENE, "MapViewerButton"))
 
 	_add_divider(nav)
@@ -118,7 +120,7 @@ func _build_ui() -> void:
 	var lanes := Label.new()
 	lanes.name = "ModeSummary"
 	lanes.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	lanes.text = "Full Game starts the card run. Card Board jumps to the current hand/loadout lab. Shooter Arena opens the FPS branch. Tactical Map Viewer opens the shared Crossfire Table data."
+	lanes.text = "Full Game starts the card run. Card Prep opens the table. FPS With Slotted Weapon seeds a sample loadout. FPS Return Payout jumps straight to the reward handoff. Tactical Map Viewer opens the shared Crossfire Table data."
 	lanes.add_theme_color_override("font_color", Color(0.72, 0.80, 0.78))
 	details.add_child(lanes)
 
@@ -130,6 +132,16 @@ func _make_button(label: String, scene_path: String, node_name: String) -> Butto
 	button.custom_minimum_size = Vector2(0, 46)
 	button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	button.pressed.connect(_go_to_scene.bind(scene_path))
+	return button
+
+
+func _make_action_button(label: String, node_name: String, callback: Callable) -> Button:
+	var button := Button.new()
+	button.name = node_name
+	button.text = label
+	button.custom_minimum_size = Vector2(0, 46)
+	button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	button.pressed.connect(callback)
 	return button
 
 
@@ -196,6 +208,59 @@ func _go_to_scene(scene_path: String) -> void:
 	var error := get_tree().change_scene_to_file(scene_path)
 	if error != OK and status_label != null:
 		status_label.text = "Could not open %s" % scene_path
+
+
+func _open_fps_with_sample_loadout() -> void:
+	var bridge := get_node_or_null("/root/ArenaBridge")
+	if bridge != null and bridge.has_method("set_payload"):
+		bridge.call("set_payload", _build_sample_arena_payload(), CARD_SCENE)
+	_go_to_scene(SHOOTER_SCENE)
+
+
+func _open_payout_demo() -> void:
+	var bridge := get_node_or_null("/root/ArenaBridge")
+	if bridge != null and bridge.has_method("set_result"):
+		bridge.call("set_result", {
+			"source": "dev_hub",
+			"map_name": "Crossfire Table",
+			"outcome": "win",
+			"cleared": true,
+			"wave": 1,
+			"kills": 4,
+			"clear_time": 21.5,
+			"shots_fired": 10,
+			"shots_hit": 7,
+			"hit_rate": 0.70,
+			"critical_hits": 2,
+			"damage_dealt": 186,
+			"damage_taken": 14,
+			"objective_score": 94,
+			"wounds_taken": 0,
+			"remaining_health": 27,
+			"remaining_armor": 6,
+			"loadout": {"weapon": "Ace Cutter Revolver", "abilities": 1, "armor": 6, "ammo": 22, "chips": 3},
+			"selected_reward": {"label": "Damage Payout", "kind": "damage", "amount": 3, "chip_bonus": 2},
+			"chips_awarded": 10,
+			"cards_to_draw": 5
+		})
+	_go_to_scene(CARD_SCENE)
+
+
+func _build_sample_arena_payload() -> Dictionary:
+	return {
+		"weapon_card": "quick_slash",
+		"ability_cards": ["sidestep", "guard_up"],
+		"passive_cards": [],
+		"wager_cards": [],
+		"loadout": [
+			{"slot": "weapon", "id": "quick_slash", "name": "Quick Slash", "style": "attack", "combat_role": "weapon", "weapon": {"name": "Ace Cutter Revolver", "damage": 31, "magazine": 6, "fire_rate": 3.2, "range": "mid"}},
+			{"slot": "ability_1", "id": "sidestep", "name": "Sidestep", "style": "move", "combat_role": "movement_ability", "ability": {"kind": "dash", "charges": 1, "cooldown": 6.0}},
+			{"slot": "ability_2", "id": "guard_up", "name": "Guard Up", "style": "guard", "combat_role": "defense_ability", "ability": {"kind": "guard_shimmer", "armor": 4, "cooldown": 8.0}}
+		],
+		"economy": {"chips": 5, "armor": 6, "ammo": 30},
+		"payout_bonuses": {"armor": 0, "ammo": 0, "weapon_damage": 3},
+		"reads": {"target_enemy": &"skulker", "threat": "Knife Duelist rush likely"}
+	}
 
 
 func _add_divider(parent: VBoxContainer) -> void:
