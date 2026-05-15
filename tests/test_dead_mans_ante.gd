@@ -104,6 +104,8 @@ func test_fps_pivot_scene_and_contracts_load() -> void:
 	assert_true(drone.has_method("is_critical_hit"), "FPSDrone should expose crit zones.")
 	assert_true(prototype.has_method("spawn_tracer"), "FPSPrototype should expose shot tracers.")
 	assert_true(prototype.has_method("get_living_enemies"), "FPSPrototype should expose encounter state.")
+	assert_true(prototype.has_method("get_map_summary"), "FPSPrototype should expose Crossfire map summary.")
+	assert_true(prototype.has_method("get_map_regions"), "FPSPrototype should expose authored tactical map regions.")
 
 
 func test_fps_pivot_uses_existing_visual_assets() -> void:

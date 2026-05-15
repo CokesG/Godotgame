@@ -27,6 +27,17 @@ func _run_check() -> void:
 	if not prototype.has_method("get_living_enemies"):
 		_fail("FPSPrototype should expose get_living_enemies.")
 		return
+	if not prototype.has_method("get_map_summary"):
+		_fail("FPSPrototype should expose tactical map summary.")
+		return
+	var map_summary: Dictionary = prototype.call("get_map_summary")
+	if String(map_summary.get("name", "")) != "Crossfire Table":
+		_fail("FPSPrototype should use the Crossfire Table tactical map.")
+		return
+	var map_markers: Node = prototype.find_child("TacticalMapMarkers", true, false)
+	if map_markers == null or map_markers.get_child_count() < 9:
+		_fail("FPSPrototype should render tactical map markers for all 3x3 regions.")
+		return
 	var living: Array = prototype.call("get_living_enemies")
 	if living.size() < 4:
 		_fail("FPSPrototype should spawn the first enemy wave.")

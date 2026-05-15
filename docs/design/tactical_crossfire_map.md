@@ -41,8 +41,11 @@ Primary files:
 - `res://scripts/arena/Arena3DView.gd`
 - `res://scripts/combat/CombatResolver.gd`
 - `res://scripts/run/RunManager.gd`
+- `res://scripts/fps/FPSPrototype.gd`
 
 The map is data-first. `CombatGrid` shows the labels and exposes `get_map_context()`. `Arena3DView` renders cover blocks, the center pot ring, angle markers, flank markers, and choke posts. `CombatResolver` reads the same map context for small tactical modifiers.
+
+The FPS branch reads the same map data through `FPSPrototype.get_map_summary()` and `get_map_regions()`. It renders region markers and wall labels in the live arena so the shooter blockout says the same thing as the card board: Smoke Lane, Ante Mid, Long Rail, Center Pot, cover, flank, and angle.
 
 ## Current Rules
 
