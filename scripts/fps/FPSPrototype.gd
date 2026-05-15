@@ -8,12 +8,86 @@ const CARD_TABLE_SCENE := "res://scenes/combat/TestCombat.tscn"
 
 const DEFAULT_BRIDGE_PAYLOAD := {
 	"weapon_card": "",
+	"hero_class": "gambler_knight",
 	"ability_cards": [],
 	"passive_cards": [],
 	"wager_cards": [],
 	"loadout": [],
 	"economy": {"chips": 0, "armor": 0, "ammo": 24},
+	"objective_mode": "hold_pot",
 	"reads": {"target_enemy": &"", "threat": "intent hidden"}
+}
+
+const DEFAULT_OBJECTIVE_MODE := "hold_pot"
+const OBJECTIVE_MODE_DEFS := {
+	"hold_pot": {
+		"label": "Hold Pot",
+		"short": "HOLD",
+		"summary": "Stand near the Ante Pot to bank objective score.",
+		"target_seconds": 8.0,
+		"radius": 3.2,
+		"color": Color(1.0, 0.78, 0.24)
+	},
+	"extract": {
+		"label": "Extract",
+		"short": "EXT",
+		"summary": "Touch the Ante Pot, then reach the player-side exit alive.",
+		"radius": 3.1,
+		"exit_radius": 3.0,
+		"color": Color(0.34, 0.95, 1.0)
+	},
+	"duel": {
+		"label": "Duel",
+		"short": "DUEL",
+		"summary": "Find and kill the marked enemy before the wave ends.",
+		"target": "Needle Eye",
+		"color": Color(1.0, 0.48, 0.24)
+	},
+	"defend": {
+		"label": "Defend",
+		"short": "DEF",
+		"summary": "Keep enemies off the Ante Pot and preserve the table core.",
+		"core_health": 100.0,
+		"radius": 3.6,
+		"color": Color(0.48, 0.78, 1.0)
+	},
+	"boss_gate": {
+		"label": "Boss Gate",
+		"short": "BOSS",
+		"summary": "Break the Gate Champion while surviving Crossfire pressure.",
+		"target": "Gate Champion",
+		"color": Color(0.86, 0.42, 1.0)
+	}
+}
+
+const HERO_CLASS_PROFILES := {
+	"gambler_knight": {
+		"name": "Gambler-Knight",
+		"role": "Duelist",
+		"passive": "Ante Guard",
+		"summary": "+2 armor on entry. Card abilities cool down 8% faster.",
+		"base_armor": 2,
+		"cooldown_scalar": 0.92,
+		"accent": Color(1.0, 0.76, 0.30)
+	},
+	"hex_sharpshooter": {
+		"name": "Hex Sharpshooter",
+		"role": "Controller",
+		"passive": "Marked Shot",
+		"summary": "Read and trap cards become the natural class focus.",
+		"base_armor": 0,
+		"cooldown_scalar": 0.96,
+		"accent": Color(0.46, 0.86, 1.0)
+	},
+	"blood_wager": {
+		"name": "Blood Wager",
+		"role": "Berserker",
+		"passive": "Redline",
+		"summary": "Ritual and overclock cards become the natural class focus.",
+		"base_armor": 0,
+		"cooldown_scalar": 0.90,
+		"accent": Color(1.0, 0.34, 0.24)
+	}
 }
 
 const SETTINGS_PATH := "user://fps_settings.cfg"
@@ -54,6 +128,8 @@ var ammo_label: Label
 var reserve_label: Label
 var reload_bar: ProgressBar
 var reload_status_label: Label
+var objective_label: Label
+var objective_progress_bar: ProgressBar
 var kill_label: Label
 var status_label: Label
 var loadout_label: Label
@@ -96,12 +172,26 @@ var settings_tabs: TabContainer
 var spawn_position := Vector3(0.0, 1.4, 10.5)
 var tactical_map: Dictionary = {}
 var active_bridge_payload: Dictionary = DEFAULT_BRIDGE_PAYLOAD.duplicate(true)
+var active_hero_class_id := "gambler_knight"
+var active_hero_profile: Dictionary = HERO_CLASS_PROFILES["gambler_knight"].duplicate(true)
 var active_abilities: Array[Dictionary] = []
 var active_weapon_profile: Dictionary = {}
 var ability_cooldowns: Array[float] = []
 var aim_settings: Dictionary = DEFAULT_AIM_SETTINGS.duplicate(true)
 var crosshair_settings: Dictionary = DEFAULT_CROSSHAIR_SETTINGS.duplicate(true)
 var crosshair_signature := ""
+var objective_mode := DEFAULT_OBJECTIVE_MODE
+var objective_def: Dictionary = OBJECTIVE_MODE_DEFS[DEFAULT_OBJECTIVE_MODE].duplicate(true)
+var objective_score_bank := 0.0
+var objective_hold_time := 0.0
+var objective_completed := false
+var objective_failed := false
+var objective_extract_collected := false
+var objective_core_health := 100.0
+var objective_target_name := ""
+var objective_target_defeated := false
+var objective_events: Array[String] = []
+var current_wave_enemy_total := 0
 
 var enemy_defs: Array[Dictionary] = [
 	{
@@ -170,6 +260,7 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	_tick_ability_cooldowns(delta)
+	_update_objective(delta)
 	if restart_timer > 0.0:
 		restart_timer -= delta
 		if restart_timer <= 0.0:
@@ -216,7 +307,34 @@ func get_map_summary() -> Dictionary:
 		"name": String(tactical_map.get("name", "Crossfire Table")),
 		"summary": String(tactical_map.get("summary", "")),
 		"rules": String(tactical_map.get("rules_summary", "")),
+		"objective_mode": objective_mode,
+		"objective": get_objective_state(),
 		"regions": get_map_regions()
+	}
+
+
+func get_objective_modes() -> Array[String]:
+	var modes: Array[String] = []
+	for key in OBJECTIVE_MODE_DEFS.keys():
+		modes.append(String(key))
+	return modes
+
+
+func get_objective_state() -> Dictionary:
+	return {
+		"mode": objective_mode,
+		"label": String(objective_def.get("label", "Objective")),
+		"summary": String(objective_def.get("summary", "")),
+		"progress": _get_objective_progress_ratio(),
+		"score": _calculate_objective_score(true, _get_current_clear_time()),
+		"completed": objective_completed,
+		"failed": objective_failed,
+		"hold_time": objective_hold_time,
+		"extract_collected": objective_extract_collected,
+		"core_health": int(roundf(objective_core_health)),
+		"target": objective_target_name,
+		"target_defeated": objective_target_defeated,
+		"events": objective_events.duplicate()
 	}
 
 
@@ -243,6 +361,8 @@ func apply_arena_bridge_payload(payload: Dictionary) -> void:
 	active_bridge_payload.merge(payload.duplicate(true), true)
 	active_abilities.clear()
 	active_weapon_profile.clear()
+	_set_hero_class(String(active_bridge_payload.get("hero_class", "gambler_knight")))
+	_set_objective_mode(String(active_bridge_payload.get("objective_mode", DEFAULT_OBJECTIVE_MODE)))
 
 	var loadout: Array = active_bridge_payload.get("loadout", [])
 	for entry in loadout:
@@ -259,25 +379,35 @@ func apply_arena_bridge_payload(payload: Dictionary) -> void:
 
 	var economy: Dictionary = active_bridge_payload.get("economy", {})
 	var total_ammo := int(economy.get("ammo", 24))
+	var total_armor := int(economy.get("armor", 0)) + int(active_hero_profile.get("base_armor", 0))
 	if player != null:
 		if player.weapon != null and player.weapon.has_method("configure_from_bridge"):
 			player.weapon.call("configure_from_bridge", active_weapon_profile, total_ammo)
 		if player.has_method("apply_bridge_survivability"):
-			player.call("apply_bridge_survivability", int(economy.get("armor", 0)))
+			player.call("apply_bridge_survivability", total_armor)
 	_refresh_ui()
 
 
 func get_active_loadout_summary() -> Dictionary:
 	var economy: Dictionary = active_bridge_payload.get("economy", {})
 	return {
+		"hero": String(active_hero_profile.get("name", "Gambler-Knight")),
+		"hero_role": String(active_hero_profile.get("role", "Duelist")),
+		"hero_passive": String(active_hero_profile.get("passive", "Ante Guard")),
 		"weapon": String(active_weapon_profile.get("name", "House Sidearm")),
 		"abilities": active_abilities.size(),
 		"ability_names": _get_ability_names(),
 		"chips": int(economy.get("chips", 0)),
-		"armor": int(economy.get("armor", 0)),
+		"armor": int(economy.get("armor", 0)) + int(active_hero_profile.get("base_armor", 0)),
 		"ammo": int(economy.get("ammo", 24)),
-		"target_enemy": active_bridge_payload.get("reads", {}).get("target_enemy", &"")
+		"target_enemy": active_bridge_payload.get("reads", {}).get("target_enemy", &""),
+		"objective_mode": objective_mode,
+		"objective_label": String(objective_def.get("label", "Objective"))
 	}
+
+
+func get_active_hero_profile() -> Dictionary:
+	return active_hero_profile.duplicate(true)
 
 
 func get_ability_state() -> Array[Dictionary]:
@@ -364,7 +494,7 @@ func _try_use_ability(index: int) -> bool:
 		"bait_ping":
 			used = _use_bait_ping_ability(ability)
 	if used:
-		ability_cooldowns[index] = float(ability.get("cooldown", 6.0))
+		ability_cooldowns[index] = float(ability.get("cooldown", 6.0)) * _get_hero_cooldown_scalar()
 		_show_status_flash("%s readying" % _get_ability_display_name(String(entry.get("id", "")), kind), Color(0.52, 1.0, 0.82))
 		_pulse_card_hud_slot(index, Color(0.52, 1.0, 0.82))
 		_refresh_ui()
@@ -375,11 +505,22 @@ func _is_ability_ready(index: int) -> bool:
 	return index >= 0 and index < active_abilities.size() and (index >= ability_cooldowns.size() or float(ability_cooldowns[index]) <= 0.0)
 
 
+func _set_hero_class(class_id: String) -> void:
+	active_hero_class_id = class_id if HERO_CLASS_PROFILES.has(class_id) else "gambler_knight"
+	active_hero_profile = (HERO_CLASS_PROFILES[active_hero_class_id] as Dictionary).duplicate(true)
+
+
+func _get_hero_cooldown_scalar() -> float:
+	return clampf(float(active_hero_profile.get("cooldown_scalar", 1.0)), 0.35, 2.0)
+
+
 func _use_dash_ability(ability: Dictionary) -> bool:
 	if player == null or not player.has_method("dash_forward"):
 		return false
 	player.call("dash_forward", float(ability.get("strength", 12.5)))
 	_spawn_ability_ring(player.global_position, Color(0.34, 0.95, 1.0), 1.6)
+	if objective_mode == "extract" and objective_extract_collected and not objective_completed:
+		_add_objective_score(4.0, "Dash rotated toward extract.")
 	return true
 
 
@@ -389,6 +530,11 @@ func _use_guard_shimmer_ability(ability: Dictionary) -> bool:
 	if player.has_method("add_armor"):
 		player.call("add_armor", int(ability.get("armor", 5)))
 	_spawn_ability_ring(player.global_position, Color(0.55, 0.78, 1.0), 2.1)
+	if objective_mode == "hold_pot" and _is_player_near(_get_objective_position(), 4.0):
+		_add_objective_score(5.0, "Guarded the pot.")
+	elif objective_mode == "defend":
+		objective_core_health = minf(_get_objective_core_max_health(), objective_core_health + 10.0)
+		_add_objective_score(5.0, "Reinforced the table core.")
 	return true
 
 
@@ -400,6 +546,8 @@ func _use_read_reveal_ability(ability: Dictionary) -> bool:
 		if enemy.has_method("reveal_for"):
 			enemy.call("reveal_for", duration)
 	_spawn_ability_ring(player.global_position + Vector3(0.0, 0.12, -2.0), Color(0.22, 0.95, 1.0), 3.0)
+	if objective_mode == "duel" and not objective_target_defeated:
+		_add_objective_score(8.0, "Read card exposed the duel target.")
 	return true
 
 
@@ -411,9 +559,13 @@ func _use_snare_field_ability(ability: Dictionary) -> bool:
 	var center: Vector3 = player.global_position + (-player.global_basis.z).normalized() * 5.4
 	center.y = 0.05
 	_spawn_ability_ring(center, Color(0.92, 0.48, 1.0), radius)
+	var snared := 0
 	for enemy in get_living_enemies():
 		if enemy.global_position.distance_to(center) <= radius and enemy.has_method("apply_snare"):
 			enemy.call("apply_snare", duration)
+			snared += 1
+	if snared > 0 and (objective_mode == "hold_pot" or objective_mode == "defend"):
+		_add_objective_score(float(snared * 4), "Trap locked a pressure lane.")
 	return true
 
 
@@ -422,6 +574,8 @@ func _use_overclock_ability(ability: Dictionary) -> bool:
 		return false
 	player.weapon.call("apply_temporary_overclock", float(ability.get("duration", 4.0)), 0.78, 1.20)
 	_spawn_ability_ring(player.global_position, Color(1.0, 0.58, 0.24), 2.0)
+	if objective_mode == "boss_gate":
+		_add_objective_score(6.0, "Overclock pressured the Boss Gate.")
 	return true
 
 
@@ -433,7 +587,146 @@ func _use_bait_ping_ability(ability: Dictionary) -> bool:
 		if enemy.has_method("apply_bait"):
 			enemy.call("apply_bait", duration)
 	_spawn_ability_ring(player.global_position, Color(1.0, 0.86, 0.35), 3.4)
+	if objective_mode == "hold_pot" or objective_mode == "defend":
+		_add_objective_score(5.0, "Bait card delayed enemy pressure.")
 	return true
+
+
+func _set_objective_mode(mode: String) -> void:
+	var safe_mode := mode if OBJECTIVE_MODE_DEFS.has(mode) else DEFAULT_OBJECTIVE_MODE
+	objective_mode = safe_mode
+	objective_def = (OBJECTIVE_MODE_DEFS[safe_mode] as Dictionary).duplicate(true)
+	objective_score_bank = 0.0
+	objective_hold_time = 0.0
+	objective_completed = false
+	objective_failed = false
+	objective_extract_collected = false
+	objective_core_health = _get_objective_core_max_health()
+	objective_target_name = String(objective_def.get("target", ""))
+	objective_target_defeated = false
+	objective_events.clear()
+	_refresh_objective_mode_props()
+
+
+func _update_objective(delta: float) -> void:
+	if player == null or not wave_active or rewards_pending:
+		return
+	if objective_failed:
+		return
+	match objective_mode:
+		"hold_pot":
+			_update_hold_pot_objective(delta)
+		"extract":
+			_update_extract_objective()
+		"defend":
+			_update_defend_objective(delta)
+		"duel", "boss_gate":
+			if objective_target_defeated:
+				objective_completed = true
+
+
+func _update_hold_pot_objective(delta: float) -> void:
+	if objective_completed:
+		return
+	if _is_player_near(_get_objective_position(), float(objective_def.get("radius", 3.2))):
+		objective_hold_time += delta
+		objective_score_bank += delta * 4.5
+		if objective_hold_time >= float(objective_def.get("target_seconds", 8.0)):
+			objective_completed = true
+			_add_objective_score(18.0, "Held the Ante Pot.")
+
+
+func _update_extract_objective() -> void:
+	if not objective_extract_collected and _is_player_near(_get_objective_position(), float(objective_def.get("radius", 3.1))):
+		objective_extract_collected = true
+		_add_objective_score(28.0, "Collected the pot.")
+		_show_status_flash("Pot taken: reach the extract lane", Color(0.34, 0.95, 1.0))
+	if objective_extract_collected and not objective_completed and _is_player_near(_get_extract_position(), float(objective_def.get("exit_radius", 3.0))):
+		objective_completed = true
+		_add_objective_score(32.0, "Extracted alive.")
+		_show_status_flash("Extract secured", Color(0.34, 0.95, 1.0))
+
+
+func _update_defend_objective(delta: float) -> void:
+	var pressure := 0
+	for enemy in get_living_enemies():
+		if enemy.global_position.distance_to(_get_objective_position()) <= float(objective_def.get("radius", 3.6)):
+			pressure += 1
+	if pressure > 0:
+		objective_core_health = maxf(0.0, objective_core_health - delta * float(pressure) * 5.5)
+		if objective_core_health <= 0.0:
+			objective_failed = true
+			_show_status_flash("Ante core broken", Color(1.0, 0.25, 0.18))
+	elif wave_active:
+		objective_score_bank += delta * 1.6
+
+
+func _add_objective_score(amount: float, reason: String = "") -> void:
+	objective_score_bank = minf(100.0, objective_score_bank + amount)
+	if not reason.is_empty() and not objective_events.has(reason):
+		objective_events.append(reason)
+		if objective_events.size() > 5:
+			objective_events.pop_front()
+
+
+func _is_player_near(position: Vector3, radius: float) -> bool:
+	if player == null:
+		return false
+	var player_position: Vector3 = player.global_position
+	player_position.y = 0.0
+	var target := position
+	target.y = 0.0
+	return player_position.distance_to(target) <= radius
+
+
+func _get_objective_position() -> Vector3:
+	return _map_cell_to_world(Vector2i(1, 1)) + Vector3(0.0, 0.08, 0.0)
+
+
+func _get_extract_position() -> Vector3:
+	return _map_cell_to_world(Vector2i(1, 2)) + Vector3(0.0, 0.08, 3.2)
+
+
+func _get_objective_core_max_health() -> float:
+	return float(objective_def.get("core_health", 100.0))
+
+
+func _get_current_clear_time() -> float:
+	return float(Time.get_ticks_msec() - wave_started_msec) / 1000.0 if wave_started_msec > 0 else 0.0
+
+
+func _get_objective_progress_ratio() -> float:
+	match objective_mode:
+		"hold_pot":
+			return clampf(objective_hold_time / maxf(0.1, float(objective_def.get("target_seconds", 8.0))), 0.0, 1.0)
+		"extract":
+			if objective_completed:
+				return 1.0
+			return 0.52 if objective_extract_collected else 0.0
+		"defend":
+			return clampf(objective_core_health / maxf(1.0, _get_objective_core_max_health()), 0.0, 1.0)
+		"duel", "boss_gate":
+			return 1.0 if objective_target_defeated else clampf(float(kills) / maxf(1.0, float(maxi(1, current_wave_enemy_total))), 0.0, 0.88)
+		_:
+			return 0.0
+
+
+func _get_objective_hud_text() -> String:
+	var label := String(objective_def.get("label", "Objective"))
+	var summary := String(objective_def.get("summary", ""))
+	match objective_mode:
+		"hold_pot":
+			return "%s %.1fs/%.1fs | %s" % [label, objective_hold_time, float(objective_def.get("target_seconds", 8.0)), summary]
+		"extract":
+			var step := "Reach extract" if objective_extract_collected else "Touch Ante Pot"
+			return "%s | %s | %s" % [label, step, summary]
+		"defend":
+			return "%s core %d/%d | %s" % [label, int(roundf(objective_core_health)), int(roundf(_get_objective_core_max_health())), summary]
+		"duel", "boss_gate":
+			var target_state := "DOWN" if objective_target_defeated else objective_target_name
+			return "%s target: %s | %s" % [label, target_state, summary]
+		_:
+			return "%s | %s" % [label, summary]
 
 
 func _get_ability_hud_text() -> String:
@@ -532,9 +825,9 @@ func _spawn_impact_decal(position: Vector3, critical: bool) -> void:
 	mesh.bottom_radius = mesh.top_radius
 	mesh.height = 0.01
 	decal.mesh = mesh
-	decal.global_position = Vector3(position.x, 0.018, position.z)
 	decal.material_override = _make_marker_material(Color(1.0, 0.48, 0.20) if critical else Color(0.50, 0.92, 1.0), 0.36)
 	effects_root.add_child(decal)
+	decal.global_position = Vector3(position.x, 0.018, position.z)
 	var tween := create_tween()
 	tween.set_parallel(true)
 	tween.tween_property(decal, "scale", Vector3(1.8, 1.0, 1.8), 0.24).from(Vector3(0.35, 1.0, 0.35))
@@ -551,9 +844,9 @@ func spawn_enemy_tell(position: Vector3, color: Color, radius: float, text: Stri
 	mesh.inner_radius = radius
 	mesh.outer_radius = radius + 0.055
 	ring.mesh = mesh
-	ring.global_position = position
 	ring.material_override = _make_marker_material(color, 0.74)
 	effects_root.add_child(ring)
+	ring.global_position = position
 
 	var label := Label3D.new()
 	label.name = "EnemyTellLabel"
@@ -563,8 +856,8 @@ func spawn_enemy_tell(position: Vector3, color: Color, radius: float, text: Stri
 	label.outline_size = 8
 	label.outline_modulate = Color(0.02, 0.01, 0.01, 0.90)
 	label.modulate = color
-	label.global_position = position + Vector3(0.0, 1.85, 0.0)
 	effects_root.add_child(label)
+	label.global_position = position + Vector3(0.0, 1.85, 0.0)
 
 	var tween := create_tween()
 	tween.set_parallel(true)
@@ -635,12 +928,27 @@ func spawn_combat_text(position: Vector3, text: String, critical: bool, defeated
 
 func on_enemy_defeated(_enemy: Node) -> void:
 	kills += 1
+	_handle_objective_enemy_defeated(_enemy)
 	if get_living_enemies().is_empty():
 		wave_active = false
 		rewards_pending = true
 		waves_cleared += 1
+		if objective_mode == "defend" and not objective_failed:
+			objective_completed = true
+			_add_objective_score(24.0, "Defended the table core.")
 		status_label.text = "WAVE CLEARED" if status_label != null else ""
 		_show_wave_rewards()
+
+
+func _handle_objective_enemy_defeated(enemy: Node) -> void:
+	if enemy == null:
+		return
+	var defeated_name := String(enemy.get("display_name"))
+	if defeated_name == objective_target_name and (objective_mode == "duel" or objective_mode == "boss_gate"):
+		objective_target_defeated = true
+		objective_completed = true
+		_add_objective_score(42.0 if objective_mode == "duel" else 50.0, "%s defeated." % objective_target_name)
+		_show_status_flash("%s complete" % String(objective_def.get("label", "Objective")), _get_objective_color())
 
 
 func restart_encounter() -> void:
@@ -657,6 +965,7 @@ func restart_encounter() -> void:
 	rewards_pending = false
 	restart_timer = 0.0
 	run_started_msec = Time.get_ticks_msec()
+	_set_objective_mode(objective_mode)
 	if reward_panel != null:
 		reward_panel.visible = false
 	if player != null:
@@ -915,6 +1224,93 @@ func _build_objective_props() -> void:
 	label.outline_modulate = Color(0.02, 0.01, 0.01, 0.92)
 	label.position = Vector3(0.0, 1.15, 0.0)
 	objective.add_child(label)
+	_refresh_objective_mode_props()
+
+
+func _refresh_objective_mode_props() -> void:
+	if arena_root == null:
+		return
+	var old_root := arena_root.get_node_or_null("ObjectiveModeProps")
+	if old_root != null:
+		arena_root.remove_child(old_root)
+		old_root.queue_free()
+	var mode_root := Node3D.new()
+	mode_root.name = "ObjectiveModeProps"
+	arena_root.add_child(mode_root)
+
+	var color := _get_objective_color()
+	_add_objective_mode_marker(mode_root, _get_objective_position(), float(objective_def.get("radius", 3.2)), String(objective_def.get("short", "OBJ")), color)
+	match objective_mode:
+		"extract":
+			_add_objective_mode_marker(mode_root, _get_extract_position(), float(objective_def.get("exit_radius", 3.0)), "EXTRACT", Color(0.34, 0.95, 1.0))
+		"defend":
+			_add_objective_core_prop(mode_root, color)
+		"duel":
+			_add_objective_wall_note(mode_root, "DUEL TARGET: %s" % objective_target_name, color)
+		"boss_gate":
+			_add_boss_gate_prop(mode_root, color)
+
+
+func _add_objective_mode_marker(parent: Node3D, position: Vector3, radius: float, text: String, color: Color) -> void:
+	var marker := MeshInstance3D.new()
+	marker.name = "%sMarker" % text.capitalize().replace(" ", "")
+	var mesh := TorusMesh.new()
+	mesh.inner_radius = radius
+	mesh.outer_radius = radius + 0.075
+	marker.mesh = mesh
+	marker.position = position + Vector3(0.0, 0.08, 0.0)
+	marker.material_override = _make_marker_material(color, 0.92)
+	parent.add_child(marker)
+
+	var label := Label3D.new()
+	label.name = "%sObjectiveLabel" % text.capitalize().replace(" ", "")
+	label.text = text
+	label.font_size = 38
+	label.modulate = color
+	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	label.outline_size = 9
+	label.outline_modulate = Color(0.02, 0.01, 0.01, 0.92)
+	label.position = position + Vector3(0.0, 1.55, 0.0)
+	parent.add_child(label)
+
+
+func _add_objective_core_prop(parent: Node3D, color: Color) -> void:
+	var core := MeshInstance3D.new()
+	core.name = "DefendCore"
+	var mesh := CylinderMesh.new()
+	mesh.top_radius = 0.55
+	mesh.bottom_radius = 0.42
+	mesh.height = 1.15
+	core.mesh = mesh
+	core.position = _get_objective_position() + Vector3(0.0, 0.62, 0.0)
+	core.material_override = _make_emissive_material(color, 0.9)
+	parent.add_child(core)
+
+
+func _add_boss_gate_prop(parent: Node3D, color: Color) -> void:
+	var gate := _add_box("BossGateArch", Vector3(0.0, 1.6, -13.6), Vector3(5.8, 3.2, 0.28), _make_marker_material(color, 0.72), Vector3.ZERO, false)
+	arena_root.remove_child(gate)
+	parent.add_child(gate)
+	_add_objective_wall_note(parent, "BOSS GATE: BREAK THE CHAMPION", color)
+
+
+func _add_objective_wall_note(parent: Node3D, text: String, color: Color) -> void:
+	var label := Label3D.new()
+	label.name = "ObjectiveWallNote"
+	label.text = text
+	label.font_size = 44
+	label.modulate = color
+	label.outline_size = 10
+	label.outline_modulate = Color(0.02, 0.01, 0.01, 0.94)
+	label.position = Vector3(0.0, 2.38, -15.56)
+	parent.add_child(label)
+
+
+func _get_objective_color() -> Color:
+	var color_value: Variant = objective_def.get("color", Color(1.0, 0.78, 0.24))
+	if typeof(color_value) == TYPE_COLOR:
+		return color_value
+	return Color(1.0, 0.78, 0.24)
 
 
 func _build_cover_silhouettes() -> void:
@@ -1060,18 +1456,18 @@ func _build_ui() -> void:
 	var combat_panel := PanelContainer.new()
 	combat_panel.name = "CombatStatusHud"
 	combat_panel.anchor_left = 0.035
-	combat_panel.anchor_top = 0.035
+	combat_panel.anchor_top = 0.025
 	combat_panel.anchor_right = 0.965
-	combat_panel.anchor_bottom = 0.13
+	combat_panel.anchor_bottom = 0.095
 	combat_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	combat_panel.add_theme_stylebox_override("panel", _make_hud_panel_style(Color(0.025, 0.030, 0.036, 0.74), Color(0.20, 0.84, 1.0, 0.62)))
+	combat_panel.add_theme_stylebox_override("panel", _make_hud_panel_style(Color(0.025, 0.030, 0.036, 0.58), Color(0.20, 0.84, 1.0, 0.46)))
 	hud_root.add_child(combat_panel)
 
 	var combat_margin := MarginContainer.new()
 	combat_margin.add_theme_constant_override("margin_left", 12)
-	combat_margin.add_theme_constant_override("margin_top", 8)
+	combat_margin.add_theme_constant_override("margin_top", 6)
 	combat_margin.add_theme_constant_override("margin_right", 12)
-	combat_margin.add_theme_constant_override("margin_bottom", 8)
+	combat_margin.add_theme_constant_override("margin_bottom", 6)
 	combat_panel.add_child(combat_margin)
 
 	var top_bar := HBoxContainer.new()
@@ -1084,27 +1480,27 @@ func _build_ui() -> void:
 	health_bar.name = "HealthBar"
 	health_bar.max_value = 120.0
 	health_bar.value = 120.0
-	health_bar.custom_minimum_size = Vector2(250, 22)
+	health_bar.custom_minimum_size = Vector2(170, 14)
 	health_bar.show_percentage = false
 	top_bar.add_child(health_bar)
 
 	ammo_label = Label.new()
 	ammo_label.name = "AmmoLabel"
 	ammo_label.text = "12"
-	ammo_label.add_theme_font_size_override("font_size", 30)
+	ammo_label.add_theme_font_size_override("font_size", 24)
 	top_bar.add_child(ammo_label)
 
 	reserve_label = Label.new()
 	reserve_label.name = "ReserveLabel"
 	reserve_label.text = "72"
-	reserve_label.add_theme_font_size_override("font_size", 18)
+	reserve_label.add_theme_font_size_override("font_size", 14)
 	top_bar.add_child(reserve_label)
 
 	reload_bar = ProgressBar.new()
 	reload_bar.name = "ReloadProgress"
 	reload_bar.max_value = 1.0
 	reload_bar.value = 0.0
-	reload_bar.custom_minimum_size = Vector2(116, 10)
+	reload_bar.custom_minimum_size = Vector2(72, 8)
 	reload_bar.show_percentage = false
 	reload_bar.visible = false
 	top_bar.add_child(reload_bar)
@@ -1117,37 +1513,55 @@ func _build_ui() -> void:
 	reload_status_label.visible = false
 	top_bar.add_child(reload_status_label)
 
+	objective_progress_bar = ProgressBar.new()
+	objective_progress_bar.name = "ObjectiveProgress"
+	objective_progress_bar.max_value = 1.0
+	objective_progress_bar.value = 0.0
+	objective_progress_bar.custom_minimum_size = Vector2(94, 8)
+	objective_progress_bar.show_percentage = false
+	top_bar.add_child(objective_progress_bar)
+
 	kill_label = Label.new()
 	kill_label.name = "KillLabel"
 	kill_label.text = "0"
-	kill_label.add_theme_font_size_override("font_size", 18)
+	kill_label.add_theme_font_size_override("font_size", 14)
 	top_bar.add_child(kill_label)
 
 	status_label = Label.new()
 	status_label.name = "StatusLabel"
 	status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	status_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	status_label.add_theme_font_size_override("font_size", 18)
+	status_label.add_theme_font_size_override("font_size", 14)
 	top_bar.add_child(status_label)
 
 	loadout_label = Label.new()
 	loadout_label.name = "LoadoutLabel"
 	loadout_label.anchor_left = 0.035
-	loadout_label.anchor_top = 0.145
+	loadout_label.anchor_top = 0.102
 	loadout_label.anchor_right = 0.965
-	loadout_label.anchor_bottom = 0.20
-	loadout_label.add_theme_font_size_override("font_size", 15)
+	loadout_label.anchor_bottom = 0.132
+	loadout_label.add_theme_font_size_override("font_size", 12)
 	loadout_label.add_theme_color_override("font_color", Color(1.0, 0.84, 0.34))
 	loadout_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	hud_root.add_child(loadout_label)
 
+	objective_label = Label.new()
+	objective_label.name = "ObjectiveModeLabel"
+	objective_label.anchor_left = 0.035
+	objective_label.anchor_top = 0.132
+	objective_label.anchor_right = 0.965
+	objective_label.anchor_bottom = 0.162
+	objective_label.add_theme_font_size_override("font_size", 11)
+	objective_label.add_theme_color_override("font_color", _get_objective_color())
+	hud_root.add_child(objective_label)
+
 	ability_label = Label.new()
 	ability_label.name = "AbilityLabel"
 	ability_label.anchor_left = 0.035
-	ability_label.anchor_top = 0.205
+	ability_label.anchor_top = 0.162
 	ability_label.anchor_right = 0.965
-	ability_label.anchor_bottom = 0.255
-	ability_label.add_theme_font_size_override("font_size", 14)
+	ability_label.anchor_bottom = 0.192
+	ability_label.add_theme_font_size_override("font_size", 11)
 	ability_label.add_theme_color_override("font_color", Color(0.74, 0.96, 1.0))
 	hud_root.add_child(ability_label)
 
@@ -1172,23 +1586,23 @@ func _build_ui() -> void:
 func _build_card_combat_hud(root: Control) -> void:
 	card_hud_panel = PanelContainer.new()
 	card_hud_panel.name = "CardCombatHud"
-	card_hud_panel.anchor_left = 0.035
-	card_hud_panel.anchor_top = 0.72
-	card_hud_panel.anchor_right = 0.965
-	card_hud_panel.anchor_bottom = 0.885
+	card_hud_panel.anchor_left = 0.12
+	card_hud_panel.anchor_top = 0.815
+	card_hud_panel.anchor_right = 0.88
+	card_hud_panel.anchor_bottom = 0.955
 	card_hud_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	card_hud_panel.add_theme_stylebox_override("panel", _make_hud_panel_style(Color(0.020, 0.018, 0.016, 0.78), Color(1.0, 0.64, 0.20, 0.70)))
+	card_hud_panel.add_theme_stylebox_override("panel", _make_hud_panel_style(Color(0.020, 0.018, 0.016, 0.56), Color(1.0, 0.64, 0.20, 0.48)))
 	root.add_child(card_hud_panel)
 
 	var margin := MarginContainer.new()
-	margin.add_theme_constant_override("margin_left", 12)
-	margin.add_theme_constant_override("margin_top", 10)
-	margin.add_theme_constant_override("margin_right", 12)
-	margin.add_theme_constant_override("margin_bottom", 10)
+	margin.add_theme_constant_override("margin_left", 8)
+	margin.add_theme_constant_override("margin_top", 6)
+	margin.add_theme_constant_override("margin_right", 8)
+	margin.add_theme_constant_override("margin_bottom", 6)
 	card_hud_panel.add_child(margin)
 
 	var layout := VBoxContainer.new()
-	layout.add_theme_constant_override("separation", 6)
+	layout.add_theme_constant_override("separation", 4)
 	margin.add_child(layout)
 
 	var top_row := HBoxContainer.new()
@@ -1198,25 +1612,25 @@ func _build_card_combat_hud(root: Control) -> void:
 	card_hud_weapon_label = Label.new()
 	card_hud_weapon_label.name = "CardHudWeaponLabel"
 	card_hud_weapon_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	card_hud_weapon_label.add_theme_font_size_override("font_size", 16)
+	card_hud_weapon_label.add_theme_font_size_override("font_size", 12)
 	card_hud_weapon_label.add_theme_color_override("font_color", Color(1.0, 0.82, 0.34))
 	top_row.add_child(card_hud_weapon_label)
 
 	card_hud_economy_label = Label.new()
 	card_hud_economy_label.name = "CardHudEconomyLabel"
 	card_hud_economy_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	card_hud_economy_label.add_theme_font_size_override("font_size", 14)
+	card_hud_economy_label.add_theme_font_size_override("font_size", 11)
 	card_hud_economy_label.add_theme_color_override("font_color", Color(0.78, 0.96, 1.0))
 	top_row.add_child(card_hud_economy_label)
 
 	card_hud_ability_row = HBoxContainer.new()
 	card_hud_ability_row.name = "CardHudAbilityRow"
-	card_hud_ability_row.add_theme_constant_override("separation", 8)
+	card_hud_ability_row.add_theme_constant_override("separation", 6)
 	layout.add_child(card_hud_ability_row)
 
 	card_hud_summary_label = Label.new()
 	card_hud_summary_label.name = "CardHudSummaryLabel"
-	card_hud_summary_label.add_theme_font_size_override("font_size", 12)
+	card_hud_summary_label.add_theme_font_size_override("font_size", 10)
 	card_hud_summary_label.add_theme_color_override("font_color", Color(0.74, 0.78, 0.84))
 	layout.add_child(card_hud_summary_label)
 
@@ -2321,14 +2735,71 @@ func _spawn_wave() -> void:
 	wave_started_msec = Time.get_ticks_msec()
 	status_label.text = "" if status_label != null else ""
 	var extra_health := (wave_index - 1) * 12
-	for data in enemy_defs:
+	var wave_defs := _get_objective_enemy_defs()
+	current_wave_enemy_total = wave_defs.size()
+	for data in wave_defs:
 		var enemy := FPS_DRONE_SCRIPT.new()
 		enemy.name = String(data.get("name", "Enemy")).replace(" ", "")
 		var copy := data.duplicate(true)
 		copy["health"] = int(copy.get("health", 70)) + extra_health
 		enemy.configure(copy, player, self)
 		enemies_root.add_child(enemy)
-		enemy.global_position = data.get("position", Vector3.ZERO)
+		enemy.global_position = copy.get("position", Vector3.ZERO)
+
+
+func _get_objective_enemy_defs() -> Array[Dictionary]:
+	var defs: Array[Dictionary] = []
+	for data in enemy_defs:
+		var copy := (data as Dictionary).duplicate(true)
+		copy["position"] = _get_map_spawn_for_enemy(copy)
+		match objective_mode:
+			"duel":
+				if String(copy.get("name", "")) == objective_target_name:
+					copy["health"] = int(copy.get("health", 70)) + 28
+					copy["color"] = Color(1.0, 0.48, 0.24)
+					copy["objective_target"] = true
+			"defend":
+				if String(copy.get("archetype", "")) == "charger":
+					copy["speed"] = float(copy.get("speed", 3.5)) + 0.35
+				if String(copy.get("archetype", "")) == "shield":
+					copy["position"] = _map_cell_to_world(Vector2i(1, 1)) + Vector3(0.8, 0.17, -2.1)
+			"extract":
+				if String(copy.get("archetype", "")) == "charger":
+					copy["position"] = _map_cell_to_world(Vector2i(0, 1)) + Vector3(-1.2, 0.17, 0.0)
+			"boss_gate":
+				if String(copy.get("name", "")) == "Hexmonger":
+					continue
+		defs.append(copy)
+	if objective_mode == "boss_gate":
+		defs.append(_get_boss_gate_enemy_def())
+	return defs
+
+
+func _get_map_spawn_for_enemy(data: Dictionary) -> Vector3:
+	match String(data.get("archetype", "chaser")):
+		"ranged":
+			return _map_cell_to_world(Vector2i(2, 0)) + Vector3(0.8, 0.17, -1.1)
+		"charger":
+			return _map_cell_to_world(Vector2i(0, 1)) + Vector3(-1.0, 0.17, -0.7)
+		"shield":
+			return _map_cell_to_world(Vector2i(2, 1)) + Vector3(0.4, 0.17, -0.5)
+		_:
+			return _map_cell_to_world(Vector2i(1, 0)) + Vector3(0.0, 0.17, -0.9)
+
+
+func _get_boss_gate_enemy_def() -> Dictionary:
+	return {
+		"name": "Gate Champion",
+		"position": _map_cell_to_world(Vector2i(1, 0)) + Vector3(0.0, 0.17, -1.5),
+		"texture": "res://art/game/enemies/enemy_hexmonger.png",
+		"color": Color(0.86, 0.42, 1.0),
+		"archetype": "shield",
+		"health": 218,
+		"speed": 2.55,
+		"attack_damage": 22,
+		"attack_range": 2.05,
+		"objective_target": true
+	}
 
 
 func _show_wave_rewards() -> void:
@@ -2338,8 +2809,11 @@ func _show_wave_rewards() -> void:
 	reward_panel.visible = true
 	if reward_label != null:
 		var clear_time := float(Time.get_ticks_msec() - wave_started_msec) / 1000.0
-		reward_label.text = "[center][b]Wave %d Cleared[/b]\n%.1fs  %d shots  %.0f%% hit rate\nChoose a payout to return to the table.[/center]" % [
+		reward_label.text = "[center][b]Wave %d Cleared[/b]\n%s %s  objective %d\n%.1fs  %d shots  %.0f%% hit rate\nChoose a payout to return to the table.[/center]" % [
 			wave_index,
+			String(objective_def.get("label", "Objective")),
+			"complete" if objective_completed else ("failed" if objective_failed else "partial"),
+			_calculate_objective_score(true, clear_time),
 			clear_time,
 			shots_fired,
 			_get_hit_rate() * 100.0
@@ -2358,10 +2832,11 @@ func _show_wave_rewards() -> void:
 
 
 func _build_reward_options() -> Array[Dictionary]:
+	var objective_bonus := 2 if objective_completed else 0
 	return [
 		{"label": "Damage Payout", "kind": "damage", "amount": 3, "chip_bonus": 2},
-		{"label": "Armor Payout", "kind": "armor", "amount": 10, "chip_bonus": 1},
-		{"label": "Ammo Payout", "kind": "ammo", "amount": 18, "chip_bonus": 1}
+		{"label": "Armor Payout", "kind": "armor", "amount": 10, "chip_bonus": 1 + objective_bonus},
+		{"label": "Ammo Payout", "kind": "ammo", "amount": 18, "chip_bonus": 1 + objective_bonus}
 	]
 
 
@@ -2392,6 +2867,11 @@ func _build_arena_result(reward: Dictionary, cleared: bool = true) -> Dictionary
 	return {
 		"source": "fps_arena",
 		"map_name": String(tactical_map.get("name", "Crossfire Table")),
+		"objective_mode": objective_mode,
+		"objective_label": String(objective_def.get("label", "Objective")),
+		"objective_completed": objective_completed,
+		"objective_failed": objective_failed,
+		"objective_events": objective_events.duplicate(),
 		"outcome": "win" if cleared else "defeat",
 		"cleared": cleared,
 		"wave": wave_index,
@@ -2422,6 +2902,12 @@ func _calculate_arena_chips(reward: Dictionary, cleared: bool = true, objective_
 		chips += 2
 	if damage_taken <= 20:
 		chips += 1
+	if objective_completed:
+		chips += 2
+	elif objective_failed:
+		chips -= 1
+	if objective_score >= 70:
+		chips += 1
 	if objective_score >= 90:
 		chips += 1
 	chips += int(reward.get("chip_bonus", 0))
@@ -2429,9 +2915,22 @@ func _calculate_arena_chips(reward: Dictionary, cleared: bool = true, objective_
 
 
 func _calculate_objective_score(cleared: bool, clear_time: float) -> int:
+	var objective_part := int(roundf(objective_score_bank))
+	match objective_mode:
+		"hold_pot":
+			objective_part += int(roundf(_get_objective_progress_ratio() * 48.0))
+		"extract":
+			objective_part += 35 if objective_extract_collected else 0
+			objective_part += 35 if objective_completed else 0
+		"defend":
+			objective_part += int(roundf(_get_objective_progress_ratio() * 54.0))
+		"duel", "boss_gate":
+			objective_part += 55 if objective_target_defeated else int(roundf(_get_objective_progress_ratio() * 22.0))
+	if objective_failed:
+		objective_part = maxi(0, objective_part - 24)
 	if not cleared:
-		return clampi(kills * 12 + int(_get_hit_rate() * 20.0), 0, 55)
-	var score := 70 + kills * 4 + int(_get_hit_rate() * 18.0)
+		return clampi(kills * 10 + int(_get_hit_rate() * 18.0) + objective_part, 0, 65)
+	var score := 32 + kills * 4 + int(_get_hit_rate() * 16.0) + objective_part
 	if clear_time > 0.0 and clear_time <= 30.0:
 		score += 8
 	if damage_taken <= 20:
@@ -2513,7 +3012,7 @@ func _refresh_ui() -> void:
 		ammo_label.text = str(ammo_state.get("ammo", 0))
 	if reserve_label != null:
 		var is_reloading := bool(ammo_state.get("reloading", false))
-		var suffix := "..." if is_reloading else str(ammo_state.get("reserve", 0))
+		var suffix := "..." if is_reloading else ("INF" if bool(ammo_state.get("infinite_ammo", false)) else str(ammo_state.get("reserve", 0)))
 		reserve_label.text = suffix
 		if reload_bar != null:
 			reload_bar.visible = is_reloading
@@ -2522,16 +3021,21 @@ func _refresh_ui() -> void:
 			reload_status_label.visible = is_reloading
 			reload_status_label.text = "RELOADING %d%%" % int(roundf(float(ammo_state.get("reload_progress", 0.0)) * 100.0))
 	if kill_label != null:
-		kill_label.text = "%d/%d" % [kills, enemy_defs.size()]
+		kill_label.text = "%d/%d" % [kills, maxi(1, current_wave_enemy_total)]
 	if status_label != null and wave_active:
 		status_label.text = "WAVE %d" % wave_index
+	if objective_label != null:
+		objective_label.text = _get_objective_hud_text()
+		objective_label.add_theme_color_override("font_color", _get_objective_color())
+	if objective_progress_bar != null:
+		objective_progress_bar.value = _get_objective_progress_ratio()
 	if loadout_label != null:
 		var summary := get_active_loadout_summary()
-		loadout_label.text = "%s | Ammo %d | Armor %d | Abilities %d | Chips %d" % [
+		loadout_label.text = "%s %s | %s | Armor %d | Chips %d" % [
+			summary.get("hero", "Gambler-Knight"),
+			summary.get("hero_role", "Duelist"),
 			summary.get("weapon", "House Sidearm"),
-			summary.get("ammo", 0),
 			summary.get("armor", 0),
-			summary.get("abilities", 0),
 			summary.get("chips", 0)
 		]
 	if ability_label != null:
@@ -2539,13 +3043,14 @@ func _refresh_ui() -> void:
 	_refresh_card_combat_hud(ammo_state)
 	if telemetry_label != null:
 		var run_time := float(Time.get_ticks_msec() - run_started_msec) / 1000.0 if run_started_msec > 0 else 0.0
-		telemetry_label.text = "Time %.1fs | Waves %d | Hits %.0f%% | Crits %d | Damage %d | Taken %d" % [
+		telemetry_label.text = "Time %.1fs | Waves %d | Hits %.0f%% | Crits %d | Damage %d | Taken %d | Objective %d" % [
 			run_time,
 			waves_cleared,
 			_get_hit_rate() * 100.0,
 			critical_hits,
 			damage_dealt,
-			damage_taken
+			damage_taken,
+			_calculate_objective_score(wave_active, _get_current_clear_time())
 		]
 
 
@@ -2554,13 +3059,14 @@ func _refresh_card_combat_hud(ammo_state: Dictionary) -> void:
 		return
 	var summary := get_active_loadout_summary()
 	if card_hud_weapon_label != null:
-		card_hud_weapon_label.text = "WEAPON CARD: %s" % String(summary.get("weapon", "House Sidearm"))
+		card_hud_weapon_label.text = "%s | %s" % [String(summary.get("hero_passive", "Ante Guard")).to_upper(), String(summary.get("weapon", "House Sidearm")).to_upper()]
 	if card_hud_economy_label != null:
-		card_hud_economy_label.text = "Chips %d  Armor %d  Ammo %d/%d" % [
+		var reserve_text := "INF" if bool(ammo_state.get("infinite_ammo", false)) else str(int(ammo_state.get("reserve", 0)))
+		card_hud_economy_label.text = "$%d  ARM %d  AMMO %d/%s" % [
 			int(summary.get("chips", 0)),
 			int(summary.get("armor", 0)),
 			int(ammo_state.get("ammo", 0)),
-			int(ammo_state.get("reserve", 0))
+			reserve_text
 		]
 	if card_hud_ability_row != null:
 		_clear_children(card_hud_ability_row)
@@ -2569,13 +3075,13 @@ func _refresh_card_combat_hud(ammo_state: Dictionary) -> void:
 			card_hud_ability_row.add_child(_build_ability_card_panel(index))
 	if card_hud_summary_label != null:
 		var target_text := String(summary.get("target_enemy", ""))
-		card_hud_summary_label.text = "Loadout powers are your card hand made live. %s" % ("Read target: %s." % target_text if not target_text.is_empty() else "Slot cards before arena entry to add powers.")
+		card_hud_summary_label.text = "Cards are live powers. %s" % ("Read: %s." % target_text if not target_text.is_empty() else "Slot cards before arena entry.")
 
 
 func _build_ability_card_panel(index: int) -> PanelContainer:
 	var panel := PanelContainer.new()
 	panel.name = "AbilityCardSlot%d" % (index + 1)
-	panel.custom_minimum_size = Vector2(148, 58)
+	panel.custom_minimum_size = Vector2(104, 42)
 	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 
 	var margin := MarginContainer.new()
@@ -2591,13 +3097,13 @@ func _build_ability_card_panel(index: int) -> PanelContainer:
 
 	var label := Label.new()
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	label.add_theme_font_size_override("font_size", 12)
+	label.add_theme_font_size_override("font_size", 10)
 	if index < active_abilities.size():
 		label.text = _get_card_hud_ability_text(index)
 		label.add_theme_color_override("font_color", Color(0.88, 0.98, 1.0) if _is_ability_ready(index) else Color(0.58, 0.66, 0.70))
 		panel.tooltip_text = "Live card power from %s" % String((active_abilities[index] as Dictionary).get("card_name", "slotted card"))
 	else:
-		label.text = "SLOT %d\nNo card equipped" % (index + 1)
+		label.text = "%s\nEMPTY" % _get_primary_action_binding_text(StringName("fps_ability_%d" % (index + 1)))
 		label.add_theme_color_override("font_color", Color(0.45, 0.49, 0.52))
 		panel.tooltip_text = "Slot a card before Enter Arena to fill this combat power."
 	stack.add_child(label)
@@ -2617,7 +3123,7 @@ func _get_ability_cooldown_ratio(index: int) -> float:
 		return 0.0
 	var entry: Dictionary = active_abilities[index]
 	var ability: Dictionary = entry.get("ability", {})
-	var max_cooldown := maxf(0.01, float(ability.get("cooldown", 6.0)))
+	var max_cooldown := maxf(0.01, float(ability.get("cooldown", 6.0)) * _get_hero_cooldown_scalar())
 	var remaining := ability_cooldowns[index] if index < ability_cooldowns.size() else 0.0
 	return clampf(1.0 - float(remaining) / max_cooldown, 0.0, 1.0)
 
@@ -2643,8 +3149,8 @@ func _get_card_hud_ability_text(index: int) -> String:
 	var display := _get_ability_display_name(String(entry.get("id", "")), String(ability.get("kind", "")))
 	var source := String(entry.get("card_name", entry.get("id", "Card")))
 	var cooldown := ability_cooldowns[index] if index < ability_cooldowns.size() else 0.0
-	var state := "READY" if cooldown <= 0.0 else "%.1fs" % cooldown
-	return "%s  %s\n%s\n%s" % [key, state, display, source]
+	var state := "READY" if cooldown <= 0.0 else "%.0fs" % cooldown
+	return "%s %s\n%s" % [key, state, display if source == display else "%s / %s" % [display, source]]
 
 
 func _consume_pending_arena_bridge_payload() -> void:

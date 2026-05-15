@@ -28,6 +28,9 @@ func _run_check() -> void:
 	if reload_bar == null or reload_status == null:
 		_fail("FPS HUD should expose reload progress state.")
 		return
+	if prototype.find_child("ObjectiveModeLabel", true, false) == null or prototype.find_child("ObjectiveProgress", true, false) == null:
+		_fail("FPS HUD should expose objective mode status and progress.")
+		return
 	if prototype.find_child("CombatStatusHud", true, false) == null:
 		_fail("FPS HUD should frame combat state in a readable status panel.")
 		return
@@ -42,9 +45,16 @@ func _run_check() -> void:
 	if String(map_summary.get("name", "")) != "Crossfire Table":
 		_fail("FPSPrototype should use the Crossfire Table tactical map.")
 		return
+	var objective_state: Dictionary = prototype.call("get_objective_state")
+	if String(objective_state.get("mode", "")) != "hold_pot":
+		_fail("FPSPrototype should default to Hold Pot objective mode.")
+		return
 	var map_markers: Node = prototype.find_child("TacticalMapMarkers", true, false)
 	if map_markers == null or map_markers.get_child_count() < 9:
 		_fail("FPSPrototype should render tactical map markers for all 3x3 regions.")
+		return
+	if prototype.find_child("ObjectiveModeProps", true, false) == null:
+		_fail("FPS arena should stage objective-mode props.")
 		return
 	if prototype.find_child("ArenaSpectacleStage", true, false) == null:
 		_fail("FPS arena should include authored spectacle staging.")

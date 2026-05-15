@@ -46,11 +46,18 @@ func _build_ui() -> void:
 	layout.add_theme_constant_override("separation", 24)
 	margin.add_child(layout)
 
+	var nav_scroll := ScrollContainer.new()
+	nav_scroll.name = "NavigationScroll"
+	nav_scroll.custom_minimum_size = Vector2(380, 0)
+	nav_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	nav_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	layout.add_child(nav_scroll)
+
 	var nav := VBoxContainer.new()
 	nav.name = "NavigationColumn"
 	nav.custom_minimum_size = Vector2(360, 0)
 	nav.add_theme_constant_override("separation", 12)
-	layout.add_child(nav)
+	nav_scroll.add_child(nav)
 
 	var title := Label.new()
 	title.name = "TitleLabel"
@@ -70,6 +77,11 @@ func _build_ui() -> void:
 	nav.add_child(_make_button("Full Game Experience", CARD_SCENE, "FullGameButton"))
 	nav.add_child(_make_button("Card Prep With Sample Hand", CARD_SCENE, "CardPrepButton"))
 	nav.add_child(_make_action_button("FPS With Slotted Weapon", "SlottedFPSButton", _open_fps_with_sample_loadout))
+	nav.add_child(_make_action_button("Hold Pot Test", "HoldPotTestButton", _open_objective_fps.bind("hold_pot")))
+	nav.add_child(_make_action_button("Extract Test", "ExtractTestButton", _open_objective_fps.bind("extract")))
+	nav.add_child(_make_action_button("Duel Test", "DuelTestButton", _open_objective_fps.bind("duel")))
+	nav.add_child(_make_action_button("Defend Test", "DefendTestButton", _open_objective_fps.bind("defend")))
+	nav.add_child(_make_action_button("Boss Gate Test", "BossGateTestButton", _open_objective_fps.bind("boss_gate")))
 	nav.add_child(_make_action_button("FPS Return Payout", "PayoutDemoButton", _open_payout_demo))
 	nav.add_child(_make_action_button("FPS Defeat Return", "DefeatDemoButton", _open_defeat_demo))
 	nav.add_child(_make_button("Shooter Arena Sandbox", SHOOTER_SCENE, "ShooterArenaButton"))
@@ -121,7 +133,7 @@ func _build_ui() -> void:
 	var lanes := Label.new()
 	lanes.name = "ModeSummary"
 	lanes.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	lanes.text = "Full Game starts the card run. Card Prep opens the table. FPS With Slotted Weapon seeds a sample loadout. FPS Return Payout and FPS Defeat Return jump straight to arena handoff outcomes. Tactical Map Viewer opens the shared Crossfire Table data."
+	lanes.text = "Full Game starts the card run. Card Prep opens the table. The FPS objective tests seed Hold, Extract, Duel, Defend, or Boss Gate modes without replaying the whole loop. FPS Return Payout and FPS Defeat Return jump straight to arena handoff outcomes. Tactical Map Viewer opens the shared Crossfire Table data."
 	lanes.add_theme_color_override("font_color", Color(0.72, 0.80, 0.78))
 	details.add_child(lanes)
 
@@ -130,7 +142,7 @@ func _make_button(label: String, scene_path: String, node_name: String) -> Butto
 	var button := Button.new()
 	button.name = node_name
 	button.text = label
-	button.custom_minimum_size = Vector2(0, 46)
+	button.custom_minimum_size = Vector2(0, 40)
 	button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	button.pressed.connect(_go_to_scene.bind(scene_path))
 	return button
@@ -140,7 +152,7 @@ func _make_action_button(label: String, node_name: String, callback: Callable) -
 	var button := Button.new()
 	button.name = node_name
 	button.text = label
-	button.custom_minimum_size = Vector2(0, 46)
+	button.custom_minimum_size = Vector2(0, 40)
 	button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	button.pressed.connect(callback)
 	return button
@@ -218,6 +230,16 @@ func _open_fps_with_sample_loadout() -> void:
 	_go_to_scene(SHOOTER_SCENE)
 
 
+func _open_objective_fps(objective_mode: String) -> void:
+	var bridge := get_node_or_null("/root/ArenaBridge")
+	if bridge != null and bridge.has_method("set_payload"):
+		var payload := _build_sample_arena_payload()
+		payload["objective_mode"] = objective_mode
+		payload["reads"] = _get_objective_read_payload(objective_mode)
+		bridge.call("set_payload", payload, CARD_SCENE)
+	_go_to_scene(SHOOTER_SCENE)
+
+
 func _open_payout_demo() -> void:
 	var bridge := get_node_or_null("/root/ArenaBridge")
 	if bridge != null and bridge.has_method("set_result"):
@@ -278,10 +300,12 @@ func _open_defeat_demo() -> void:
 
 func _build_sample_arena_payload() -> Dictionary:
 	return {
+		"hero_class": "gambler_knight",
 		"weapon_card": "quick_slash",
 		"ability_cards": ["sidestep", "guard_up"],
 		"passive_cards": [],
 		"wager_cards": [],
+		"objective_mode": "hold_pot",
 		"loadout": [
 			{"slot": "weapon", "id": "quick_slash", "name": "Quick Slash", "style": "attack", "combat_role": "weapon", "weapon": {"name": "Ace Cutter Revolver", "damage": 31, "magazine": 6, "fire_rate": 3.2, "range": "mid"}},
 			{"slot": "ability_1", "id": "sidestep", "name": "Sidestep", "style": "move", "combat_role": "movement_ability", "ability": {"kind": "dash", "charges": 1, "cooldown": 6.0}},
@@ -291,6 +315,20 @@ func _build_sample_arena_payload() -> Dictionary:
 		"payout_bonuses": {"armor": 0, "ammo": 0, "weapon_damage": 3},
 		"reads": {"target_enemy": &"skulker", "threat": "Knife Duelist rush likely"}
 	}
+
+
+func _get_objective_read_payload(objective_mode: String) -> Dictionary:
+	match objective_mode:
+		"extract":
+			return {"target_enemy": &"skulker", "threat": "Rusher likely contests extract route"}
+		"duel":
+			return {"target_enemy": &"needle_eye", "threat": "Marked duel target on Long Rail"}
+		"defend":
+			return {"target_enemy": &"brute", "threat": "Shield Guard anchors the pot"}
+		"boss_gate":
+			return {"target_enemy": &"gate_champion", "threat": "Boss Gate target must fall"}
+		_:
+			return {"target_enemy": &"skulker", "threat": "Knife Duelist rush likely"}
 
 
 func _add_divider(parent: VBoxContainer) -> void:

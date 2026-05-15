@@ -108,6 +108,8 @@ func test_fps_pivot_scene_and_contracts_load() -> void:
 	assert_eq(String(weapon.get("weapon_name")), "Ante Carbine AR", "FPSWeapon should default to the automatic carbine test profile.")
 	var weapon_source := FileAccess.get_file_as_string("res://scripts/fps/FPSWeapon.gd")
 	assert_true(weapon_source.contains("apply_weapon_recoil"), "FPSWeapon should route shot recoil through the player aim-kick hook.")
+	assert_true(weapon_source.contains("EjectedCasing"), "FPSWeapon should spawn visible casing ejection for shot feedback.")
+	assert_true(bool(weapon.get("infinite_test_ammo")), "The FPS test weapon should default to infinite ammo while combat feel is being tuned.")
 	assert_true(drone.has_method("take_damage"), "FPSDrone should expose damage intake.")
 	assert_true(drone.has_method("is_critical_hit"), "FPSDrone should expose crit zones.")
 	assert_true(prototype.has_method("spawn_tracer"), "FPSPrototype should expose shot tracers.")
@@ -119,7 +121,10 @@ func test_fps_pivot_scene_and_contracts_load() -> void:
 	assert_true(prototype.has_method("get_living_enemies"), "FPSPrototype should expose encounter state.")
 	assert_true(prototype.has_method("get_map_summary"), "FPSPrototype should expose Crossfire map summary.")
 	assert_true(prototype.has_method("get_map_regions"), "FPSPrototype should expose authored tactical map regions.")
+	assert_true(prototype.has_method("get_objective_modes"), "FPSPrototype should expose testable objective modes.")
+	assert_true(prototype.has_method("get_objective_state"), "FPSPrototype should expose active objective progress.")
 	assert_true(prototype.has_method("get_ability_state"), "FPSPrototype should expose bridged FPS ability state.")
+	assert_true(prototype.has_method("get_active_hero_profile"), "FPSPrototype should expose the active player class profile.")
 	assert_true(prototype.has_method("get_arena_result_preview"), "FPSPrototype should expose arena result payout previews.")
 	assert_true(player.has_method("dash_forward"), "FPSPlayer should expose card-driven dash.")
 	assert_true(player.has_method("add_armor"), "FPSPlayer should expose card-driven armor gain.")
@@ -207,23 +212,37 @@ func test_fps_settings_crosshair_and_ability_contracts() -> void:
 	var crosshair_color: Color = prototype.call("_get_crosshair_color")
 	assert_true(is_equal_approx(crosshair_color.a, 0.8), "Crosshair opacity should be controlled separately from color.")
 	prototype.call("apply_arena_bridge_payload", {
+		"hero_class": "hex_sharpshooter",
 		"loadout": [{"slot": "ability_1", "id": "sidestep", "ability": {"kind": "dash", "cooldown": 6.0}}],
 		"economy": {"chips": 0, "armor": 0, "ammo": 24}
 	})
+	var hero_profile: Dictionary = prototype.call("get_active_hero_profile")
+	assert_eq(String(hero_profile.get("name", "")), "Hex Sharpshooter", "FPS should support player class profiles separate from card loadout.")
 	var ability_state: Array = prototype.call("get_ability_state")
 	assert_eq(ability_state.size(), 1, "FPSPrototype should expose active Q/E ability state.")
 	assert_true(bool((ability_state[0] as Dictionary).get("ready", false)), "Slotted abilities should start ready.")
-	prototype.set("ability_cooldowns", [3.0])
-	assert_true(is_equal_approx(float(prototype.call("_get_ability_cooldown_ratio", 0)), 0.5), "Card HUD cooldown progress should track remaining ability cooldown.")
+	var cooldowns: Array[float] = [3.0]
+	prototype.set("ability_cooldowns", cooldowns)
+	var cooldown_ratio := float(prototype.call("_get_ability_cooldown_ratio", 0))
+	var expected_cooldown_ratio := 1.0 - 3.0 / (6.0 * float(hero_profile.get("cooldown_scalar", 1.0)))
+	assert_true(is_equal_approx(cooldown_ratio, expected_cooldown_ratio), "Card HUD cooldown progress should track hero-adjusted remaining ability cooldown; got %.3f." % cooldown_ratio)
 
 
 func test_fps_weapon_overclock_and_enemy_archetypes() -> void:
 	var weapon_script: GDScript = ResourceLoader.load("res://scripts/fps/FPSWeapon.gd", "", ResourceLoader.CACHE_MODE_IGNORE)
 	var weapon: Node = weapon_script.new()
 	assert_true((weapon.call("_get_recoil_pattern_value") as Vector2).y > 0.0, "The first AR should expose a deterministic recoil pattern.")
+	assert_true(float(weapon.call("_get_hipfire_spread_multiplier")) > 2.0, "Hip-fire should be much looser than ADS for the first AR.")
 	weapon.call("apply_temporary_overclock", 4.0, 0.78, 1.2)
 	assert_true(float(weapon.get("overclock_timer")) > 0.0, "Weapon overclock should arm a timed fire-rate/damage modifier.")
 	weapon.set("magazine_size", 12)
+	weapon.set("ammo", 3)
+	weapon.set("reserve", 0)
+	assert_true(bool(weapon.call("try_reload")), "Infinite test ammo should allow reloads even when reserve is empty.")
+	weapon.call("_finish_reload")
+	assert_eq(int(weapon.get("ammo")), 12, "Infinite test ammo should still refill the magazine during reload UX checks.")
+	assert_true(int(weapon.get("reserve")) >= 999, "Infinite test ammo should keep reserve stocked for repeated FPS testing.")
+	weapon.set("infinite_test_ammo", false)
 	weapon.set("ammo", 3)
 	weapon.set("reserve", 20)
 	assert_true(bool(weapon.call("try_reload")), "FPSWeapon should begin reloading when the magazine is not full and reserve ammo exists.")
@@ -363,6 +382,7 @@ func test_combat_controller_exports_shooter_loadout_payload() -> void:
 	assert_true(int(economy.get("armor", 0)) >= 6, "Arena carryover armor should feed the next payload.")
 	var bonuses: Dictionary = payload.get("payout_bonuses", {})
 	assert_eq(int(bonuses.get("weapon_damage", 0)), 2, "Arena damage payout should be visible in the payload.")
+	assert_eq(String(payload.get("objective_mode", "")), "extract", "Movement-heavy loadouts should recommend the Extract FPS objective.")
 	var weapon_payload: Dictionary = (loadout[0] as Dictionary).get("weapon", {}) if (loadout[0] as Dictionary).has("weapon") else (loadout[1] as Dictionary).get("weapon", {})
 	assert_true(int(weapon_payload.get("damage", 0)) >= 30, "Arena damage payout should boost the next weapon profile.")
 
@@ -399,6 +419,7 @@ func test_fps_prototype_consumes_bridge_payload_as_active_loadout() -> void:
 	prototype.call("apply_arena_bridge_payload", {
 		"weapon_card": "quick_slash",
 		"ability_cards": ["sidestep"],
+		"objective_mode": "extract",
 		"loadout": [
 			{"slot": "weapon", "id": "quick_slash", "weapon": {"name": "Ace Cutter Revolver", "damage": 28, "magazine": 6, "fire_rate": 3.2}},
 			{"slot": "ability_1", "id": "sidestep", "ability": {"kind": "dash", "charges": 1}}
@@ -409,15 +430,23 @@ func test_fps_prototype_consumes_bridge_payload_as_active_loadout() -> void:
 	var summary: Dictionary = prototype.call("get_active_loadout_summary")
 	assert_eq(String(summary.get("weapon", "")), "Ace Cutter Revolver", "FPS should expose the bridge weapon as active.")
 	assert_eq(int(summary.get("abilities", 0)), 1, "FPS should expose bridged ability count.")
-	assert_eq(int(summary.get("armor", 0)), 7, "FPS should expose bridged armor.")
+	assert_eq(int(summary.get("armor", 0)), 9, "FPS should expose bridged armor plus the default hero class armor.")
 	assert_eq(int(summary.get("ammo", 0)), 36, "FPS should expose bridged ammo.")
+	assert_eq(String(summary.get("objective_mode", "")), "extract", "FPS loadout summary should include the selected objective mode.")
+	var objective_state: Dictionary = prototype.call("get_objective_state")
+	assert_eq(String(objective_state.get("mode", "")), "extract", "FPS should apply the objective mode from the bridge payload.")
+	var objective_modes: Array = prototype.call("get_objective_modes")
+	assert_true(objective_modes.has("hold_pot") and objective_modes.has("boss_gate"), "FPS should expose Hold Pot through Boss Gate objective tests.")
 	prototype.set("kills", 3)
 	prototype.set("shots_fired", 6)
 	prototype.set("shots_hit", 4)
 	prototype.set("damage_taken", 10)
+	prototype.set("objective_completed", true)
 	var result_preview: Dictionary = prototype.call("get_arena_result_preview", 0)
 	assert_eq(String(result_preview.get("source", "")), "fps_arena", "FPS payout previews should identify the arena source.")
 	assert_eq(String(result_preview.get("outcome", "")), "win", "FPS payout previews should include a win outcome.")
+	assert_eq(String(result_preview.get("objective_mode", "")), "extract", "FPS payout previews should carry the objective mode.")
+	assert_true(bool(result_preview.get("objective_completed", false)), "FPS payout previews should carry objective completion.")
 	assert_true(int(result_preview.get("objective_score", 0)) > 0, "FPS payout previews should include objective scoring.")
 	assert_eq(String((result_preview.get("selected_reward", {}) as Dictionary).get("label", "")), "Damage Payout", "FPS payout previews should include the selected reward.")
 	assert_true(int(result_preview.get("chips_awarded", 0)) >= 10, "FPS payout previews should calculate a useful chip award.")

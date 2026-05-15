@@ -16,6 +16,8 @@ signal hit_confirmed(position: Vector3, damage: int, critical: bool, defeated: b
 @export var base_spread_degrees := 0.20
 @export var moving_spread_degrees := 0.58
 @export var sustained_spread_degrees := 0.88
+@export var hipfire_spread_multiplier := 3.15
+@export var infinite_test_ammo := true
 @export var recoil_recovery := 12.0
 @export var viewmodel_recovery := 14.0
 
@@ -34,9 +36,13 @@ var viewmodel_root: Node3D
 var muzzle: Marker3D
 var shell_eject: Marker3D
 var magazine: MeshInstance3D
+var firing_hand: MeshInstance3D
+var support_hand: MeshInstance3D
 var base_position := Vector3(0.46, -0.42, -0.88)
 var ads_position := Vector3(0.0, -0.19, -0.74)
 var magazine_base_position := Vector3.ZERO
+var support_hand_base_position := Vector3.ZERO
+var support_hand_base_rotation := Vector3.ZERO
 var recoil_position := Vector3.ZERO
 var recoil_rotation := Vector3.ZERO
 var ads_blend := 0.0
@@ -82,7 +88,7 @@ var recoil_pattern: Array[Vector2] = [
 func _ready() -> void:
 	rng.randomize()
 	ammo = magazine_size
-	reserve = reserve_ammo
+	reserve = 999 if infinite_test_ammo else reserve_ammo
 	if camera == null:
 		camera = get_parent() as Camera3D
 	_build_viewmodel()
@@ -122,11 +128,15 @@ func try_fire() -> bool:
 	if fire_timer > 0.0:
 		return false
 	if ammo <= 0:
-		try_reload()
-		_play_dry_punch()
-		return false
+		if infinite_test_ammo:
+			ammo = magazine_size
+		else:
+			try_reload()
+			_play_dry_punch()
+			return false
 
-	ammo -= 1
+	if not infinite_test_ammo:
+		ammo -= 1
 	fire_timer = fire_interval * overclock_interval_scalar
 	if time_since_last_shot > 0.35:
 		shot_index = 0
@@ -168,7 +178,9 @@ func try_fire() -> bool:
 
 
 func try_reload() -> bool:
-	if reloading or ammo >= magazine_size or reserve <= 0:
+	if reloading or ammo >= magazine_size:
+		return false
+	if not infinite_test_ammo and reserve <= 0:
 		return false
 	reloading = true
 	reload_timer = reload_time
@@ -183,7 +195,7 @@ func force_ready() -> void:
 	reload_timer = 0.0
 	reloading = false
 	ammo = magazine_size
-	reserve = reserve_ammo
+	reserve = 999 if infinite_test_ammo else reserve_ammo
 	state_changed.emit(ammo, reserve, reloading)
 
 
@@ -196,7 +208,7 @@ func configure_from_bridge(weapon_profile: Dictionary, total_ammo: int = -1) -> 
 		var fire_rate := float(weapon_profile.get("fire_rate", 0.0))
 		if fire_rate > 0.0:
 			fire_interval = 1.0 / fire_rate
-	if total_ammo >= 0:
+	if total_ammo >= 0 and not infinite_test_ammo:
 		reserve_ammo = maxi(0, total_ammo - magazine_size)
 	force_ready()
 
@@ -219,11 +231,20 @@ func get_ammo_state() -> Dictionary:
 		"reserve": reserve,
 		"magazine_size": magazine_size,
 		"reloading": reloading,
+		"infinite_ammo": infinite_test_ammo,
 		"reload_progress": 1.0 - clampf(reload_timer / reload_time, 0.0, 1.0) if reloading else 1.0
 	}
 
 
 func _finish_reload() -> void:
+	if infinite_test_ammo:
+		ammo = magazine_size
+		reserve = maxi(reserve, 999)
+		reloading = false
+		shot_index = 0
+		state_changed.emit(ammo, reserve, reloading)
+		return
+
 	var needed := magazine_size - ammo
 	var loaded := mini(needed, reserve)
 	ammo += loaded
@@ -249,7 +270,7 @@ func _get_shot_direction() -> Vector3:
 	var spread := base_spread_degrees
 	spread += moving_spread_degrees * speed_ratio
 	spread += sustained_spread_degrees * sustained
-	spread *= ads_spread_multiplier
+	spread *= ads_spread_multiplier * _get_hipfire_spread_multiplier()
 	var random_offset := Vector2(
 		rng.randf_range(-spread, spread),
 		rng.randf_range(-spread, spread)
@@ -281,14 +302,23 @@ func _get_recoil_pattern_value() -> Vector2:
 
 
 func _get_ads_recoil_scalar() -> float:
-	if player != null and player.has_method("is_ads_active") and bool(player.call("is_ads_active")):
+	if _is_ads_active():
 		return 0.68
 	return 1.0
 
 
+func _get_hipfire_spread_multiplier() -> float:
+	return 1.0 if _is_ads_active() else hipfire_spread_multiplier
+
+
+func _is_ads_active() -> bool:
+	return player != null and player.has_method("is_ads_active") and bool(player.call("is_ads_active"))
+
+
 func _apply_recoil(critical: bool) -> void:
 	var pattern := _get_recoil_pattern_value()
-	var recoil_scalar := _get_ads_recoil_scalar()
+	var hipfire_recoil_scalar := 1.12 if not _is_ads_active() else 1.0
+	var recoil_scalar := _get_ads_recoil_scalar() * hipfire_recoil_scalar
 	var yaw := deg_to_rad((pattern.x + rng.randf_range(-0.025, 0.025)) * recoil_scalar)
 	var pitch := deg_to_rad(pattern.y * recoil_scalar)
 	if critical:
@@ -303,6 +333,8 @@ func _apply_recoil(critical: bool) -> void:
 	recoil_rotation += Vector3(deg_to_rad(2.6), yaw * 1.8, deg_to_rad(rng.randf_range(-1.8, 1.8))) * visual_scalar
 	if muzzle != null:
 		_spawn_muzzle_flash()
+	if shell_eject != null:
+		_spawn_casing()
 
 
 func _play_dry_punch() -> void:
@@ -337,6 +369,12 @@ func _recover_viewmodel(delta: float) -> void:
 		var mag_drop := sin(progress * PI)
 		magazine.position = magazine_base_position + Vector3(0.0, -0.18 * mag_drop, 0.05 * mag_drop)
 		magazine.rotation.x = deg_to_rad(-16.0 * mag_drop)
+	if support_hand != null:
+		var progress := _get_reload_progress()
+		var grab_curve := sin(progress * PI)
+		var seat_curve := sin(clampf((progress - 0.35) / 0.65, 0.0, 1.0) * PI)
+		support_hand.position = support_hand_base_position + Vector3(0.105, -0.105, 0.235) * grab_curve + Vector3(0.0, -0.035, -0.08) * seat_curve
+		support_hand.rotation = support_hand_base_rotation + Vector3(deg_to_rad(-18.0), deg_to_rad(6.0), deg_to_rad(22.0)) * grab_curve
 
 
 func _get_reload_progress() -> float:
@@ -372,6 +410,49 @@ func _spawn_muzzle_flash() -> void:
 	)
 
 
+func _spawn_casing() -> void:
+	var parent := get_tree().current_scene
+	if parent == null:
+		return
+
+	var casing := MeshInstance3D.new()
+	casing.name = "EjectedCasing"
+	var mesh := CylinderMesh.new()
+	mesh.top_radius = 0.016
+	mesh.bottom_radius = 0.016
+	mesh.height = 0.075
+	mesh.radial_segments = 10
+	casing.mesh = mesh
+	casing.material_override = _make_viewmodel_material(Color(0.96, 0.66, 0.28), 0.75, 0.26)
+	casing.rotation = Vector3(0.0, 0.0, deg_to_rad(90.0))
+	parent.add_child(casing)
+	casing.global_position = shell_eject.global_position
+
+	var right := shell_eject.global_basis.x
+	var up := shell_eject.global_basis.y
+	var forward := -shell_eject.global_basis.z
+	if camera != null:
+		right = camera.global_basis.x
+		up = camera.global_basis.y
+		forward = -camera.global_basis.z
+	var start := casing.global_position
+	var target := start + right * rng.randf_range(0.34, 0.48) + up * rng.randf_range(0.11, 0.20) + forward * rng.randf_range(-0.05, 0.08)
+	var tumble := Vector3(
+		deg_to_rad(rng.randf_range(320.0, 520.0)),
+		deg_to_rad(rng.randf_range(160.0, 300.0)),
+		deg_to_rad(rng.randf_range(260.0, 440.0))
+	)
+	var tween := create_tween()
+	tween.set_parallel(true)
+	tween.tween_property(casing, "global_position", target, 0.30).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tween.tween_property(casing, "rotation", casing.rotation + tumble, 0.30)
+	tween.chain().tween_property(casing, "transparency", 1.0, 0.18)
+	tween.chain().tween_callback(func() -> void:
+		if is_instance_valid(casing):
+			casing.queue_free()
+	)
+
+
 func _build_viewmodel() -> void:
 	viewmodel_root = Node3D.new()
 	viewmodel_root.name = "ViewmodelRoot"
@@ -382,28 +463,33 @@ func _build_viewmodel() -> void:
 	var bone := _make_viewmodel_material(Color(0.88, 0.80, 0.64), 0.18, 0.68)
 	var grip := _make_viewmodel_material(Color(0.29, 0.12, 0.08), 0.05, 0.72)
 
-	_add_box(viewmodel_root, "Receiver", Vector3(0.0, 0.0, 0.0), Vector3(0.24, 0.14, 0.28), iron)
-	_add_box(viewmodel_root, "TopRail", Vector3(0.0, 0.082, -0.045), Vector3(0.22, 0.034, 0.30), brass)
-	_add_box(viewmodel_root, "Barrel", Vector3(0.0, 0.012, -0.33), Vector3(0.078, 0.078, 0.44), iron)
-	_add_box(viewmodel_root, "MuzzleBlock", Vector3(0.0, 0.012, -0.59), Vector3(0.12, 0.10, 0.065), brass)
-	_add_box(viewmodel_root, "RearSightLeft", Vector3(-0.052, 0.142, 0.075), Vector3(0.025, 0.080, 0.026), iron)
-	_add_box(viewmodel_root, "RearSightRight", Vector3(0.052, 0.142, 0.075), Vector3(0.025, 0.080, 0.026), iron)
-	_add_box(viewmodel_root, "FrontSightPost", Vector3(0.0, 0.150, -0.535), Vector3(0.020, 0.095, 0.020), iron)
-	_add_box(viewmodel_root, "FrontSightBase", Vector3(0.0, 0.098, -0.535), Vector3(0.106, 0.030, 0.040), brass)
-	magazine = _add_box(viewmodel_root, "Magazine", Vector3(0.0, -0.150, -0.010), Vector3(0.125, 0.230, 0.115), iron, Vector3(deg_to_rad(-3.0), 0.0, 0.0))
+	_add_box(viewmodel_root, "Receiver", Vector3(0.0, 0.0, -0.035), Vector3(0.255, 0.145, 0.34), iron)
+	_add_box(viewmodel_root, "TopRail", Vector3(0.0, 0.084, -0.120), Vector3(0.225, 0.033, 0.50), brass)
+	_add_box(viewmodel_root, "Handguard", Vector3(0.0, -0.006, -0.365), Vector3(0.205, 0.118, 0.35), iron)
+	_add_box(viewmodel_root, "Barrel", Vector3(0.0, 0.014, -0.600), Vector3(0.066, 0.066, 0.40), iron)
+	_add_box(viewmodel_root, "MuzzleBlock", Vector3(0.0, 0.014, -0.835), Vector3(0.115, 0.092, 0.070), brass)
+	_add_box(viewmodel_root, "StockHint", Vector3(0.0, -0.010, 0.205), Vector3(0.18, 0.10, 0.20), grip, Vector3(deg_to_rad(3.0), 0.0, 0.0))
+	_add_box(viewmodel_root, "RearSightLeft", Vector3(-0.052, 0.146, 0.090), Vector3(0.025, 0.080, 0.026), iron)
+	_add_box(viewmodel_root, "RearSightRight", Vector3(0.052, 0.146, 0.090), Vector3(0.025, 0.080, 0.026), iron)
+	_add_box(viewmodel_root, "FrontSightPost", Vector3(0.0, 0.154, -0.680), Vector3(0.020, 0.098, 0.020), iron)
+	_add_box(viewmodel_root, "FrontSightBase", Vector3(0.0, 0.101, -0.680), Vector3(0.110, 0.030, 0.044), brass)
+	magazine = _add_box(viewmodel_root, "Magazine", Vector3(0.010, -0.168, -0.020), Vector3(0.135, 0.255, 0.118), iron, Vector3(deg_to_rad(-5.0), 0.0, deg_to_rad(-2.0)))
 	magazine_base_position = magazine.position
-	_add_box(viewmodel_root, "Grip", Vector3(0.075, -0.17, 0.08), Vector3(0.095, 0.24, 0.105), grip, Vector3(0.0, 0.0, deg_to_rad(-10.0)))
-	_add_box(viewmodel_root, "Guard", Vector3(-0.09, -0.064, 0.035), Vector3(0.055, 0.095, 0.09), bone)
-	_add_box(viewmodel_root, "Hand", Vector3(0.19, -0.16, -0.12), Vector3(0.14, 0.095, 0.18), bone)
+	_add_box(viewmodel_root, "Grip", Vector3(0.078, -0.172, 0.084), Vector3(0.098, 0.248, 0.108), grip, Vector3(0.0, 0.0, deg_to_rad(-10.0)))
+	_add_box(viewmodel_root, "Guard", Vector3(-0.092, -0.064, 0.038), Vector3(0.055, 0.095, 0.09), bone)
+	firing_hand = _add_box(viewmodel_root, "FiringHand", Vector3(0.205, -0.168, -0.060), Vector3(0.145, 0.096, 0.180), bone, Vector3(0.0, deg_to_rad(-3.0), 0.0))
+	support_hand = _add_box(viewmodel_root, "SupportHand", Vector3(-0.145, -0.117, -0.360), Vector3(0.155, 0.090, 0.205), bone, Vector3(0.0, deg_to_rad(5.0), deg_to_rad(-6.0)))
+	support_hand_base_position = support_hand.position
+	support_hand_base_rotation = support_hand.rotation
 
 	muzzle = Marker3D.new()
 	muzzle.name = "Muzzle"
-	muzzle.position = Vector3(0.0, 0.012, -0.67)
+	muzzle.position = Vector3(0.0, 0.014, -0.890)
 	viewmodel_root.add_child(muzzle)
 
 	shell_eject = Marker3D.new()
 	shell_eject.name = "ShellEject"
-	shell_eject.position = Vector3(-0.18, 0.08, -0.08)
+	shell_eject.position = Vector3(0.178, 0.080, -0.085)
 	viewmodel_root.add_child(shell_eject)
 
 

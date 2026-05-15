@@ -28,6 +28,16 @@ func _verify_menu_scene() -> void:
 		_fail("Main menu should expose Card Prep With Sample Hand.")
 	if menu.find_child("SlottedFPSButton", true, false) == null:
 		_fail("Main menu should expose FPS With Slotted Weapon.")
+	if menu.find_child("HoldPotTestButton", true, false) == null:
+		_fail("Main menu should expose Hold Pot Test.")
+	if menu.find_child("ExtractTestButton", true, false) == null:
+		_fail("Main menu should expose Extract Test.")
+	if menu.find_child("DuelTestButton", true, false) == null:
+		_fail("Main menu should expose Duel Test.")
+	if menu.find_child("DefendTestButton", true, false) == null:
+		_fail("Main menu should expose Defend Test.")
+	if menu.find_child("BossGateTestButton", true, false) == null:
+		_fail("Main menu should expose Boss Gate Test.")
 	if menu.find_child("PayoutDemoButton", true, false) == null:
 		_fail("Main menu should expose FPS Return Payout.")
 	if menu.find_child("DefeatDemoButton", true, false) == null:

@@ -63,6 +63,8 @@ Current FPS ability contract:
 - Settings include one-click `Default FPS`, `Tactical`, `Controller`, and `Left-Handed` presets.
 - The FPS HUD includes a lower card-power rail so weapon, chip/armor/ammo economy, and the first four slotted ability cards stay visible during live combat.
 - Card-power HUD slots now include cooldown bars and pulse when a slotted card ability fires, so the card layer feels active during the shooter fight.
+- The HUD should stay compact: a slim top strip for health/ammo/wave/objective, a small bottom card rail for weapon/economy/abilities, and no large duplicate text blocks during live aiming.
+- Player identity is now separate from card loadout. Starter class profiles include `Gambler-Knight`, `Hex Sharpshooter`, and `Blood Wager`; classes grant passives such as entry armor or ability cooldown scaling while cards still define the round-specific powers.
 - FPS enemies now carry visible combat roles, status tags, attack windup rings, shield plates for guards, and incoming projectiles for ranged shots instead of invisible instant hits.
 - The FPS arena now has authored staging pieces: energy rails, spawn portals, an objective chip pot, cover silhouettes, wall signage, short-lived impact decals, and framed HUD panels so the battlefield reads as a competitive table-ritual combat space before custom art arrives.
 - The dev hub includes shortcuts for raw FPS sandbox, seeded FPS loadout, card prep, seeded return payout, and seeded defeat return so this loop can be tested without replaying the whole run.

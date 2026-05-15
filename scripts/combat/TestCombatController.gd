@@ -2238,7 +2238,12 @@ func _get_arena_payout_text(result: Dictionary) -> String:
 	var headline := "[b]%s[/b]" % reward_label
 	var economy_line := "+%d Chips | %s | Draw %d next-hand cards" % [chips, reward_line, cards_to_draw] if cleared else "Defeat | %d kills | %d damage taken" % [int(result.get("kills", 0)), int(result.get("damage_taken", 0))]
 	var effects_line := "Effects: %s" % _join_string_array(pending_arena_effect_lines, " | ") if not pending_arena_effect_lines.is_empty() else "Effects: none"
-	return "%s\n%s\n%s\n%s Wave %d: %d kills, %.0f%% hit rate, %.1fs, objective %d." % [
+	var objective_line := "%s %s: %d" % [
+		String(result.get("objective_label", "Objective")),
+		"complete" if bool(result.get("objective_completed", false)) else ("failed" if bool(result.get("objective_failed", false)) else "partial"),
+		int(result.get("objective_score", 0))
+	]
+	return "%s\n%s\n%s\n%s Wave %d: %d kills, %.0f%% hit rate, %.1fs, %s." % [
 		headline,
 		economy_line,
 		effects_line,
@@ -2247,7 +2252,7 @@ func _get_arena_payout_text(result: Dictionary) -> String:
 		int(result.get("kills", 0)),
 		hit_rate,
 		clear_time,
-		int(result.get("objective_score", 0))
+		objective_line
 	]
 
 
@@ -2297,6 +2302,9 @@ func _apply_arena_payout_effects(result: Dictionary) -> Array[String]:
 		_:
 			effects.append("Chip payout banked")
 	var objective_score := int(result.get("objective_score", 0))
+	if bool(result.get("objective_completed", false)):
+		shooter_chips += 1
+		effects.append("%s objective +1 Chip" % String(result.get("objective_label", "Arena")))
 	if objective_score >= 90:
 		shooter_chips += 2
 		effects.append("Objective bonus +2 Chips")
@@ -2733,12 +2741,41 @@ func _build_combat_bridge_payload() -> Dictionary:
 		"wager_cards": wager_cards,
 		"loadout": loadout,
 		"economy": economy,
+		"objective_mode": _get_loadout_objective_mode(),
 		"payout_bonuses": _get_arena_bonus_snapshot(),
 		"reads": {
 			"target_enemy": _get_selected_enemy_target_id(),
 			"threat": _get_enemy_intent_line(_get_selected_enemy_target_id())
 		}
 	}
+
+
+func _get_loadout_objective_mode() -> String:
+	var has_move := false
+	var has_guard := false
+	var has_read := false
+	var has_ritual := false
+	for card in loadout_slots.values():
+		if not (card is Resource):
+			continue
+		match _get_card_vfx_style(card):
+			&"move":
+				has_move = true
+			&"guard":
+				has_guard = true
+			&"read", &"trap":
+				has_read = true
+			&"ritual":
+				has_ritual = true
+	if has_ritual:
+		return "boss_gate"
+	if has_read:
+		return "duel"
+	if has_guard:
+		return "defend"
+	if has_move:
+		return "extract"
+	return "hold_pot"
 
 
 func _get_shooter_card_payload(card: Resource, slot_id: String) -> Dictionary:
