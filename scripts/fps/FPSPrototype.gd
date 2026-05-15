@@ -774,13 +774,13 @@ func _spawn_ability_ring(position: Vector3, color: Color, radius: float) -> void
 	label.outline_size = 8
 	label.outline_modulate = Color(0.02, 0.01, 0.01, 0.90)
 	label.modulate = color
-	label.global_position = position + Vector3(0.0, 0.72, 0.0)
+	label.position = position + Vector3(0.0, 0.72, 0.0)
 	effects_root.add_child(label)
 	var tween := create_tween()
 	tween.set_parallel(true)
 	tween.tween_property(ring, "scale", Vector3(1.35, 1.35, 1.35), 0.28).from(Vector3(0.3, 0.3, 0.3))
 	tween.tween_property(ring, "transparency", 1.0, 0.42)
-	tween.tween_property(label, "global_position", label.global_position + Vector3(0.0, 0.34, 0.0), 0.42)
+	tween.tween_property(label, "position", label.position + Vector3(0.0, 0.34, 0.0), 0.42)
 	tween.tween_property(label, "modulate:a", 0.0, 0.42).set_delay(0.10)
 	tween.chain().tween_callback(func() -> void:
 		if is_instance_valid(ring):
@@ -1243,12 +1243,13 @@ func _build_objective_props() -> void:
 	var label := Label3D.new()
 	label.name = "ObjectiveLabel"
 	label.text = "ANTE POT"
-	label.font_size = 42
+	label.font_size = 24
+	label.pixel_size = 0.010
 	label.modulate = Color(1.0, 0.80, 0.34)
 	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	label.outline_size = 9
+	label.outline_size = 5
 	label.outline_modulate = Color(0.02, 0.01, 0.01, 0.92)
-	label.position = Vector3(0.0, 1.15, 0.0)
+	label.position = Vector3(0.0, 0.90, 0.0)
 	objective.add_child(label)
 	_refresh_objective_mode_props()
 
@@ -1291,12 +1292,13 @@ func _add_objective_mode_marker(parent: Node3D, position: Vector3, radius: float
 	var label := Label3D.new()
 	label.name = "%sObjectiveLabel" % text.capitalize().replace(" ", "")
 	label.text = text
-	label.font_size = 38
+	label.font_size = 18 if text.length() > 4 else 22
+	label.pixel_size = 0.0075
 	label.modulate = color
 	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	label.outline_size = 9
+	label.outline_size = 5
 	label.outline_modulate = Color(0.02, 0.01, 0.01, 0.92)
-	label.position = position + Vector3(0.0, 1.55, 0.0)
+	label.position = position + Vector3(0.0, 0.88, 0.0)
 	parent.add_child(label)
 
 
@@ -1600,10 +1602,10 @@ func _build_ui() -> void:
 	telemetry_label = Label.new()
 	telemetry_label.name = "TelemetryLabel"
 	telemetry_label.anchor_left = 0.035
-	telemetry_label.anchor_top = 0.90
+	telemetry_label.anchor_top = 0.795
 	telemetry_label.anchor_right = 0.965
-	telemetry_label.anchor_bottom = 0.96
-	telemetry_label.add_theme_font_size_override("font_size", 13)
+	telemetry_label.anchor_bottom = 0.825
+	telemetry_label.add_theme_font_size_override("font_size", 11)
 	telemetry_label.add_theme_color_override("font_color", Color(0.78, 0.84, 0.86, 0.88))
 	hud_root.add_child(telemetry_label)
 

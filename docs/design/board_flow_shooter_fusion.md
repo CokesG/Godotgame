@@ -349,13 +349,16 @@ Done in the prototype:
 11. Let slotted card style recommend an FPS objective: movement pushes Extract, guard pushes Defend, read/trap pushes Duel, ritual pushes Boss Gate, and default loadouts hold the pot.
 12. Show objective-aware hand badges, selected-card reasoning, payout bias, and an auto-slot `Recommend Loadout` action on the prep table.
 13. Give FPS payout choices objective-authored names/effects so reward selection points the next loadout decision toward damage, armor, or ammo.
+14. Add class selection to the prep table and carry `hero_class` into the FPS arena/result payload.
+15. Mirror weapon/economy/ability cards into a compact in-FPS card HUD with icon-like slots, cooldown bars, and screenshot QA coverage.
 
 Next implementation steps:
 
 1. Promote authored payout bonuses into real reward cards/mods with art, names, rarity, and deck/run history entries.
 2. Add wound, card XP, card mutation, and upgrade events to the run history.
-3. Collapse or mirror the board into an in-FPS combat HUD with card ability icons and cooldowns.
-4. Add escort and multi-stage boss variants after the five first objective modes feel good.
+3. Make the class selector affect the starting hand/deck, not just the arena passive.
+4. Replace prototype ability labels with final card-power icons/frames and class-colored VFX.
+5. Add escort and multi-stage boss variants after the five first objective modes feel good.
 
 ## Design Rule
 
