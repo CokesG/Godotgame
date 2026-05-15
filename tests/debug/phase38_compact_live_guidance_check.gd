@@ -73,8 +73,8 @@ func _verify_live_compact_mode(combat_scene: Node) -> void:
 		_fail("Expected detailed guidance nodes to still exist.")
 		return
 
-	if not bool(chip_row.get("visible")):
-		_fail("Live state chips should remain visible during combat.")
+	if bool(chip_row.get("visible")):
+		_fail("Live state chips should stay hidden in compact combat so the arena and hand fit.")
 		return
 	if not String(phase_chip.get("text")).contains("PHASE"):
 		_fail("Phase chip should compactly show the current phase.")
@@ -90,7 +90,7 @@ func _verify_live_compact_mode(combat_scene: Node) -> void:
 		_fail("Long first-play text should collapse during live compact combat.")
 		return
 	if bool(turn_status.get("visible")) or bool(card_hint.get("visible")) or bool(feedback_feed.get("visible")):
-		_fail("Detailed live readouts should collapse while compact chips teach the state.")
+		_fail("Detailed live readouts should collapse while the hand status teaches the state.")
 
 
 func _verify_commit_chips(combat_scene: Node) -> void:

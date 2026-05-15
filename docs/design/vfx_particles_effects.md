@@ -1,7 +1,7 @@
 # Dead Man's Ante - VFX, Particles, And Effects Guide
 
-Status: prototype VFX plan and Phase 45 source assets wired
-Last updated: 2026-05-13
+Status: generated PNG sprite strips wired
+Last updated: 2026-05-14
 Companion art guide: `docs/design/ui_ux_asset_generation.md`
 
 ## Goal
@@ -29,7 +29,7 @@ The first reusable VFX layer is `res://scripts/vfx/CombatVFX.gd`.
 
 It is wired into `res://scripts/combat/TestCombatController.gd` as a full-screen overlay named `CombatVFX`.
 
-Current procedural effects:
+Current hybrid effects:
 
 | Effect | Runtime Use |
 | --- | --- |
@@ -44,9 +44,81 @@ Current procedural effects:
 | `play_button_sheen_on` | Dominant action button hover/press sheen |
 | `play_chip_burst_on` | Raise/call/bluff wager feedback |
 | `play_curse_smoke_on` | Face-down commit, fold, trap, curse, ritual feedback |
+| `play_ritual_glow_on` | Ritual-card glow and occult table pulse |
 | `play_intent_flicker_on` | Intent reveal/call uncertainty feedback |
 
 Card views also have local hover feedback in `res://scripts/ui/CardView.gd`, and grid cells pulse their active target state in `res://scripts/grid/GridCellView.gd`.
+
+## Generated PNG Sprite Strips
+
+Phase 54 adds transparent PNG sprite strips under `res://art/game/vfx/generated/`:
+
+```text
+vfx_slash_strip.png          6 frames, 192x96 each
+vfx_smoke_strip.png          6 frames, 128x128 each
+vfx_chip_scatter_strip.png   6 frames, 128x128 each
+vfx_ritual_glow_strip.png    6 frames, 128x128 each
+vfx_guard_shield_strip.png   6 frames, 128x128 each
+vfx_blood_hit_strip.png      6 frames, 128x128 each
+vfx_death_ash_strip.png      6 frames, 128x128 each
+vfx_card_burn_strip.png      6 frames, 128x128 each
+```
+
+`CombatVFX.gd` loads these through `SPRITE_STRIPS` and animates them with `AtlasTexture` frame regions. The existing procedural particles remain as secondary sparks, so the sprite strips carry the readable shape while the particles keep the hit feeling lively.
+
+Use this pattern for future sprite strips:
+
+- horizontal strip
+- transparent PNG
+- no text
+- 6 to 8 frames for fast combat beats
+- one visual idea per strip
+- keep frame sizes power-of-two friendly when possible
+
+## VFX Showcase Scene
+
+`res://scenes/debug/VFXShowcase.tscn` is the review table for combat effects. It creates dummy cards and dummy targets, attaches `CombatVFX`, and loops the current core beats:
+
+- card arc
+- slash
+- blood hit
+- guard shield
+- chip scatter
+- curse smoke
+- ritual glow
+- card burn
+- death ash
+- target-card-to-pawn link
+
+Use this scene before tuning combat timing. It is faster than playing through a full hand and makes scale/timing regressions obvious.
+
+## First SFX Layer
+
+Phase 57 adds generated WAV one-shots under `res://audio/sfx/generated/`:
+
+```text
+sfx_card_flick.wav
+sfx_chip_clack.wav
+sfx_slash_hit.wav
+sfx_guard_shimmer.wav
+sfx_smoke_whoosh.wav
+sfx_ritual_hum.wav
+sfx_card_burn.wav
+sfx_ash_fall.wav
+```
+
+`CombatVFX.gd` owns a small `AudioStreamPlayer` pool and loads these WAVs directly into `AudioStreamWAV` so the generated files work without waiting for editor import metadata. The sound layer is intentionally short and dry; it should reinforce click response and impact timing without becoming music.
+
+Current sound mapping:
+
+- card fly/burst -> card flick
+- chip burst -> chip clack
+- slash/blood -> slash hit
+- guard pulse -> guard shimmer
+- smoke -> smoke whoosh
+- ritual -> ritual hum
+- card burn -> burn crackle
+- ash/death -> ash fall
 
 ## Style Lock
 
@@ -103,11 +175,9 @@ Phase 45 added these source assets:
 
 Recommended next art wiring when we want polish:
 
-- Import the particle atlas as texture regions for blood, ash, chip glint, smoke puff, shield shard, poison mote, and ghost flame particles.
-- Swap procedural slash lines to the slash strip.
-- Animate the ritual-circle draw sprite.
-- Apply the burn/dissolve mask to exhaust and defeat beats.
-- Optional transparent Remotion-rendered sprite sheet for premium chip scatter, smoke curl, and ritual-circle draw timing.
+- Import the particle atlas as texture regions for blood, ash, shield shard, poison mote, and ghost flame particles.
+- Promote the current sprite-strip helper into a reusable VFX timing table if more than eight strips are added.
+- Optional transparent Remotion-rendered sprite sheet for premium chip scatter, smoke curl, ritual-circle draw timing, and card burn timing.
 
 Keep these assets text-free and style-matched to `art/generated_raw/style_anchor_batch_001.png`.
 
@@ -196,3 +266,20 @@ No modern neon casino, no sci-fi, no photorealism, no fake text, no watermark, n
 - Guard pulse exists.
 - Card discard movement is still future work after the hand-to-target travel beat.
 - Intent reveal flicker exists.
+
+## Live Battlefield Guidance
+
+The battle screen should teach from inside the arena, not from distant debug panels.
+
+- The arena owns the next-action callout: target, play a glowing card, resolve, then read aftermath.
+- Enemy cards must describe fighters, not abstract names. Example: `Skulker` is shown as `Knife Duelist`; `Shieldbearer` is shown as `Shield Guard`.
+- Empty cells should avoid coordinate labels in normal play. Use `MOVE`, `HERE`, `YOU`, and enemy/fighter names instead.
+- The side enemy cards are target selectors; the board is the fight. Keep the board visually larger than the side panel.
+- Resolve should have a pre-beat before the phase advances: pulse the battlefield callout, lock the target, ring the target pawn, then let card/enemy VFX and SFX answer.
+
+Current implementation notes:
+
+- `BattlefieldCallout` is layered over `TableStage` so guidance appears on the battlefield itself.
+- `BattlefieldFocus` summarizes current target, role, likely intent, and next action.
+- `EnemyTargetCards` use `CURRENT TARGET` / `CLICK TO AIM` copy and fighter-role descriptions.
+- `HandView` keeps a fanned, physical hand pose even in compact combat.

@@ -100,14 +100,23 @@ func _refresh() -> void:
 	var rules_text := _shorten_rules_text(String(card_resource.get("rules_text")))
 	var type_label := _get_card_type_label()
 	var target_label := _get_target_label()
-	text = "%s\nCost %d | %s\nTarget: %s\n%s\n%s" % [
-		card_name,
-		cost,
-		type_label,
-		target_label,
-		rules_text,
-		_get_tag_line()
-	]
+	if compact_mode:
+		text = "%s\nCost %d | %s\nTarget: %s\n%s" % [
+			card_name,
+			cost,
+			type_label,
+			target_label,
+			_shorten_rules_text(rules_text, 34)
+		]
+	else:
+		text = "%s\nCost %d | %s\nTarget: %s\n%s\n%s" % [
+			card_name,
+			cost,
+			type_label,
+			target_label,
+			rules_text,
+			_get_tag_line()
+		]
 	icon = _get_card_illustration_texture() if _should_load_runtime_art() else null
 	expand_icon = icon != null
 	icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -140,7 +149,7 @@ func _refresh() -> void:
 
 
 func _apply_compact_metrics() -> void:
-	custom_minimum_size = Vector2(150, 146) if compact_mode else Vector2(168, 188)
+	custom_minimum_size = Vector2(154, 154) if compact_mode else Vector2(190, 226)
 
 
 func play_feedback(color: Color) -> void:
@@ -159,7 +168,7 @@ func _animate_card_focus(active: bool) -> void:
 
 	pivot_offset = size * 0.5 if size != Vector2.ZERO else custom_minimum_size * 0.5
 	z_index = 12 if active else 0
-	var target_scale := Vector2(1.08, 1.08) if active else Vector2.ONE
+	var target_scale := Vector2(1.13, 1.13) if active else Vector2.ONE
 	var target_rotation := -2.0 if active else 0.0
 	hover_tween = create_tween()
 	hover_tween.set_parallel(true)
@@ -247,10 +256,10 @@ func _should_load_runtime_art() -> bool:
 	return DisplayServer.get_name() != "headless"
 
 
-func _shorten_rules_text(rules_text: String) -> String:
-	if rules_text.length() <= 58:
+func _shorten_rules_text(rules_text: String, max_length: int = 58) -> String:
+	if rules_text.length() <= max_length:
 		return rules_text
-	return "%s..." % rules_text.substr(0, 55)
+	return "%s..." % rules_text.substr(0, max(0, max_length - 3))
 
 
 func _get_card_type_color() -> Color:

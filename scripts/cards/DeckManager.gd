@@ -96,6 +96,19 @@ func play_card_at(hand_index: int) -> bool:
 	return true
 
 
+func burn_card_at(hand_index: int) -> Resource:
+	if hand_index < 0 or hand_index >= hand.size():
+		log_requested.emit("Cannot burn card at hand index %d." % hand_index)
+		return null
+
+	var card: Resource = hand[hand_index]
+	hand.remove_at(hand_index)
+	exhaust_pile.append(card)
+	log_requested.emit("Burned %s." % _get_card_name(card))
+	_emit_state()
+	return card
+
+
 func commit_card_at(hand_index: int) -> Resource:
 	if committed_card != null:
 		log_requested.emit("A card is already committed face-down.")

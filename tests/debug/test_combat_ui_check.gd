@@ -38,8 +38,8 @@ func _ready() -> void:
 	if start_run_button == null:
 		_fail("Expected StartRunButton for Phase 15 run start.")
 		return
-	if String(start_run_button.get("text")) != "Open Opening Table":
-		_fail("StartRunButton should clearly open the first table.")
+	if not String(start_run_button.get("text")).contains("DEAL IN"):
+		_fail("StartRunButton should clearly deal into the first table.")
 		return
 
 	var shell_export_button := combat_scene.find_child("ShellExportButton", true, false)
@@ -183,8 +183,8 @@ func _ready() -> void:
 	if run_path_preview == null:
 		_fail("Expected RunPathPreview for Phase 26 selected-table preview.")
 		return
-	if bool(run_path_buttons.get("visible")) or bool(run_path_preview.get("visible")):
-		_fail("Detailed map controls should stay hidden until the first table opens.")
+	if not bool(run_path_buttons.get("visible")) or bool(run_path_preview.get("visible")):
+		_fail("Opening route chips should be visible while detailed selected-table preview stays hidden.")
 		return
 
 	var reward_prompt := combat_scene.find_child("RewardPrompt", true, false)

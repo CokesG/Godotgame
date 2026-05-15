@@ -11,7 +11,9 @@ var compact_mode: bool = false
 
 
 func _ready() -> void:
+	size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_apply_compact_metrics()
+	_apply_hand_pose.call_deferred()
 
 
 func set_cards(cards: Array[Resource]) -> void:
@@ -28,6 +30,7 @@ func set_cards(cards: Array[Resource]) -> void:
 		card_view.connect("card_hovered", _on_card_hovered)
 		card_view.connect("card_unhovered", _on_card_unhovered)
 		add_child(card_view)
+	_apply_hand_pose.call_deferred()
 
 
 func set_compact_mode(value: bool) -> void:
@@ -38,10 +41,44 @@ func set_compact_mode(value: bool) -> void:
 	for child in get_children():
 		if child.has_method("set_compact_mode"):
 			child.call("set_compact_mode", compact_mode)
+	_apply_hand_pose.call_deferred()
 
 
 func _apply_compact_metrics() -> void:
-	add_theme_constant_override("separation", 6 if compact_mode else 8)
+	alignment = BoxContainer.ALIGNMENT_CENTER
+	add_theme_constant_override("separation", -28 if compact_mode else 10)
+
+
+func _apply_hand_pose() -> void:
+	var count := get_child_count()
+	if count <= 0:
+		return
+
+	var estimated_width := 0.0
+	for child in get_children():
+		if child is Control:
+			estimated_width += (child as Control).custom_minimum_size.x
+	if count > 1:
+		estimated_width += float(count - 1) * float(get_theme_constant("separation"))
+	var parent_control := get_parent() as Control
+	if parent_control != null and parent_control.size.x > 1.0:
+		custom_minimum_size.x = max(parent_control.size.x, estimated_width)
+
+	var center := float(count - 1) * 0.5
+	for index in range(count):
+		var child := get_child(index)
+		if not (child is Control):
+			continue
+		var control := child as Control
+		var distance_from_center := float(index) - center
+		if compact_mode:
+			control.rotation_degrees = clamp(distance_from_center * 5.0, -12.0, 12.0)
+			control.position.y = 10.0 + abs(distance_from_center) * 7.0
+			control.z_index = index + 4
+		else:
+			control.rotation_degrees = clamp(distance_from_center * 2.0, -5.0, 5.0)
+			control.position.y = abs(distance_from_center) * 4.0
+			control.z_index = 0
 
 
 func set_previewed_index(hand_index: int) -> void:
@@ -49,6 +86,7 @@ func set_previewed_index(hand_index: int) -> void:
 		var child := get_child(index)
 		if child.has_method("set_previewed"):
 			child.call("set_previewed", index == hand_index)
+	_apply_hand_pose.call_deferred()
 
 
 func set_card_playability(entries: Array[Dictionary]) -> void:

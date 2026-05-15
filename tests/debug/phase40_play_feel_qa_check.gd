@@ -37,21 +37,36 @@ func _verify_opening_cue(combat_scene: Node) -> void:
 	var cue_pip: Label = combat_scene.find_child("ActionCuePip", true, false)
 	var start_button: Button = combat_scene.find_child("StartRunButton", true, false)
 	var continue_button: Button = combat_scene.find_child("ContinueButton", true, false)
+	var opening_steps: Node = combat_scene.find_child("OpeningStepRow", true, false)
+	var run_path_buttons: Node = combat_scene.find_child("RunPathButtons", true, false)
+	var opening_prompt: Label = combat_scene.find_child("OpeningClickPrompt", true, false)
 	if cue_panel == null or cue_title == null or cue_detail == null or cue_pip == null:
 		_fail("Expected dealer-style ActionCuePanel with title, detail, and pip labels.")
 		return
-	if start_button == null or continue_button == null:
-		_fail("Expected opening and smart action buttons.")
+	if start_button == null or continue_button == null or opening_steps == null or run_path_buttons == null or opening_prompt == null:
+		_fail("Expected opening action, click prompt, step row, route chips, and smart action button.")
 		return
 
-	if not bool(cue_panel.get("visible")) or _get_text(cue_title) != "DEAL IN":
-		_fail("Opening screen should lead with a DEAL IN cue.")
+	if bool(cue_panel.get("visible")):
+		_fail("Opening screen should not duplicate the hero Deal In action with a second cue panel.")
 		return
-	if not _get_text(cue_detail).contains("Open Opening Table") or _get_text(cue_pip) != "OPEN":
-		_fail("Opening cue should point to Open Opening Table.")
+	if _get_text(cue_title) != "DEAL IN" or not _get_text(cue_detail).contains("Deal In") or _get_text(cue_pip) != "OPEN":
+		_fail("Opening cue data should still describe the Deal In action for later compact states.")
 		return
-	if start_button.custom_minimum_size.x < 220 or not start_button.tooltip_text.contains("Dominant next action"):
-		_fail("Opening table button should stay visually dominant.")
+	if not String(start_button.get("text")).contains("DEAL IN") or start_button.custom_minimum_size.x < 280 or not start_button.tooltip_text.contains("Deal"):
+		_fail("Deal In button should stay visually dominant and self-explanatory.")
+		return
+	if not bool(opening_prompt.get("visible")) or not String(opening_prompt.get("text")).contains("CLICK"):
+		_fail("Opening prompt should explicitly point at the click target.")
+		return
+	if not bool(opening_steps.get("visible")) or opening_steps.get_child_count() < 4:
+		_fail("Opening screen should show the four-step Deal In, Target, Card, Resolve path.")
+		return
+	if not String((opening_steps.get_child(0) as Button).get("text")).contains("DEAL IN"):
+		_fail("Opening step row should start with DEAL IN.")
+		return
+	if not bool(run_path_buttons.get("visible")) or run_path_buttons.get_child_count() < 5:
+		_fail("Opening route chips should be visible so the run feels like a route, not a form.")
 		return
 	if bool(continue_button.get("visible")):
 		_fail("ContinueButton should not compete with the opening cue.")
@@ -91,8 +106,8 @@ func _verify_commit_cue_and_action_focus(combat_scene: Node) -> void:
 	if not target_chip.tooltip_text.contains("Attack and read") or not card_step.tooltip_text.contains("Active step"):
 		_fail("Compact chips should keep target/card intent obvious.")
 		return
-	if not bool(live_chips.get("visible")):
-		_fail("Live state chips should remain visible with the dealer cue.")
+	if bool(live_chips.get("visible")):
+		_fail("Live state chips should stay collapsed during compact combat to protect the arena/hand space.")
 
 
 func _verify_feedback_and_vfx_after_card(combat_scene: Node) -> void:

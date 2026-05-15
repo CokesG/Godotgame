@@ -48,13 +48,14 @@ func _verify_table_surface(combat_scene: Node) -> void:
 	if table_board_panel.get_parent() != table_row or opponent_panel.get_parent() != table_row:
 		_fail("Board and opponent panels should be peers in the table row.")
 		return
-	if combat_grid.get_parent() != table_board_panel:
-		_fail("CombatGrid should be framed by the table board panel.")
+	var grid_parent := combat_grid.get_parent()
+	if grid_parent != table_board_panel and not (grid_parent is Control and String(grid_parent.name) == "TableStage"):
+		_fail("CombatGrid should be framed by the table board panel or its arena stage.")
 		return
-	if _get_text(table_title) != "The Table":
-		_fail("Grid title should read like a game table, not a debug grid.")
+	if _get_text(table_title) != "Arena Board":
+		_fail("Grid title should read like an arena board, not debug coordinates.")
 		return
-	if combat_grid.custom_minimum_size.x < 400:
+	if combat_grid.custom_minimum_size.x < 600:
 		_fail("CombatGrid should reserve a larger table footprint.")
 		return
 
@@ -63,8 +64,8 @@ func _verify_table_surface(combat_scene: Node) -> void:
 		_fail("Expected grid cells.")
 		return
 	var first_cell: Control = cells.get_child(0)
-	if first_cell.custom_minimum_size.x < 116 or first_cell.custom_minimum_size.y < 116:
-		_fail("Grid cells should be larger for the table pass.")
+	if first_cell.custom_minimum_size.x < 96 or first_cell.custom_minimum_size.y < 96:
+		_fail("Grid cells should stay large enough to be playable.")
 
 
 func _verify_live_opponent_and_target_hierarchy(combat_scene: Node) -> void:
@@ -147,8 +148,8 @@ func _verify_hand_card_readability(combat_scene: Node) -> void:
 		return
 
 	var card_text := _get_text(first_card)
-	if not card_text.contains("Cost") or not card_text.contains("Target:") or not card_text.contains("Tags:"):
-		_fail("Card text should show cost, target, and tags for readable hand decisions.")
+	if not card_text.contains("Cost") or not card_text.contains("Target:"):
+		_fail("Card text should show cost and target for readable hand decisions.")
 		return
 
 	var deck_panel: Node = combat_scene.find_child("DeckPanel", true, false)

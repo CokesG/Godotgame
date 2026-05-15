@@ -37,7 +37,7 @@ func _verify_view_history_flow(combat_scene: Node) -> void:
 		_fail("Expected history management controls and label.")
 		return
 	if bool(view_history.get("visible")):
-		_fail("View History should not compete with the first open-table action.")
+		_fail("View History should not compete with the first Deal In action.")
 		return
 
 	start_button.emit_signal("pressed")

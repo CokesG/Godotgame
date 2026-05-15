@@ -54,14 +54,15 @@ func _verify_start_map(combat_scene: Node) -> void:
 		return
 
 	var path_text: String = _get_text(run_path)
-	if not path_text.contains("Opening Table ready") or not path_text.contains("Press Open Opening Table"):
-		_fail("RunPath should give a focused opening-table prompt.")
+	if not path_text.contains("Route 1/5") or not path_text.contains("Deal In now"):
+		_fail("RunPath should give a focused Deal In prompt.")
 		return
 	if path_text.contains("Selected Table") or path_text.contains("[UPCOMING] 2. Raised Stakes"):
 		_fail("RunPath should keep detailed route selection hidden before the first deal-in.")
 		return
-	if not _get_text(continuity).contains("Current stop: Opening Table"):
-		_fail("RunContinuity should frame the start state as a focused opening stop.")
+	var continuity_text := _get_text(continuity)
+	if not continuity_text.contains("Blood") or not continuity_text.contains("First fight is ready"):
+		_fail("RunContinuity should frame the start state as a focused first fight.")
 
 
 func _verify_reward_map(combat_scene: Node) -> void:

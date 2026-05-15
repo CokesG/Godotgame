@@ -36,8 +36,8 @@ func _verify_default_readability(combat_scene: Node) -> void:
 		_fail("Expected TurnStatus readout.")
 		return
 	var turn_text: String = _get_text(turn_status)
-	if not turn_text.contains("Balance:") or not turn_text.contains("Open Opening Table"):
-		_fail("TurnStatus should show balance and open-table feedback.")
+	if not turn_text.contains("Balance:") or not turn_text.contains("Deal In"):
+		_fail("TurnStatus should show balance and Deal In feedback.")
 		return
 
 	var enemy_status: Node = combat_scene.find_child("EnemyStatus", true, false)

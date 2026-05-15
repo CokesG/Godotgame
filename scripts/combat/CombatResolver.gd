@@ -75,37 +75,37 @@ func apply_card_with_context(card: Resource, context: Dictionary = {}) -> void:
 
 	match card_id:
 		&"quick_slash":
-			_damage_targeted_enemy(4, card_name, context)
+			_apply_card_damage(4, card_name, context)
 		&"low_stab":
-			_damage_targeted_enemy(2, card_name, context)
+			_apply_card_damage(2, card_name, context)
 		&"sure_cut":
-			_damage_targeted_enemy(6, card_name, context)
+			_apply_card_damage(6, card_name, context)
 		&"center_cut":
 			var center_damage := 7 if int(context.get("player_lane", -1)) == 1 else 4
-			_damage_targeted_enemy(center_damage, card_name, context)
+			_apply_card_damage(center_damage, card_name, context)
 		&"house_edge":
-			_damage_targeted_enemy(4, card_name, context)
-			_add_player_guard(3, card_name)
+			_apply_card_damage(4, card_name, context)
+			_apply_card_guard(3, card_name, context)
 		&"all_in_cut":
-			_damage_targeted_enemy(8, card_name, context)
+			_apply_card_damage(8, card_name, context)
 		&"guard_up":
-			_add_player_guard(5, card_name)
+			_apply_card_guard(5, card_name, context)
 		&"iron_vow":
-			_add_player_guard(8, card_name)
+			_apply_card_guard(8, card_name, context)
 		&"bone_guard":
-			_add_player_guard(5, card_name)
+			_apply_card_guard(5, card_name, context)
 		&"black_shield":
-			_add_player_guard(11, card_name)
+			_apply_card_guard(11, card_name, context)
 		&"sidestep":
 			log_requested.emit("%s is a movement card. Grid movement remains player-click driven in this prototype." % card_name)
 		&"hook_step":
 			log_requested.emit("%s hooks the footwork. Move it first, then the follow-up strike can cash in." % card_name)
 		&"shadow_step":
-			_add_player_guard(2, card_name)
+			_apply_card_guard(2, card_name, context)
 		&"read_tell":
 			log_requested.emit("%s sharpens the read on %s." % [card_name, _get_context_enemy_name(context)])
 		&"marked_card":
-			_damage_targeted_enemy(2, card_name, context)
+			_apply_card_damage(2, card_name, context)
 			log_requested.emit("%s marks the enemy for a cleaner call." % card_name)
 		&"false_opening":
 			_set_player_bait_lane(int(context.get("player_lane", -1)), card_name)
@@ -116,7 +116,7 @@ func apply_card_with_context(card: Resource, context: Dictionary = {}) -> void:
 		&"blood_ritual":
 			log_requested.emit("%s feeds the wager engine and steadies the table read." % card_name)
 		&"second_wind":
-			_add_player_guard(5, card_name)
+			_apply_card_guard(5, card_name, context)
 		_:
 			log_requested.emit("%s has no resolver effect yet." % card_name)
 
@@ -198,7 +198,7 @@ func get_alive_enemy_targets() -> Array[Dictionary]:
 func apply_follow_up_damage(amount: int, source: String, context: Dictionary = {}) -> void:
 	if _is_finished():
 		return
-	_damage_targeted_enemy(max(0, amount), source, context)
+	_apply_card_damage(max(0, amount), source, context)
 	_check_combat_end()
 	_emit_state()
 
@@ -212,6 +212,73 @@ func add_player_guard(amount: int, source: String = "Relic") -> void:
 		return
 	_add_player_guard(max(0, amount), source)
 	_emit_state()
+
+
+func _apply_card_damage(amount: int, source: String, context: Dictionary) -> void:
+	var scaled_amount := _scale_card_amount(amount, source, context)
+	scaled_amount = _apply_player_map_bonus(scaled_amount, "card_damage_bonus", "damage", source, context)
+	if scaled_amount <= 0:
+		return
+	_damage_targeted_enemy(scaled_amount, source, context)
+
+
+func _apply_card_guard(amount: int, source: String, context: Dictionary) -> void:
+	var scaled_amount := _scale_card_amount(amount, source, context)
+	scaled_amount = _apply_player_map_bonus(scaled_amount, "guard_bonus", "Guard", source, context)
+	if scaled_amount <= 0:
+		return
+	_add_player_guard(scaled_amount, source)
+
+
+func _scale_card_amount(amount: int, source: String, context: Dictionary) -> int:
+	if amount <= 0:
+		return 0
+	if not context.has("action_beat_result"):
+		return amount
+
+	var result: String = String(context.get("action_beat_result", "hit"))
+	var multiplier: float = float(context.get("action_multiplier", 1.0))
+	if result == "miss" or multiplier <= 0.0:
+		log_requested.emit("%s misses the action beat. No card effect." % source)
+		return 0
+
+	var scaled: int = max(1, int(round(float(amount) * multiplier)))
+	if scaled != amount:
+		log_requested.emit("%s action beat %s scales %d -> %d." % [
+			source,
+			String(context.get("action_beat_label", result)).to_lower(),
+			amount,
+			scaled
+		])
+	return scaled
+
+
+func _apply_player_map_bonus(amount: int, key: String, label: String, source: String, context: Dictionary) -> int:
+	if amount <= 0:
+		return amount
+	var feature := _get_player_map_feature(context)
+	var bonus: int = int(feature.get(key, 0))
+	if bonus <= 0:
+		return amount
+	var feature_label := String(feature.get("label", "map position"))
+	log_requested.emit("%s uses %s for +%d %s." % [source, feature_label, bonus, label])
+	return amount + bonus
+
+
+func _get_player_map_feature(context: Dictionary) -> Dictionary:
+	var map_context_value: Variant = context.get("map_context", {})
+	if typeof(map_context_value) != TYPE_DICTIONARY:
+		return {}
+	var map_context: Dictionary = Dictionary(map_context_value)
+	var feature_value: Variant = map_context.get("player_feature", {})
+	if typeof(feature_value) != TYPE_DICTIONARY:
+		return {}
+	return Dictionary(feature_value)
+
+
+func _get_player_map_mitigation(context: Dictionary) -> int:
+	var feature := _get_player_map_feature(context)
+	return max(0, int(feature.get("incoming_damage_mitigation", 0)))
 
 
 func _damage_first_alive_enemy(amount: int, source: String) -> void:
@@ -361,6 +428,16 @@ func _resolve_positional_damage(enemy_id: StringName, enemy_name: String, intent
 		mitigated_amount = max(0, charged_amount - call_mitigation)
 		log_requested.emit("Called read reduces incoming damage by %d." % min(charged_amount, call_mitigation))
 
+	var map_mitigation := _get_player_map_mitigation(context)
+	if map_mitigation > 0 and mitigated_amount > 0:
+		var blocked_by_map: int = min(map_mitigation, mitigated_amount)
+		mitigated_amount = max(0, mitigated_amount - map_mitigation)
+		var feature := _get_player_map_feature(context)
+		log_requested.emit("%s cover reduces incoming damage by %d." % [
+			String(feature.get("label", "Arena")),
+			blocked_by_map
+		])
+
 	if target_lane >= 0:
 		log_requested.emit("%s's %s hits lane %s for %d damage." % [
 			enemy_name,
@@ -466,11 +543,14 @@ func _get_reposition_cell(enemy_id: StringName, context: Dictionary) -> Vector2i
 	if not unit_positions.has(enemy_id):
 		return Vector2i(-1, -1)
 
-	var origin: Vector2i = unit_positions[enemy_id]
+	var origin := _get_position_cell(unit_positions[enemy_id])
+	if origin.x < 0:
+		return Vector2i(-1, -1)
 	var occupied := {}
 	for value in unit_positions.values():
-		if typeof(value) == TYPE_VECTOR2I:
-			occupied[value] = true
+		var occupied_cell := _get_position_cell(value)
+		if occupied_cell.x >= 0:
+			occupied[occupied_cell] = true
 
 	var offsets := [
 		Vector2i(1, 0),
@@ -485,6 +565,17 @@ func _get_reposition_cell(enemy_id: StringName, context: Dictionary) -> Vector2i
 		if occupied.has(candidate):
 			continue
 		return candidate
+	return Vector2i(-1, -1)
+
+
+func _get_position_cell(value: Variant) -> Vector2i:
+	if typeof(value) == TYPE_VECTOR2I:
+		return value
+	if typeof(value) == TYPE_DICTIONARY:
+		var data: Dictionary = value
+		var cell: Variant = data.get("cell", Vector2i(-1, -1))
+		if typeof(cell) == TYPE_VECTOR2I:
+			return cell
 	return Vector2i(-1, -1)
 
 

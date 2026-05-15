@@ -65,13 +65,13 @@ func _verify_default_layout_order(combat_scene: Node) -> void:
 		return
 
 	if bool(combat_body.get("visible")) or bool(deck_panel.call("is_visible_in_tree")):
-		_fail("Opening screen should keep the board and hand hidden until Open Opening Table is clicked.")
+		_fail("Opening screen should keep the board and hand hidden until Deal In is clicked.")
 		return
 	if bool(run_panel.get("visible")) or bool(debug_drawer.get("visible")) or bool(log_column.get("visible")):
 		_fail("Run tuning, debug drawer, and log column should start hidden.")
 		return
 	if not bool(start_button.get("visible")) or bool(start_button.get("disabled")):
-		_fail("Open Opening Table should be the single enabled first action.")
+		_fail("Deal In should be the single enabled first action.")
 		return
 	if bool(continue_button.get("visible")) or not bool(continue_button.get("disabled")):
 		_fail("Smart ContinueButton should not compete with the opening-table action.")

@@ -40,23 +40,26 @@ func _verify_project_viewport() -> void:
 
 func _verify_opening_presentation(combat_scene: Node) -> void:
 	var title_plate: Node = combat_scene.find_child("TitlePlaque", true, false)
+	var action_cue_panel: Node = combat_scene.find_child("ActionCuePanel", true, false)
 	var action_cue_title: Node = combat_scene.find_child("ActionCueTitle", true, false)
 	var action_cue_detail: Node = combat_scene.find_child("ActionCueDetail", true, false)
 	var start_button: Button = combat_scene.find_child("StartRunButton", true, false)
 	var continue_button: Button = combat_scene.find_child("ContinueButton", true, false)
 	var combat_body: Node = combat_scene.find_child("CombatBody", true, false)
 	var run_panel: Node = combat_scene.find_child("RunPanel", true, false)
+	var run_path: Node = combat_scene.find_child("RunPath", true, false)
 	var run_path_buttons: Node = combat_scene.find_child("RunPathButtons", true, false)
+	var opening_steps: Node = combat_scene.find_child("OpeningStepRow", true, false)
 	var encounter_approach: Node = combat_scene.find_child("EncounterApproachPanel", true, false)
 	var debug_drawer: Node = combat_scene.find_child("DebugDrawer", true, false)
 	var log_column: Node = combat_scene.find_child("LogColumn", true, false)
-	if title_plate == null or action_cue_title == null or action_cue_detail == null:
-		_fail("Opening screen should have title and dealer cue nodes.")
+	if title_plate == null or action_cue_panel == null or action_cue_title == null or action_cue_detail == null:
+		_fail("Opening screen should have title and cue data nodes.")
 		return
 	if start_button == null or continue_button == null or combat_body == null:
 		_fail("Opening screen should have primary action and play body nodes.")
 		return
-	if run_panel == null or run_path_buttons == null or encounter_approach == null:
+	if run_panel == null or run_path == null or run_path_buttons == null or opening_steps == null or encounter_approach == null:
 		_fail("Opening screen should keep route/reward nodes available but gated.")
 		return
 	if debug_drawer == null or log_column == null:
@@ -66,17 +69,26 @@ func _verify_opening_presentation(combat_scene: Node) -> void:
 	if not _is_visible(title_plate):
 		_fail("Opening screen should show the branded title plaque.")
 		return
-	if _get_text(action_cue_title) != "DEAL IN":
-		_fail("Opening screen should lead with the DEAL IN cue.")
+	if _is_visible(action_cue_panel):
+		_fail("Opening screen should not show a duplicate dealer cue above the Deal In hero action.")
 		return
-	if not _get_text(action_cue_detail).contains("Open Opening Table"):
-		_fail("Opening cue should point at the one obvious first action.")
+	if _get_text(action_cue_title) != "DEAL IN":
+		_fail("Opening cue data should still lead with DEAL IN.")
+		return
+	if not _get_text(action_cue_detail).contains("Deal In"):
+		_fail("Opening cue data should point at the one obvious first action.")
 		return
 	if not _is_visible(start_button) or bool(start_button.get("disabled")):
-		_fail("Open Opening Table should be visible and enabled on the first screen.")
+		_fail("Deal In should be visible and enabled on the first screen.")
 		return
-	if not String(start_button.get("text")).contains("Open Opening Table"):
-		_fail("First action should read Open Opening Table.")
+	if not String(start_button.get("text")).contains("DEAL IN"):
+		_fail("First action should read Deal In.")
+		return
+	if not _is_visible(opening_steps) or opening_steps.get_child_count() < 4:
+		_fail("Opening screen should show the four-step action path.")
+		return
+	if not _get_text(run_path).contains("Deal In now"):
+		_fail("Opening route copy should point at Deal In.")
 		return
 	if _is_visible(continue_button):
 		_fail("ContinueButton should not compete with the opening action.")
@@ -84,8 +96,8 @@ func _verify_opening_presentation(combat_scene: Node) -> void:
 	if _is_visible(run_panel) or _is_visible(debug_drawer) or _is_visible(log_column):
 		_fail("Opening screen should not show reward/tuning/debug/log panels.")
 		return
-	if _is_visible(run_path_buttons) or _is_visible(encounter_approach):
-		_fail("Opening screen should not overwhelm the player with full route/approach detail.")
+	if not _is_visible(run_path_buttons) or _is_visible(encounter_approach):
+		_fail("Opening screen should show colorful route chips while keeping report-style approach detail hidden.")
 
 
 func _verify_compact_live_presentation(combat_scene: Node) -> void:
@@ -165,8 +177,8 @@ func _verify_compact_live_presentation(combat_scene: Node) -> void:
 	if not _is_visible(enemy_target_cards) or enemy_target_cards.get_child_count() <= 0:
 		_fail("Clickable enemy target cards should be visible in compact live combat.")
 		return
-	if not _is_visible(live_chips) or not _is_visible(hand_status):
-		_fail("Compact chips and hand status should remain visible.")
+	if _is_visible(live_chips) or not _is_visible(hand_status):
+		_fail("Compact live combat should hide state chips and keep the hand status visible.")
 		return
 
 

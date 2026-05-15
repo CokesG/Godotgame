@@ -66,8 +66,8 @@ func _verify_opening_approach(combat_scene: Node) -> void:
 	if bool(approach_panel.get("visible")):
 		_fail("Opening approach details should stay hidden on the focused first screen.")
 		return
-	if not _get_text(detail).contains("Open Opening Table") or not bool(start_button.get("visible")):
-		_fail("Opening screen should point at the single open-table action.")
+	if not _get_text(detail).contains("Deal In") or not bool(start_button.get("visible")):
+		_fail("Opening screen should point at the single Deal In action.")
 		return
 
 

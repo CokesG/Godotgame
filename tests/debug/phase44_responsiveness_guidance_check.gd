@@ -37,7 +37,7 @@ func _verify_live_guidance_and_fast_button_feedback(combat_scene: Node) -> void:
 	await _settle()
 
 	var status_text := String(hand_status.get("text"))
-	if not status_text.contains("Ready:") or not status_text.contains("1 Target") or not status_text.contains("2 Play") or not status_text.contains("3 Resolve"):
+	if not status_text.contains("TARGET") or not status_text.contains("glowing"):
 		_fail("Live hand status should keep the first action sequence visible. Got: %s" % status_text)
 		return
 

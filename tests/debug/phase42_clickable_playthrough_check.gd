@@ -49,7 +49,7 @@ func _verify_opening_screen_is_clean_and_clickable() -> void:
 		return
 
 	if not bool(start_button.get("visible")) or bool(start_button.get("disabled")):
-		_fail("Open Opening Table must be visible and enabled on the opening screen.")
+		_fail("Deal In must be visible and enabled on the opening screen.")
 		return
 	if bool(body.get("visible")):
 		_fail("Opening screen should not show the board/opponent debug surface before the table opens.")
@@ -58,14 +58,14 @@ func _verify_opening_screen_is_clean_and_clickable() -> void:
 		_fail("Opening screen should not spend space on the debug toggle.")
 		return
 	if not _control_fits_debug_window(start_button):
-		_fail("Open Opening Table is clipped at the debug-window size.")
+		_fail("Deal In is clipped at the debug-window size.")
 		return
 
 
 func _verify_first_combat_click_path() -> void:
 	await _click_button("StartRunButton")
 	if _get_phase_key() != "PLAYER_COMMIT":
-		_fail("Mouse click on Open Opening Table should deal into Player Commit.")
+		_fail("Mouse click on Deal In should deal into Player Commit.")
 		return
 
 	var continue_button: Button = combat_scene.find_child("ContinueButton", true, false)

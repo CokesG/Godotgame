@@ -38,11 +38,11 @@ func _verify_opening_coach(combat_scene: Node) -> void:
 		_fail("Opening screen should keep the first-play coach hidden until combat/debug needs it.")
 		return
 	var coach_text := _get_text(coach)
-	if not coach_text.contains("OPEN") or not coach_text.contains("TARGET") or not coach_text.contains("CARD") or not coach_text.contains("RESOLVE"):
-		_fail("First-play coach should show the full open-target-card-resolve sequence.")
+	if not coach_text.contains("DEAL") or not coach_text.contains("TARGET") or not coach_text.contains("CARD") or not coach_text.contains("RESOLVE"):
+		_fail("First-play coach should show the full deal-target-card-resolve sequence.")
 		return
-	if not String(hand_status.get("text")).contains("Cards locked"):
-		_fail("Hand status should explain the wrong-phase lock before opening.")
+	if not String(hand_status.get("text")).contains("Deal In"):
+		_fail("Hand status should explain the Deal In step before opening.")
 
 
 func _verify_click_target_card_grid_and_play_card(combat_scene: Node) -> void:
@@ -66,10 +66,10 @@ func _verify_click_target_card_grid_and_play_card(combat_scene: Node) -> void:
 	await get_tree().process_frame
 
 	if _get_phase_key(combat_scene) != "PLAYER_COMMIT":
-		_fail("Opening table should deal directly into Player Commit.")
+		_fail("Deal In should land directly in Player Commit.")
 		return
-	if not _get_text(coach).contains("OPEN OK"):
-		_fail("Coach should mark Open complete after the table opens.")
+	if not _get_text(coach).contains("DEAL OK"):
+		_fail("Coach should mark Deal In complete after the table opens.")
 		return
 	if target_cards.get_child_count() <= 0:
 		_fail("Enemy target cards should be visible and clickable.")
@@ -97,12 +97,12 @@ func _verify_click_target_card_grid_and_play_card(combat_scene: Node) -> void:
 	if _get_selected_target_id(target_option) != enemy_id:
 		_fail("Clicking the enemy on the grid should keep/select that target.")
 		return
-	if not String(combat_grid.find_child("GridFrame", true, false).find_child("TableTitle", true, false).get("text")).contains("The Table"):
+	if not String(combat_grid.find_child("GridFrame", true, false).find_child("TableTitle", true, false).get("text")).contains("Arena Board"):
 		_fail("Grid should remain in the live table presentation after direct target clicks.")
 		return
 
-	if not String(hand_status.get("text")).contains("Ready:"):
-		_fail("Hand status should show ready lit cards during Player Commit.")
+	if not String(hand_status.get("text")).contains("TARGET") or not String(hand_status.get("text")).contains("glowing"):
+		_fail("Hand status should explain target and glowing-card clicks during Player Commit.")
 		return
 	if hand_view.get_child_count() <= 0:
 		_fail("Expected playable hand cards.")
@@ -129,7 +129,7 @@ func _verify_click_target_card_grid_and_play_card(combat_scene: Node) -> void:
 	await get_tree().create_timer(0.9).timeout
 
 	if not bool(combat_scene.get("first_play_coach_complete")):
-		_fail("Coach should complete after Open, Target, Card, and Resolve.")
+		_fail("Coach should complete after Deal, Target, Card, and Resolve.")
 		return
 	if bool(coach_panel.get("visible")):
 		_fail("Completed first-play coach should fade out of the live screen.")

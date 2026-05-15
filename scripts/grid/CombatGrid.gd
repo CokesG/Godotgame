@@ -6,6 +6,7 @@ signal unit_moved(unit_id: StringName, from_cell: Vector2i, to_cell: Vector2i)
 signal cell_selected(cell: Vector2i)
 
 const GRID_CELL_VIEW_SCRIPT := preload("res://scripts/grid/GridCellView.gd")
+const TACTICAL_MAP_SCRIPT := preload("res://scripts/grid/TacticalMapDefinition.gd")
 const BOARD_TEXTURE_PATH := "res://art/game/board/board_cursed_table_3x3.png"
 const PLAYER_ID := &"player"
 const PLAYER_LABEL := "Gambler-Knight"
@@ -39,14 +40,27 @@ var selected_unit_id: StringName = &""
 var valid_move_cells: Array[Vector2i] = []
 var floating_text_layer: Control
 var board_background: TextureRect
+var grid_frame: VBoxContainer
 var focus_unit_id: StringName = &""
 var focus_cell: Vector2i = Vector2i(-1, -1)
 var compact_mode: bool = false
+var map_data: Dictionary = {}
+var map_features_by_cell: Dictionary = {}
 
 
 func _ready() -> void:
+	if map_data.is_empty():
+		map_data = TACTICAL_MAP_SCRIPT.get_default_map()
+	_rebuild_map_features()
 	_build_ui()
+	_apply_map_features_to_cells()
 	reset_grid()
+	_start_table_ambience()
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_RESIZED:
+		_layout_board_layers()
 
 
 func reset_grid(enemy_spawns: Array = []) -> void:
@@ -69,8 +83,42 @@ func reset_grid(enemy_spawns: Array = []) -> void:
 			String(spawn.get("label", "Enemy"))
 		)
 	_refresh_cells()
-	_update_status("Select the Gambler-Knight, then choose an adjacent green cell.")
-	log_requested.emit("Grid reset: player at (1,2), enemies on the top row.")
+	_update_status("%s Select the Gambler-Knight, then choose an adjacent green cell." % TACTICAL_MAP_SCRIPT.get_feature_summary(map_data))
+	log_requested.emit("Grid reset on %s: player at (1,2), enemies on the top row." % get_map_name())
+
+
+func configure_map(new_map_data: Dictionary) -> void:
+	map_data = new_map_data.duplicate(true) if not new_map_data.is_empty() else TACTICAL_MAP_SCRIPT.get_default_map()
+	_rebuild_map_features()
+	_apply_map_features_to_cells()
+	var title := find_child("TableTitle", true, false)
+	if title is Label:
+		(title as Label).text = "Arena Board - %s" % get_map_name()
+	_refresh_cells()
+
+
+func get_map_data() -> Dictionary:
+	return map_data.duplicate(true)
+
+
+func get_map_name() -> String:
+	return String(map_data.get("name", "Crossfire Table"))
+
+
+func get_cell_feature(cell: Vector2i) -> Dictionary:
+	if map_features_by_cell.has(cell):
+		return Dictionary(map_features_by_cell[cell]).duplicate(true)
+	return TACTICAL_MAP_SCRIPT.get_cell_feature(map_data, cell)
+
+
+func get_map_context(target_cell: Vector2i = Vector2i(-1, -1)) -> Dictionary:
+	var player_cell := get_unit_position(PLAYER_ID)
+	if target_cell == Vector2i(-1, -1):
+		if not focus_unit_id.is_empty() and unit_positions.has(focus_unit_id):
+			target_cell = get_unit_position(focus_unit_id)
+		elif is_cell_in_bounds(focus_cell):
+			target_cell = focus_cell
+	return TACTICAL_MAP_SCRIPT.build_context(map_data, player_cell, target_cell)
 
 
 func place_unit(unit_id: StringName, cell: Vector2i, display_label: String) -> bool:
@@ -164,6 +212,7 @@ func move_unit(unit_id: StringName, destination: Vector2i) -> bool:
 	occupants_by_cell.erase(origin)
 	occupants_by_cell[destination] = unit_id
 	unit_positions[unit_id] = destination
+	_play_unit_move_ghost(unit_id, origin, destination)
 	unit_moved.emit(unit_id, origin, destination)
 	log_requested.emit("%s moved from %s to %s." % [unit_label, format_cell(origin), format_cell(destination)])
 	_select_unit(unit_id)
@@ -315,19 +364,20 @@ func set_compact_mode(value: bool) -> void:
 	if compact_mode == value:
 		return
 	compact_mode = value
-	custom_minimum_size = Vector2(330, 212) if compact_mode else Vector2(410, 320)
+	custom_minimum_size = Vector2(560, 304) if compact_mode else Vector2(620, 420)
 	if grid_container != null:
-		grid_container.add_theme_constant_override("h_separation", 5 if compact_mode else 8)
-		grid_container.add_theme_constant_override("v_separation", 5 if compact_mode else 8)
+		grid_container.add_theme_constant_override("h_separation", 7 if compact_mode else 10)
+		grid_container.add_theme_constant_override("v_separation", 7 if compact_mode else 10)
 	for cell in cells_by_position.values():
 		if cell is Control:
-			(cell as Control).custom_minimum_size = Vector2(84, 62) if compact_mode else Vector2(116, 116)
+			(cell as Control).custom_minimum_size = Vector2(136, 76) if compact_mode else Vector2(164, 116)
 	if status_label != null:
 		status_label.visible = not compact_mode
 	var title := find_child("TableTitle", true, false)
 	if title is Label:
-		(title as Label).add_theme_font_size_override("font_size", 16 if compact_mode else 18)
+		(title as Label).add_theme_font_size_override("font_size", 18 if compact_mode else 20)
 	update_minimum_size()
+	_layout_board_layers()
 
 
 func get_focus_snapshot() -> Dictionary:
@@ -388,29 +438,31 @@ func show_floating_text_at_cell(cell: Vector2i, message: String, color: Color) -
 
 
 func _build_ui() -> void:
-	size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	custom_minimum_size = Vector2(410, 320)
+	size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	size_flags_vertical = Control.SIZE_EXPAND_FILL
+	custom_minimum_size = Vector2(660, 356)
 	_build_board_background()
 
-	var frame := VBoxContainer.new()
-	frame.name = "GridFrame"
-	frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	frame.add_theme_constant_override("separation", 8)
-	add_child(frame)
+	grid_frame = VBoxContainer.new()
+	grid_frame.name = "GridFrame"
+	grid_frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	grid_frame.add_theme_constant_override("separation", 8)
+	add_child(grid_frame)
 
 	var title := Label.new()
 	title.name = "TableTitle"
-	title.text = "The Table"
+	title.text = "Arena Board - %s" % get_map_name()
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.add_theme_font_size_override("font_size", 18)
-	frame.add_child(title)
+	grid_frame.add_child(title)
 
 	grid_container = GridContainer.new()
 	grid_container.name = "Cells"
 	grid_container.columns = grid_size.x
-	grid_container.add_theme_constant_override("h_separation", 8)
-	grid_container.add_theme_constant_override("v_separation", 8)
-	frame.add_child(grid_container)
+	grid_container.add_theme_constant_override("h_separation", 10)
+	grid_container.add_theme_constant_override("v_separation", 10)
+	grid_container.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	grid_frame.add_child(grid_container)
 
 	for y in range(grid_size.y):
 		for x in range(grid_size.x):
@@ -418,16 +470,33 @@ func _build_ui() -> void:
 			cell.set_script(GRID_CELL_VIEW_SCRIPT)
 			var grid_position := Vector2i(x, y)
 			cell.call("configure", grid_position)
+			cell.call("configure_map_feature", get_cell_feature(grid_position))
 			cell.connect("cell_pressed", _on_cell_pressed)
 			cells_by_position[grid_position] = cell
 			grid_container.add_child(cell)
 
 	status_label = Label.new()
 	status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	status_label.custom_minimum_size = Vector2(380, 0)
-	frame.add_child(status_label)
+	status_label.custom_minimum_size = Vector2(520, 0)
+	grid_frame.add_child(status_label)
 
 	_get_floating_text_layer()
+	_layout_board_layers()
+
+
+func _rebuild_map_features() -> void:
+	map_features_by_cell.clear()
+	for y in range(grid_size.y):
+		for x in range(grid_size.x):
+			var cell := Vector2i(x, y)
+			map_features_by_cell[cell] = TACTICAL_MAP_SCRIPT.get_cell_feature(map_data, cell)
+
+
+func _apply_map_features_to_cells() -> void:
+	for cell_position in cells_by_position.keys():
+		var cell: Button = cells_by_position[cell_position]
+		if cell != null and cell.has_method("configure_map_feature"):
+			cell.call("configure_map_feature", get_cell_feature(cell_position))
 
 
 func _build_board_background() -> void:
@@ -444,9 +513,32 @@ func _build_board_background() -> void:
 	board_background.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	board_background.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 	board_background.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	board_background.modulate = Color(0.72, 0.66, 0.58, 0.88)
+	board_background.modulate = Color(0.72, 0.66, 0.58, 0.28)
 	board_background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(board_background)
+
+
+func _layout_board_layers() -> void:
+	if floating_text_layer != null:
+		floating_text_layer.size = size
+	if grid_frame == null:
+		return
+
+	var frame_size := grid_frame.get_combined_minimum_size()
+	grid_frame.position = Vector2(
+		max(0.0, (size.x - frame_size.x) * 0.5),
+		max(0.0, (size.y - frame_size.y) * 0.5)
+	)
+
+
+func _start_table_ambience() -> void:
+	if board_background == null:
+		return
+
+	var tween := create_tween()
+	tween.set_loops()
+	tween.tween_property(board_background, "modulate", Color(0.82, 0.72, 0.60, 0.34), 1.8).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	tween.tween_property(board_background, "modulate", Color(0.66, 0.58, 0.52, 0.22), 1.8).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 
 
 func _get_floating_text_layer() -> Control:
@@ -458,7 +550,45 @@ func _get_floating_text_layer() -> Control:
 	floating_text_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	floating_text_layer.z_index = 30
 	add_child(floating_text_layer)
+	_layout_board_layers()
 	return floating_text_layer
+
+
+func _play_unit_move_ghost(unit_id: StringName, origin: Vector2i, destination: Vector2i) -> void:
+	if not cells_by_position.has(origin) or not cells_by_position.has(destination):
+		return
+
+	var start := get_cell_global_center(origin) - get_global_rect().position
+	var end := get_cell_global_center(destination) - get_global_rect().position
+	if start == Vector2.ZERO or end == Vector2.ZERO:
+		return
+
+	var ghost := Label.new()
+	ghost.name = "UnitMoveGhost"
+	ghost.text = _get_short_label(unit_id)
+	ghost.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	ghost.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	ghost.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	ghost.custom_minimum_size = Vector2(48, 36)
+	ghost.size = ghost.custom_minimum_size
+	ghost.position = start - ghost.size * 0.5
+	ghost.pivot_offset = ghost.size * 0.5
+	ghost.z_index = 28
+	ghost.add_theme_font_size_override("font_size", 20)
+	ghost.add_theme_color_override("font_color", Color(1.0, 0.92, 0.66))
+	ghost.add_theme_color_override("font_outline_color", Color(0.02, 0.015, 0.012))
+	ghost.add_theme_constant_override("outline_size", 4)
+	_get_floating_text_layer().add_child(ghost)
+
+	var tween := ghost.create_tween()
+	tween.set_parallel(true)
+	tween.tween_property(ghost, "position", end - ghost.size * 0.5, 0.28).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	tween.tween_property(ghost, "scale", Vector2(1.18, 1.18), 0.14).from(Vector2(0.92, 0.92)).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tween.tween_property(ghost, "modulate:a", 0.0, 0.16).set_delay(0.18).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	tween.finished.connect(func() -> void:
+		if is_instance_valid(ghost):
+			ghost.queue_free()
+	)
 
 
 func _select_unit(unit_id: StringName) -> void:
@@ -473,7 +603,7 @@ func _clear_selection() -> void:
 	selected_unit_id = &""
 	valid_move_cells.clear()
 	_refresh_cells()
-	_update_status("Select the Gambler-Knight, then choose an adjacent green cell.")
+	_update_status("Click an enemy card or enemy pawn to target. Green MOVE spaces are legal movement destinations.")
 
 
 func _refresh_cells() -> void:
@@ -483,7 +613,7 @@ func _refresh_cells() -> void:
 		if occupant_id.is_empty():
 			cell.call("clear_occupant")
 		else:
-			cell.call("set_occupant", occupant_id, _get_short_label(occupant_id))
+			cell.call("set_occupant", occupant_id, _get_cell_occupant_label(occupant_id))
 
 		cell.call("set_selected", not selected_unit_id.is_empty() and cell_position == get_unit_position(selected_unit_id))
 		cell.call("set_valid_target", valid_move_cells.has(cell_position))
@@ -498,8 +628,33 @@ func _is_focus_cell(cell_position: Vector2i) -> bool:
 
 func _get_short_label(unit_id: StringName) -> String:
 	if unit_id == PLAYER_ID:
-		return "GK"
-	return String(unit_id).substr(0, 2).to_upper()
+		return "YOU"
+	match unit_id:
+		&"skulker":
+			return "Skulker"
+		&"shieldbearer":
+			return "Shield"
+		&"brute":
+			return "Brute"
+		&"needle_eye":
+			return "Needle"
+		&"hexmonger":
+			return "Hex"
+		&"grave_dealer":
+			return "Dealer"
+		&"house_champion":
+			return "Champion"
+		_:
+			return String(unit_id).replace("_", " ").capitalize()
+
+
+func _get_cell_occupant_label(unit_id: StringName) -> String:
+	if unit_id == PLAYER_ID:
+		return "YOU"
+	var label := _get_short_label(unit_id)
+	if unit_id == focus_unit_id:
+		return "TARGET\n%s" % label
+	return label
 
 
 func _is_enemy_unit(unit_id: StringName) -> bool:
