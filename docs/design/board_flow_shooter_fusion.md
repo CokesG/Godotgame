@@ -34,9 +34,16 @@ Live files:
 - `res://scenes/combat/TestCombat.tscn`: card table, chip economy, loadout slots, bridge payload preview, `Enter Arena`, and the return payout screen.
 - `res://scenes/fps/FPSPrototype.tscn`: shooter arena that consumes the card loadout, runs the FPS fight, and returns a result when the player picks a reward.
 - `res://scripts/combat/ArenaBridge.gd`: autoload handoff for card-to-FPS payloads and FPS-to-card results.
-- `res://tests/debug/Phase69ArenaReturnCheck.tscn`: focused check for the return payout path.
+- `res://tests/debug/Phase69ArenaReturnCheck.tscn`: focused check for the persisted return payout path.
 
-The current return is intentionally lean: when the FPS scene returns, the card table rebuilds into a fresh next-hand prep state, applies the chip award, shows the payout panel, then unlocks normal card/loadout actions when `Start Next Hand` is pressed. A later persistence pass should serialize exact deck piles, current run node, spent loadout cards, wounds, upgrades, and relic effects across the scene swap.
+The return now preserves the card-run snapshot through `ArenaBridge`: current run node, run HP/reward state, deck piles, hand, discard, exhaust, slotted loadout cards, chips, and pending carryover bonuses. When the FPS scene returns, the card table restores that snapshot, resolves spent loadout cards into discard/exhaust, applies payout effects, draws the next hand, and unlocks normal card/loadout actions when `Start Next Hand` is pressed.
+
+The dev hub also has phase launcher shortcuts:
+
+- `Card Prep With Sample Hand`: jumps to the card/loadout prep table.
+- `FPS With Slotted Weapon`: seeds a sample weapon/ability payload before opening the FPS arena.
+- `FPS Return Payout`: jumps directly to the payout handoff for fast UI testing.
+- `Arena Return Payout Check`: runs the focused persisted-return smoke check.
 
 ## What The Board Is Now
 
@@ -325,13 +332,16 @@ Done in the prototype:
 4. Convert card types into shooter-facing roles in the bridge payload.
 5. Build the card-to-FPS payload handoff and FPS-to-card result handoff.
 6. Add a payout screen that turns FPS stats and reward selection into chips and the next hand.
+7. Persist exact run/deck/loadout state across the FPS scene swap.
+8. Apply non-chip payout effects to the next arena payload: weapon damage, carryover armor, and carryover ammo.
+9. Return FPS win/loss/objective fields so defeat can end the run and strong objective play can pay a bonus.
 
 Next implementation steps:
 
-1. Persist exact run/deck state across the scene swap instead of returning to a fresh table instance.
-2. Add non-chip payout effects: armor carryover, ammo reserve, wounds, card XP, card mutation, and upgrade events.
-3. Let the FPS result distinguish win/loss/objective outcomes, not only wave-cleared reward picks.
-4. Collapse or mirror the board into an in-FPS combat HUD with card ability icons and cooldowns.
+1. Turn payout bonuses into authored reward cards/mods with art, names, and rarity.
+2. Add wound, card XP, card mutation, and upgrade events to the run history.
+3. Collapse or mirror the board into an in-FPS combat HUD with card ability icons and cooldowns.
+4. Add objective types beyond wave clear: hold pot, extract, duel, defend, escort, and boss phase.
 
 ## Design Rule
 
