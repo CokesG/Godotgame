@@ -30,6 +30,8 @@ func _verify_menu_scene() -> void:
 		_fail("Main menu should expose FPS With Slotted Weapon.")
 	if menu.find_child("PayoutDemoButton", true, false) == null:
 		_fail("Main menu should expose FPS Return Payout.")
+	if menu.find_child("DefeatDemoButton", true, false) == null:
+		_fail("Main menu should expose FPS Defeat Return.")
 	if menu.find_child("ShooterArenaButton", true, false) == null:
 		_fail("Main menu should expose Shooter Arena.")
 	if menu.find_child("MapViewerButton", true, false) == null:

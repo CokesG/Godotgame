@@ -23,6 +23,11 @@ func _run_check() -> void:
 	if player == null or enemies_root == null or hud == null:
 		_fail("Expected player, enemies root, and HUD in FPSPrototype.")
 		return
+	var reload_bar: Node = prototype.find_child("ReloadProgress", true, false)
+	var reload_status: Node = prototype.find_child("ReloadStatusLabel", true, false)
+	if reload_bar == null or reload_status == null:
+		_fail("FPS HUD should expose reload progress state.")
+		return
 
 	if not prototype.has_method("get_living_enemies"):
 		_fail("FPSPrototype should expose get_living_enemies.")
@@ -41,6 +46,10 @@ func _run_check() -> void:
 	var living: Array = prototype.call("get_living_enemies")
 	if living.size() < 4:
 		_fail("FPSPrototype should spawn the first enemy wave.")
+		return
+	var enemy_status: Node = (living[0] as Node).find_child("StatusLabel", true, false)
+	if enemy_status == null:
+		_fail("FPS enemies should expose readable status/tell labels.")
 		return
 
 	var weapon: Node = player.get("weapon")

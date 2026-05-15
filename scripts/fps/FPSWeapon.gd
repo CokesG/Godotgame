@@ -5,17 +5,17 @@ signal state_changed(ammo: int, reserve: int, reloading: bool)
 signal fired(from: Vector3, to: Vector3)
 signal hit_confirmed(position: Vector3, damage: int, critical: bool, defeated: bool)
 
-@export var weapon_name := "Ante Carbine"
-@export var damage := 22
-@export var critical_damage := 48
-@export var magazine_size := 12
-@export var reserve_ammo := 72
-@export var fire_interval := 0.115
-@export var reload_time := 1.22
+@export var weapon_name := "Ante Carbine AR"
+@export var damage := 18
+@export var critical_damage := 34
+@export var magazine_size := 30
+@export var reserve_ammo := 90
+@export var fire_interval := 0.092
+@export var reload_time := 1.58
 @export var range := 110.0
-@export var base_spread_degrees := 0.28
-@export var moving_spread_degrees := 0.75
-@export var sustained_spread_degrees := 1.10
+@export var base_spread_degrees := 0.20
+@export var moving_spread_degrees := 0.58
+@export var sustained_spread_degrees := 0.88
 @export var recoil_recovery := 12.0
 @export var viewmodel_recovery := 14.0
 
@@ -33,23 +33,49 @@ var sway_offset := Vector2.ZERO
 var viewmodel_root: Node3D
 var muzzle: Marker3D
 var shell_eject: Marker3D
+var magazine: MeshInstance3D
 var base_position := Vector3(0.46, -0.42, -0.88)
+var ads_position := Vector3(0.0, -0.19, -0.74)
+var magazine_base_position := Vector3.ZERO
 var recoil_position := Vector3.ZERO
 var recoil_rotation := Vector3.ZERO
+var ads_blend := 0.0
 var rng := RandomNumberGenerator.new()
 var overclock_timer := 0.0
 var overclock_interval_scalar := 1.0
 var overclock_damage_scalar := 1.0
 
 var recoil_pattern: Array[Vector2] = [
-	Vector2(0.00, 0.55),
-	Vector2(0.12, 0.72),
-	Vector2(-0.16, 0.86),
-	Vector2(0.20, 0.95),
-	Vector2(-0.24, 1.08),
-	Vector2(0.18, 1.16),
-	Vector2(-0.12, 1.22),
-	Vector2(0.08, 1.28)
+	Vector2(0.00, 0.22),
+	Vector2(0.03, 0.29),
+	Vector2(-0.04, 0.35),
+	Vector2(0.07, 0.41),
+	Vector2(0.12, 0.43),
+	Vector2(0.17, 0.39),
+	Vector2(0.20, 0.35),
+	Vector2(0.14, 0.32),
+	Vector2(0.06, 0.30),
+	Vector2(-0.04, 0.31),
+	Vector2(-0.13, 0.33),
+	Vector2(-0.20, 0.34),
+	Vector2(-0.24, 0.31),
+	Vector2(-0.17, 0.29),
+	Vector2(-0.06, 0.28),
+	Vector2(0.05, 0.29),
+	Vector2(0.15, 0.30),
+	Vector2(0.23, 0.30),
+	Vector2(0.18, 0.28),
+	Vector2(0.07, 0.27),
+	Vector2(-0.06, 0.27),
+	Vector2(-0.18, 0.29),
+	Vector2(-0.25, 0.30),
+	Vector2(-0.18, 0.28),
+	Vector2(-0.06, 0.27),
+	Vector2(0.08, 0.27),
+	Vector2(0.18, 0.28),
+	Vector2(0.12, 0.26),
+	Vector2(0.02, 0.25),
+	Vector2(-0.08, 0.25)
 ]
 
 
@@ -218,7 +244,7 @@ func _get_shot_direction() -> Vector3:
 	if player != null and player.has_method("get_ads_spread_multiplier"):
 		ads_spread_multiplier = float(player.call("get_ads_spread_multiplier"))
 
-	var pattern := recoil_pattern[shot_index % recoil_pattern.size()]
+	var pattern := _get_recoil_pattern_value()
 	var sustained := clampf(float(shot_index) / 7.0, 0.0, 1.0)
 	var spread := base_spread_degrees
 	spread += moving_spread_degrees * speed_ratio
@@ -228,7 +254,7 @@ func _get_shot_direction() -> Vector3:
 		rng.randf_range(-spread, spread),
 		rng.randf_range(-spread, spread)
 	)
-	var pattern_offset := pattern * Vector2(0.42, 0.58)
+	var pattern_offset := pattern * Vector2(0.20, 0.10) * ads_spread_multiplier
 	var total := (random_offset + pattern_offset) * deg_to_rad(1.0)
 	return (forward + right * tan(total.x) + up * tan(total.y)).normalized()
 
@@ -248,17 +274,33 @@ func _is_critical_hit(collider: Object, point: Vector3) -> bool:
 	return false
 
 
+func _get_recoil_pattern_value() -> Vector2:
+	if recoil_pattern.is_empty():
+		return Vector2.ZERO
+	return recoil_pattern[mini(shot_index, recoil_pattern.size() - 1)]
+
+
+func _get_ads_recoil_scalar() -> float:
+	if player != null and player.has_method("is_ads_active") and bool(player.call("is_ads_active")):
+		return 0.68
+	return 1.0
+
+
 func _apply_recoil(critical: bool) -> void:
-	var pattern := recoil_pattern[(shot_index - 1) % recoil_pattern.size()]
-	var yaw := deg_to_rad(pattern.x * 0.35 + rng.randf_range(-0.09, 0.09))
-	var pitch := deg_to_rad(0.62 + pattern.y * 0.22)
+	var pattern := _get_recoil_pattern_value()
+	var recoil_scalar := _get_ads_recoil_scalar()
+	var yaw := deg_to_rad((pattern.x + rng.randf_range(-0.025, 0.025)) * recoil_scalar)
+	var pitch := deg_to_rad(pattern.y * recoil_scalar)
 	if critical:
-		pitch *= 0.75
-	if player != null and player.has_method("add_camera_impulse"):
+		pitch *= 0.82
+	if player != null and player.has_method("apply_weapon_recoil"):
+		player.call("apply_weapon_recoil", Vector2(pitch, yaw), 0.012)
+	elif player != null and player.has_method("add_camera_impulse"):
 		player.call("add_camera_impulse", Vector2(pitch, yaw), 0.018)
 
-	recoil_position += Vector3(rng.randf_range(-0.012, 0.012), 0.012, 0.105)
-	recoil_rotation += Vector3(deg_to_rad(3.8), yaw * 2.0, deg_to_rad(rng.randf_range(-2.5, 2.5)))
+	var visual_scalar := lerpf(1.0, 0.48, ads_blend)
+	recoil_position += Vector3(rng.randf_range(-0.010, 0.010), 0.010, 0.075) * visual_scalar
+	recoil_rotation += Vector3(deg_to_rad(2.6), yaw * 1.8, deg_to_rad(rng.randf_range(-1.8, 1.8))) * visual_scalar
 	if muzzle != null:
 		_spawn_muzzle_flash()
 
@@ -272,18 +314,35 @@ func _recover_viewmodel(delta: float) -> void:
 	recoil_position = recoil_position.lerp(Vector3.ZERO, clampf(delta * viewmodel_recovery, 0.0, 1.0))
 	recoil_rotation = recoil_rotation.lerp(Vector3.ZERO, clampf(delta * viewmodel_recovery, 0.0, 1.0))
 	sway_offset = sway_offset.lerp(Vector2.ZERO, clampf(delta * 8.5, 0.0, 1.0))
+	var target_ads_blend := 0.0
+	if player != null and player.has_method("is_ads_active") and bool(player.call("is_ads_active")):
+		target_ads_blend = 1.0
+	ads_blend = lerpf(ads_blend, target_ads_blend, clampf(delta * 14.0, 0.0, 1.0))
 
 	var bob := Vector3.ZERO
 	if player != null and player.has_method("get_weapon_bob"):
 		bob = player.call("get_weapon_bob")
 	if viewmodel_root != null:
-		var target_base := base_position
-		var sway_scale := 1.0
-		if player != null and player.has_method("is_ads_active") and bool(player.call("is_ads_active")):
-			target_base = Vector3(0.0, -0.36, -0.76)
-			sway_scale = 0.38
-		viewmodel_root.position = target_base + recoil_position + bob * sway_scale + Vector3(-sway_offset.x, sway_offset.y, 0.0) * sway_scale
-		viewmodel_root.rotation = recoil_rotation + Vector3(sway_offset.y * 0.7, sway_offset.x * 1.1, -sway_offset.x * 0.35) * sway_scale
+		var target_base := base_position.lerp(ads_position, ads_blend)
+		var sway_scale := lerpf(1.0, 0.24, ads_blend)
+		var visual_recoil_scale := lerpf(1.0, 0.55, ads_blend)
+		var reload_progress := _get_reload_progress()
+		var reload_curve := sin(reload_progress * PI)
+		var reload_offset := Vector3(0.08, -0.11, 0.07) * reload_curve
+		var reload_rotation := Vector3(deg_to_rad(-10.0), deg_to_rad(5.0), deg_to_rad(-8.0)) * reload_curve
+		viewmodel_root.position = target_base + recoil_position * visual_recoil_scale + bob * sway_scale + Vector3(-sway_offset.x, sway_offset.y, 0.0) * sway_scale + reload_offset
+		viewmodel_root.rotation = recoil_rotation * visual_recoil_scale + Vector3(sway_offset.y * 0.7, sway_offset.x * 1.1, -sway_offset.x * 0.35) * sway_scale + reload_rotation
+	if magazine != null:
+		var progress := _get_reload_progress()
+		var mag_drop := sin(progress * PI)
+		magazine.position = magazine_base_position + Vector3(0.0, -0.18 * mag_drop, 0.05 * mag_drop)
+		magazine.rotation.x = deg_to_rad(-16.0 * mag_drop)
+
+
+func _get_reload_progress() -> float:
+	if not reloading or reload_time <= 0.0:
+		return 0.0
+	return 1.0 - clampf(reload_timer / reload_time, 0.0, 1.0)
 
 
 func _spawn_muzzle_flash() -> void:
@@ -327,6 +386,12 @@ func _build_viewmodel() -> void:
 	_add_box(viewmodel_root, "TopRail", Vector3(0.0, 0.082, -0.045), Vector3(0.22, 0.034, 0.30), brass)
 	_add_box(viewmodel_root, "Barrel", Vector3(0.0, 0.012, -0.33), Vector3(0.078, 0.078, 0.44), iron)
 	_add_box(viewmodel_root, "MuzzleBlock", Vector3(0.0, 0.012, -0.59), Vector3(0.12, 0.10, 0.065), brass)
+	_add_box(viewmodel_root, "RearSightLeft", Vector3(-0.052, 0.142, 0.075), Vector3(0.025, 0.080, 0.026), iron)
+	_add_box(viewmodel_root, "RearSightRight", Vector3(0.052, 0.142, 0.075), Vector3(0.025, 0.080, 0.026), iron)
+	_add_box(viewmodel_root, "FrontSightPost", Vector3(0.0, 0.150, -0.535), Vector3(0.020, 0.095, 0.020), iron)
+	_add_box(viewmodel_root, "FrontSightBase", Vector3(0.0, 0.098, -0.535), Vector3(0.106, 0.030, 0.040), brass)
+	magazine = _add_box(viewmodel_root, "Magazine", Vector3(0.0, -0.150, -0.010), Vector3(0.125, 0.230, 0.115), iron, Vector3(deg_to_rad(-3.0), 0.0, 0.0))
+	magazine_base_position = magazine.position
 	_add_box(viewmodel_root, "Grip", Vector3(0.075, -0.17, 0.08), Vector3(0.095, 0.24, 0.105), grip, Vector3(0.0, 0.0, deg_to_rad(-10.0)))
 	_add_box(viewmodel_root, "Guard", Vector3(-0.09, -0.064, 0.035), Vector3(0.055, 0.095, 0.09), bone)
 	_add_box(viewmodel_root, "Hand", Vector3(0.19, -0.16, -0.12), Vector3(0.14, 0.095, 0.18), bone)

@@ -32,6 +32,11 @@ var body_mesh: MeshInstance3D
 var sprite: Sprite3D
 var health_bar_root: Node3D
 var health_bar_fill: MeshInstance3D
+var status_label: Label3D
+var tell_mesh: MeshInstance3D
+var shield_mesh: MeshInstance3D
+var tell_timer := 0.0
+var tell_text := ""
 var rng := RandomNumberGenerator.new()
 
 
@@ -75,7 +80,10 @@ func _physics_process(delta: float) -> void:
 	reveal_timer = maxf(0.0, reveal_timer - delta)
 	snare_timer = maxf(0.0, snare_timer - delta)
 	bait_timer = maxf(0.0, bait_timer - delta)
+	tell_timer = maxf(0.0, tell_timer - delta)
 	_update_reveal_visual()
+	_update_tell_visual()
+	_update_status_label()
 	if not is_on_floor():
 		velocity.y -= gravity * delta
 
@@ -146,8 +154,15 @@ func _try_attack() -> void:
 	if attack_timer > 0.0:
 		return
 	attack_timer = attack_cooldown
-	if player != null and player.has_method("take_damage"):
-		player.call("take_damage", attack_damage, global_position)
+	_show_attack_tell("STRIKE", Color(1.0, 0.42, 0.20), 0.42)
+	if game_mode != null and game_mode.has_method("spawn_enemy_tell"):
+		game_mode.call("spawn_enemy_tell", global_position + Vector3(0.0, 0.08, 0.0), Color(1.0, 0.42, 0.20), attack_range + 0.55, "STRIKE")
+	var tree := get_tree()
+	if tree == null:
+		_apply_melee_hit()
+	else:
+		var timer := tree.create_timer(0.22)
+		timer.timeout.connect(_apply_melee_hit)
 	_pulse_attack()
 
 
@@ -181,11 +196,27 @@ func _try_ranged_attack() -> void:
 	attack_timer = attack_cooldown
 	var start := global_position + Vector3(0.0, 1.35, 0.0)
 	var end := player.global_position + Vector3(0.0, 1.25, 0.0)
-	if game_mode != null and game_mode.has_method("spawn_tracer"):
+	_show_attack_tell("SHOT", Color(0.34, 0.88, 1.0), 0.54)
+	if game_mode != null and game_mode.has_method("spawn_enemy_tell"):
+		game_mode.call("spawn_enemy_tell", global_position + Vector3(0.0, 0.08, 0.0), Color(0.34, 0.88, 1.0), 1.25, "SHOT")
+	if game_mode != null and game_mode.has_method("spawn_enemy_projectile"):
+		game_mode.call("spawn_enemy_projectile", start, end, attack_damage, self)
+	elif game_mode != null and game_mode.has_method("spawn_tracer"):
 		game_mode.call("spawn_tracer", start, end, false)
-	if player != null and player.has_method("take_damage"):
+		if player != null and player.has_method("take_damage"):
+			player.call("take_damage", attack_damage, global_position)
+	elif player != null and player.has_method("take_damage"):
 		player.call("take_damage", attack_damage, global_position)
 	_pulse_attack()
+
+
+func _apply_melee_hit() -> void:
+	if not alive or player == null or not is_instance_valid(player):
+		return
+	if global_position.distance_to(player.global_position) > attack_range + 0.75:
+		return
+	if player.has_method("take_damage"):
+		player.call("take_damage", attack_damage, global_position)
 
 
 func _die() -> void:
@@ -223,6 +254,9 @@ func _build_body() -> void:
 	body_mesh.material_override = _make_body_material(accent_color)
 	add_child(body_mesh)
 
+	if archetype == "shield":
+		_build_shield_mesh()
+
 	sprite = Sprite3D.new()
 	sprite.name = "Portrait"
 	sprite.position = Vector3(0.0, 1.34, -0.045)
@@ -244,6 +278,39 @@ func _build_body() -> void:
 	health_bar_fill = _health_bar_piece("Fill", Color(0.95, 0.22, 0.14), Vector3(0.78, 0.06, 0.02))
 	health_bar_fill.position.z = -0.003
 	health_bar_root.add_child(health_bar_fill)
+
+	status_label = Label3D.new()
+	status_label.name = "StatusLabel"
+	status_label.position = Vector3(0.0, 2.36, 0.0)
+	status_label.text = _get_status_text()
+	status_label.font_size = 34
+	status_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	status_label.outline_size = 8
+	status_label.outline_modulate = Color(0.02, 0.01, 0.01, 0.92)
+	status_label.modulate = Color(1.0, 0.86, 0.48)
+	add_child(status_label)
+
+	tell_mesh = MeshInstance3D.new()
+	tell_mesh.name = "AttackTell"
+	var tell_torus := TorusMesh.new()
+	tell_torus.inner_radius = 0.74
+	tell_torus.outer_radius = 0.79
+	tell_mesh.mesh = tell_torus
+	tell_mesh.position.y = 0.08
+	tell_mesh.material_override = _make_unshaded_material(Color(1.0, 0.44, 0.18, 0.72))
+	tell_mesh.visible = false
+	add_child(tell_mesh)
+
+
+func _build_shield_mesh() -> void:
+	shield_mesh = MeshInstance3D.new()
+	shield_mesh.name = "ShieldPlate"
+	var mesh := BoxMesh.new()
+	mesh.size = Vector3(0.78, 1.02, 0.10)
+	shield_mesh.mesh = mesh
+	shield_mesh.position = Vector3(0.0, 0.92, -0.40)
+	shield_mesh.material_override = _make_unshaded_material(Color(0.30, 0.54, 1.0, 0.48))
+	add_child(shield_mesh)
 
 
 func _health_bar_piece(node_name: String, color: Color, size: Vector3) -> MeshInstance3D:
@@ -268,6 +335,8 @@ func _update_health_bar() -> void:
 func _update_sprite_facing() -> void:
 	if health_bar_root != null and player != null:
 		health_bar_root.look_at(player.global_position + Vector3.UP, Vector3.UP)
+	if status_label != null and player != null:
+		status_label.look_at(player.global_position + Vector3.UP, Vector3.UP)
 
 
 func _flash_body(critical: bool) -> void:
@@ -296,6 +365,64 @@ func _update_reveal_visual() -> void:
 			sprite.modulate = Color(1.0, 1.0, 1.0, 0.88)
 
 
+func _show_attack_tell(text: String, color: Color, duration: float) -> void:
+	tell_text = text
+	tell_timer = maxf(tell_timer, duration)
+	if tell_mesh != null:
+		tell_mesh.material_override = _make_unshaded_material(color)
+		tell_mesh.visible = true
+	if status_label != null:
+		status_label.modulate = color
+		status_label.text = _get_status_text()
+
+
+func _update_tell_visual() -> void:
+	if tell_mesh == null:
+		return
+	tell_mesh.visible = tell_timer > 0.0
+	if tell_timer <= 0.0:
+		return
+	var pulse := 1.0 + sin(Time.get_ticks_msec() * 0.018) * 0.08
+	tell_mesh.scale = Vector3(pulse, pulse, pulse)
+
+
+func _update_status_label() -> void:
+	if status_label == null:
+		return
+	status_label.text = _get_status_text()
+	status_label.modulate = Color(0.34, 0.92, 1.0) if reveal_timer > 0.0 else Color(1.0, 0.86, 0.48)
+	if tell_timer > 0.0:
+		status_label.modulate = Color(1.0, 0.48, 0.22) if tell_text == "STRIKE" else Color(0.34, 0.88, 1.0)
+
+
+func _get_status_text() -> String:
+	var tags: Array[String] = []
+	if tell_timer > 0.0:
+		tags.append(tell_text)
+	if reveal_timer > 0.0:
+		tags.append("REVEALED")
+	if snare_timer > 0.0:
+		tags.append("SNARED")
+	if bait_timer > 0.0:
+		tags.append("BAITED")
+	var suffix := ""
+	if not tags.is_empty():
+		suffix = "\n%s" % " / ".join(tags)
+	return "%s\n%s  HP %d/%d%s" % [display_name, _get_archetype_label(), health, max_health, suffix]
+
+
+func _get_archetype_label() -> String:
+	match archetype:
+		"charger":
+			return "RUSHER"
+		"ranged":
+			return "RANGED"
+		"shield":
+			return "GUARD"
+		_:
+			return "DUELIST"
+
+
 func _pulse_attack() -> void:
 	if body_mesh == null:
 		return
@@ -320,4 +447,6 @@ func _make_unshaded_material(color: Color) -> StandardMaterial3D:
 	var mat := StandardMaterial3D.new()
 	mat.albedo_color = color
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	if color.a < 1.0:
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	return mat

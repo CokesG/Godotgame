@@ -101,12 +101,18 @@ func test_fps_pivot_scene_and_contracts_load() -> void:
 	var drone: Node = drone_script.new()
 	var prototype: Node = prototype_script.new()
 	assert_true(player.has_method("add_camera_impulse"), "FPSPlayer should expose camera recoil impulses.")
+	assert_true(player.has_method("apply_weapon_recoil"), "FPSPlayer should expose persistent weapon recoil for AR spray control.")
 	assert_true(player.has_method("get_horizontal_speed_ratio"), "FPSPlayer should expose movement spread tuning.")
 	assert_true(weapon.has_method("try_fire"), "FPSWeapon should expose fire attempts.")
 	assert_true(weapon.has_method("try_reload"), "FPSWeapon should expose reload attempts.")
+	assert_eq(String(weapon.get("weapon_name")), "Ante Carbine AR", "FPSWeapon should default to the automatic carbine test profile.")
+	var weapon_source := FileAccess.get_file_as_string("res://scripts/fps/FPSWeapon.gd")
+	assert_true(weapon_source.contains("apply_weapon_recoil"), "FPSWeapon should route shot recoil through the player aim-kick hook.")
 	assert_true(drone.has_method("take_damage"), "FPSDrone should expose damage intake.")
 	assert_true(drone.has_method("is_critical_hit"), "FPSDrone should expose crit zones.")
 	assert_true(prototype.has_method("spawn_tracer"), "FPSPrototype should expose shot tracers.")
+	assert_true(prototype.has_method("spawn_enemy_tell"), "FPSPrototype should expose readable enemy attack tells.")
+	assert_true(prototype.has_method("spawn_enemy_projectile"), "FPSPrototype should expose incoming enemy projectiles.")
 	assert_true(prototype.has_method("get_living_enemies"), "FPSPrototype should expose encounter state.")
 	assert_true(prototype.has_method("get_map_summary"), "FPSPrototype should expose Crossfire map summary.")
 	assert_true(prototype.has_method("get_map_regions"), "FPSPrototype should expose authored tactical map regions.")
@@ -116,6 +122,8 @@ func test_fps_pivot_scene_and_contracts_load() -> void:
 	assert_true(player.has_method("add_armor"), "FPSPlayer should expose card-driven armor gain.")
 	assert_true(drone.has_method("reveal_for"), "FPSDrone should expose read-card reveal.")
 	assert_true(drone.has_method("apply_snare"), "FPSDrone should expose trap-card snare.")
+	assert_true(drone.has_method("_show_attack_tell"), "FPSDrone should expose windup tells for combat readability.")
+	assert_true(drone.has_method("_get_status_text"), "FPSDrone should expose readable status text for tells and debuffs.")
 
 
 func test_fps_pivot_uses_existing_visual_assets() -> void:
@@ -165,6 +173,7 @@ func test_fps_settings_crosshair_and_ability_contracts() -> void:
 	assert_true(prototype.has_method("_find_binding_conflict"), "FPSPrototype settings should detect duplicate keybinds.")
 	assert_true(prototype.has_method("_apply_settings_preset"), "FPSPrototype settings should expose input preset application.")
 	assert_true(prototype.has_method("_refresh_card_combat_hud"), "FPSPrototype should expose card-powered HUD refresh.")
+	assert_true(prototype.has_method("_get_ability_cooldown_ratio"), "FPSPrototype should expose card HUD cooldown progress.")
 	prototype.call("toggle_settings_menu")
 	assert_true(bool(prototype.call("is_gameplay_paused")), "Escape settings overlay should pause FPS gameplay input.")
 	prototype.call("toggle_settings_menu")
@@ -201,11 +210,14 @@ func test_fps_settings_crosshair_and_ability_contracts() -> void:
 	var ability_state: Array = prototype.call("get_ability_state")
 	assert_eq(ability_state.size(), 1, "FPSPrototype should expose active Q/E ability state.")
 	assert_true(bool((ability_state[0] as Dictionary).get("ready", false)), "Slotted abilities should start ready.")
+	prototype.set("ability_cooldowns", [3.0])
+	assert_true(is_equal_approx(float(prototype.call("_get_ability_cooldown_ratio", 0)), 0.5), "Card HUD cooldown progress should track remaining ability cooldown.")
 
 
 func test_fps_weapon_overclock_and_enemy_archetypes() -> void:
 	var weapon_script: GDScript = ResourceLoader.load("res://scripts/fps/FPSWeapon.gd", "", ResourceLoader.CACHE_MODE_IGNORE)
 	var weapon: Node = weapon_script.new()
+	assert_true((weapon.call("_get_recoil_pattern_value") as Vector2).y > 0.0, "The first AR should expose a deterministic recoil pattern.")
 	weapon.call("apply_temporary_overclock", 4.0, 0.78, 1.2)
 	assert_true(float(weapon.get("overclock_timer")) > 0.0, "Weapon overclock should arm a timed fire-rate/damage modifier.")
 	weapon.set("magazine_size", 12)
@@ -221,6 +233,7 @@ func test_fps_weapon_overclock_and_enemy_archetypes() -> void:
 	drone.call("configure", {"name": "Needle Eye", "archetype": "ranged", "ranged_attack_range": 11.5}, Node3D.new(), Node.new())
 	assert_eq(String(drone.get("archetype")), "ranged", "FPS enemies should support ranged archetypes.")
 	assert_true(drone.has_method("apply_bait"), "FPS enemies should support bait/debuff ability hooks.")
+	assert_true(String(drone.call("_get_archetype_label")).contains("RANGED"), "FPS enemy labels should explain combat role, not abstract names.")
 
 
 func test_action_guide_vfx_loads() -> void:

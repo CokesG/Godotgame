@@ -58,9 +58,14 @@ Current FPS ability contract:
 - Duplicate inputs are rejected during rebinding with an inline conflict warning. Escape remains fixed so the player can always reopen settings or cancel a rebind.
 - Aim down sights defaults to right mouse / left trigger and has separate ADS FOV, ADS sensitivity scale, and toggle/hold settings.
 - Right-stick look now has sensitivity, deadzone, and response-curve settings.
+- The default shooter weapon is now an automatic carbine profile with ADS-aware spread, a longer spray pattern, visible sights/magazine/reload motion, reload progress HUD, and player-level recoil that nudges aim instead of only shaking the viewmodel.
+- Enemy drones now expose readable status labels, attack tell rings/labels, delayed melee strikes, and projectile VFX; card ability slots show cooldown progress and pulse when fired.
 - Settings include one-click `Default FPS`, `Tactical`, `Controller`, and `Left-Handed` presets.
 - The FPS HUD includes a lower card-power rail so weapon, chip/armor/ammo economy, and the first four slotted ability cards stay visible during live combat.
-- The dev hub includes shortcuts for raw FPS sandbox, seeded FPS loadout, card prep, and seeded return payout so this loop can be tested without replaying the whole run.
+- Card-power HUD slots now include cooldown bars and pulse when a slotted card ability fires, so the card layer feels active during the shooter fight.
+- FPS enemies now carry visible combat roles, status tags, attack windup rings, shield plates for guards, and incoming projectiles for ranged shots instead of invisible instant hits.
+- The dev hub includes shortcuts for raw FPS sandbox, seeded FPS loadout, card prep, seeded return payout, and seeded defeat return so this loop can be tested without replaying the whole run.
+- The dev hub also includes a seeded defeat return so loss-state, wound, and run-failure handoffs can be tested as quickly as win payouts.
 - FPS reward selection now builds an arena result with map name, wave, kills, hit rate, damage, selected reward, objective score, wounds, chips awarded, and next-hand draw count, then returns to `TestCombat` through `ArenaBridge`.
 - `TestCombat` consumes pending arena results on load, restores the pre-FPS run/deck/loadout snapshot, shows `ArenaPayoutPanel`, applies chip and non-chip payout effects, blocks normal card actions until `Start Next Hand`, and leaves the player on the next prep hand.
 - `ArenaBridge`, `DeckManager`, and `RunManager` expose snapshot/restore hooks so the table can preserve exact deck piles, loadout piles, run node, rewards, relics, Blood, carryover payouts, and defeat state across the arena scene swap.
@@ -74,7 +79,7 @@ For the board-flow/UI contract, see `docs/design/board_flow_shooter_fusion.md`. 
 - The game already has visible fighters and a card-table arena.
 - The player needs to see their body, enemy tells, cards, chips, and target state at once.
 - Melee, dodge, block, trap, guard-break, and flank reads map cleanly to the current card types.
-- Third-person proves the card-to-ability contract before we add camera capture, recoil, networked aiming, and shooter feel.
+- Third-person proves the card-to-ability contract before we productionize camera capture, networked aiming, and deeper shooter feel.
 
 ## Public References
 

@@ -284,6 +284,12 @@ func get_ads_spread_multiplier() -> float:
 	return 0.56 if is_ads_active() else 1.0
 
 
+func apply_weapon_recoil(amount: Vector2, fov_amount: float = 0.0) -> void:
+	pitch = clampf(pitch + amount.x, deg_to_rad(-86.0), deg_to_rad(86.0))
+	rotate_y(amount.y)
+	add_camera_impulse(amount * 0.28, fov_amount)
+
+
 func add_camera_impulse(amount: Vector2, fov_amount: float = 0.0) -> void:
 	recoil_offset += amount
 	recoil_offset.x = clampf(recoil_offset.x, deg_to_rad(-7.0), deg_to_rad(9.0))

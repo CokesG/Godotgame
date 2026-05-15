@@ -52,6 +52,8 @@ var hud_root: Control
 var health_bar: ProgressBar
 var ammo_label: Label
 var reserve_label: Label
+var reload_bar: ProgressBar
+var reload_status_label: Label
 var kill_label: Label
 var status_label: Label
 var loadout_label: Label
@@ -364,6 +366,7 @@ func _try_use_ability(index: int) -> bool:
 	if used:
 		ability_cooldowns[index] = float(ability.get("cooldown", 6.0))
 		_show_status_flash("%s readying" % _get_ability_display_name(String(entry.get("id", "")), kind), Color(0.52, 1.0, 0.82))
+		_pulse_card_hud_slot(index, Color(0.52, 1.0, 0.82))
 		_refresh_ui()
 	return used
 
@@ -516,6 +519,74 @@ func spawn_impact(position: Vector3, normal: Vector3, critical: bool = false) ->
 	tween.tween_property(spark, "scale", Vector3(2.2, 2.2, 2.2), 0.12).from(Vector3(0.35, 0.35, 0.35))
 	tween.tween_property(spark, "transparency", 1.0, 0.14)
 	tween.chain().tween_callback(spark.queue_free)
+
+
+func spawn_enemy_tell(position: Vector3, color: Color, radius: float, text: String = "DANGER") -> void:
+	if effects_root == null:
+		return
+	var ring := MeshInstance3D.new()
+	ring.name = "EnemyTellRing"
+	var mesh := TorusMesh.new()
+	mesh.inner_radius = radius
+	mesh.outer_radius = radius + 0.055
+	ring.mesh = mesh
+	ring.global_position = position
+	ring.material_override = _make_marker_material(color, 0.74)
+	effects_root.add_child(ring)
+
+	var label := Label3D.new()
+	label.name = "EnemyTellLabel"
+	label.text = text
+	label.font_size = 42
+	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	label.outline_size = 8
+	label.outline_modulate = Color(0.02, 0.01, 0.01, 0.90)
+	label.modulate = color
+	label.global_position = position + Vector3(0.0, 1.85, 0.0)
+	effects_root.add_child(label)
+
+	var tween := create_tween()
+	tween.set_parallel(true)
+	tween.tween_property(ring, "scale", Vector3(1.28, 1.28, 1.28), 0.34).from(Vector3(0.42, 0.42, 0.42))
+	tween.tween_property(ring, "transparency", 1.0, 0.42).set_delay(0.10)
+	tween.tween_property(label, "global_position", label.global_position + Vector3(0.0, 0.34, 0.0), 0.42)
+	tween.tween_property(label, "modulate:a", 0.0, 0.42).set_delay(0.12)
+	tween.chain().tween_callback(func() -> void:
+		if is_instance_valid(ring):
+			ring.queue_free()
+		if is_instance_valid(label):
+			label.queue_free()
+	)
+
+
+func spawn_enemy_projectile(start_position: Vector3, end_position: Vector3, damage: int, source: Node = null) -> void:
+	if effects_root == null:
+		if player != null and player.has_method("take_damage"):
+			player.call("take_damage", damage, start_position)
+		return
+	var projectile := MeshInstance3D.new()
+	projectile.name = "EnemyProjectile"
+	var mesh := SphereMesh.new()
+	mesh.radius = 0.085
+	mesh.height = 0.16
+	projectile.mesh = mesh
+	projectile.material_override = _make_emissive_material(Color(1.0, 0.42, 0.24), 2.4)
+	effects_root.add_child(projectile)
+	projectile.global_position = start_position
+	spawn_tracer(start_position, end_position, false)
+
+	var travel_time := clampf(start_position.distance_to(end_position) / 26.0, 0.18, 0.46)
+	var tween := create_tween()
+	tween.set_parallel(true)
+	tween.tween_property(projectile, "global_position", end_position, travel_time).set_trans(Tween.TRANS_CUBIC)
+	tween.tween_property(projectile, "scale", Vector3(1.45, 1.45, 1.45), travel_time).from(Vector3(0.45, 0.45, 0.45))
+	tween.chain().tween_callback(func() -> void:
+		if is_instance_valid(projectile):
+			projectile.queue_free()
+		if player != null and is_instance_valid(player) and player.has_method("take_damage") and not is_gameplay_paused():
+			player.call("take_damage", damage, start_position)
+		spawn_impact(end_position, Vector3.UP, false)
+	)
 
 
 func spawn_combat_text(position: Vector3, text: String, critical: bool, defeated: bool) -> void:
@@ -822,6 +893,23 @@ func _build_ui() -> void:
 	reserve_label.text = "72"
 	reserve_label.add_theme_font_size_override("font_size", 18)
 	top_bar.add_child(reserve_label)
+
+	reload_bar = ProgressBar.new()
+	reload_bar.name = "ReloadProgress"
+	reload_bar.max_value = 1.0
+	reload_bar.value = 0.0
+	reload_bar.custom_minimum_size = Vector2(116, 10)
+	reload_bar.show_percentage = false
+	reload_bar.visible = false
+	top_bar.add_child(reload_bar)
+
+	reload_status_label = Label.new()
+	reload_status_label.name = "ReloadStatusLabel"
+	reload_status_label.text = "RELOAD"
+	reload_status_label.add_theme_font_size_override("font_size", 13)
+	reload_status_label.add_theme_color_override("font_color", Color(1.0, 0.76, 0.35))
+	reload_status_label.visible = false
+	top_bar.add_child(reload_status_label)
 
 	kill_label = Label.new()
 	kill_label.name = "KillLabel"
@@ -2217,8 +2305,15 @@ func _refresh_ui() -> void:
 	if ammo_label != null:
 		ammo_label.text = str(ammo_state.get("ammo", 0))
 	if reserve_label != null:
-		var suffix := "..." if bool(ammo_state.get("reloading", false)) else str(ammo_state.get("reserve", 0))
+		var is_reloading := bool(ammo_state.get("reloading", false))
+		var suffix := "..." if is_reloading else str(ammo_state.get("reserve", 0))
 		reserve_label.text = suffix
+		if reload_bar != null:
+			reload_bar.visible = is_reloading
+			reload_bar.value = float(ammo_state.get("reload_progress", 0.0))
+		if reload_status_label != null:
+			reload_status_label.visible = is_reloading
+			reload_status_label.text = "RELOADING %d%%" % int(roundf(float(ammo_state.get("reload_progress", 0.0)) * 100.0))
 	if kill_label != null:
 		kill_label.text = "%d/%d" % [kills, enemy_defs.size()]
 	if status_label != null and wave_active:
@@ -2283,17 +2378,55 @@ func _build_ability_card_panel(index: int) -> PanelContainer:
 	margin.add_theme_constant_override("margin_bottom", 6)
 	panel.add_child(margin)
 
+	var stack := VBoxContainer.new()
+	stack.add_theme_constant_override("separation", 4)
+	margin.add_child(stack)
+
 	var label := Label.new()
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	label.add_theme_font_size_override("font_size", 12)
 	if index < active_abilities.size():
 		label.text = _get_card_hud_ability_text(index)
 		label.add_theme_color_override("font_color", Color(0.88, 0.98, 1.0) if _is_ability_ready(index) else Color(0.58, 0.66, 0.70))
+		panel.tooltip_text = "Live card power from %s" % String((active_abilities[index] as Dictionary).get("card_name", "slotted card"))
 	else:
 		label.text = "SLOT %d\nNo card equipped" % (index + 1)
 		label.add_theme_color_override("font_color", Color(0.45, 0.49, 0.52))
-	margin.add_child(label)
+		panel.tooltip_text = "Slot a card before Enter Arena to fill this combat power."
+	stack.add_child(label)
+
+	var cooldown := ProgressBar.new()
+	cooldown.name = "AbilityCooldownBar%d" % (index + 1)
+	cooldown.custom_minimum_size = Vector2(0, 6)
+	cooldown.max_value = 1.0
+	cooldown.value = _get_ability_cooldown_ratio(index)
+	cooldown.show_percentage = false
+	stack.add_child(cooldown)
 	return panel
+
+
+func _get_ability_cooldown_ratio(index: int) -> float:
+	if index < 0 or index >= active_abilities.size():
+		return 0.0
+	var entry: Dictionary = active_abilities[index]
+	var ability: Dictionary = entry.get("ability", {})
+	var max_cooldown := maxf(0.01, float(ability.get("cooldown", 6.0)))
+	var remaining := ability_cooldowns[index] if index < ability_cooldowns.size() else 0.0
+	return clampf(1.0 - float(remaining) / max_cooldown, 0.0, 1.0)
+
+
+func _pulse_card_hud_slot(index: int, color: Color) -> void:
+	if card_hud_ability_row == null:
+		return
+	var slot := card_hud_ability_row.get_node_or_null("AbilityCardSlot%d" % (index + 1))
+	if slot == null:
+		return
+	slot.modulate = color
+	var tween := create_tween()
+	tween.set_parallel(true)
+	tween.tween_property(slot, "scale", Vector2(1.06, 1.06), 0.08)
+	tween.chain().tween_property(slot, "scale", Vector2.ONE, 0.16)
+	tween.tween_property(slot, "modulate", Color.WHITE, 0.22)
 
 
 func _get_card_hud_ability_text(index: int) -> String:

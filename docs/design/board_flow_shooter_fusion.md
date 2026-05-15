@@ -43,6 +43,7 @@ The dev hub also has phase launcher shortcuts:
 - `Card Prep With Sample Hand`: jumps to the card/loadout prep table.
 - `FPS With Slotted Weapon`: seeds a sample weapon/ability payload before opening the FPS arena.
 - `FPS Return Payout`: jumps directly to the payout handoff for fast UI testing.
+- `FPS Defeat Return`: jumps directly to a failed arena handoff for loss-state testing.
 - `Arena Return Payout Check`: runs the focused persisted-return smoke check.
 
 ## What The Board Is Now

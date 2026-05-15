@@ -71,6 +71,7 @@ func _build_ui() -> void:
 	nav.add_child(_make_button("Card Prep With Sample Hand", CARD_SCENE, "CardPrepButton"))
 	nav.add_child(_make_action_button("FPS With Slotted Weapon", "SlottedFPSButton", _open_fps_with_sample_loadout))
 	nav.add_child(_make_action_button("FPS Return Payout", "PayoutDemoButton", _open_payout_demo))
+	nav.add_child(_make_action_button("FPS Defeat Return", "DefeatDemoButton", _open_defeat_demo))
 	nav.add_child(_make_button("Shooter Arena Sandbox", SHOOTER_SCENE, "ShooterArenaButton"))
 	nav.add_child(_make_button("Tactical Map Viewer", MAP_VIEWER_SCENE, "MapViewerButton"))
 
@@ -120,7 +121,7 @@ func _build_ui() -> void:
 	var lanes := Label.new()
 	lanes.name = "ModeSummary"
 	lanes.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	lanes.text = "Full Game starts the card run. Card Prep opens the table. FPS With Slotted Weapon seeds a sample loadout. FPS Return Payout jumps straight to the reward handoff. Tactical Map Viewer opens the shared Crossfire Table data."
+	lanes.text = "Full Game starts the card run. Card Prep opens the table. FPS With Slotted Weapon seeds a sample loadout. FPS Return Payout and FPS Defeat Return jump straight to arena handoff outcomes. Tactical Map Viewer opens the shared Crossfire Table data."
 	lanes.add_theme_color_override("font_color", Color(0.72, 0.80, 0.78))
 	details.add_child(lanes)
 
@@ -242,6 +243,35 @@ func _open_payout_demo() -> void:
 			"selected_reward": {"label": "Damage Payout", "kind": "damage", "amount": 3, "chip_bonus": 2},
 			"chips_awarded": 10,
 			"cards_to_draw": 5
+		})
+	_go_to_scene(CARD_SCENE)
+
+
+func _open_defeat_demo() -> void:
+	var bridge := get_node_or_null("/root/ArenaBridge")
+	if bridge != null and bridge.has_method("set_result"):
+		bridge.call("set_result", {
+			"source": "dev_hub",
+			"map_name": "Crossfire Table",
+			"outcome": "defeat",
+			"cleared": false,
+			"wave": 1,
+			"kills": 1,
+			"clear_time": 34.0,
+			"shots_fired": 18,
+			"shots_hit": 7,
+			"hit_rate": 0.39,
+			"critical_hits": 1,
+			"damage_dealt": 92,
+			"damage_taken": 120,
+			"objective_score": 18,
+			"wounds_taken": 3,
+			"remaining_health": 0,
+			"remaining_armor": 0,
+			"loadout": {"weapon": "Ante Carbine AR", "abilities": 2, "armor": 0, "ammo": 5, "chips": 1},
+			"selected_reward": {"label": "No Payout", "kind": "none", "amount": 0, "chip_bonus": 0},
+			"chips_awarded": 1,
+			"cards_to_draw": 0
 		})
 	_go_to_scene(CARD_SCENE)
 
