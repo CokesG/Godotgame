@@ -65,11 +65,10 @@ func _ready() -> void:
 	health_changed.emit(health, max_health)
 
 
-func _unhandled_input(event: InputEvent) -> void:
+func _input(event: InputEvent) -> void:
 	if event.is_action_pressed("fps_toggle_mouse"):
 		if mouse_captured:
-			Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
-			mouse_captured = false
+			_release_mouse()
 		else:
 			_capture_mouse()
 		get_viewport().set_input_as_handled()
@@ -83,12 +82,15 @@ func _unhandled_input(event: InputEvent) -> void:
 	if dead:
 		return
 
-	if event is InputEventMouseMotion and mouse_captured:
+	if event is InputEventMouseButton and event.is_action_pressed("fps_fire") and not mouse_captured:
+		_capture_mouse()
+
+	if event is InputEventMouseMotion:
+		mouse_captured = Input.get_mouse_mode() == Input.MOUSE_MODE_CAPTURED
+		if not mouse_captured:
+			return
 		var motion := event as InputEventMouseMotion
-		rotate_y(-motion.relative.x * mouse_sensitivity)
-		pitch = clampf(pitch - motion.relative.y * mouse_sensitivity, deg_to_rad(-86.0), deg_to_rad(86.0))
-		if weapon != null:
-			weapon.add_sway(motion.relative)
+		_apply_mouse_look(motion.relative)
 		get_viewport().set_input_as_handled()
 
 
@@ -309,6 +311,18 @@ func _capture_mouse() -> void:
 		return
 	Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 	mouse_captured = true
+
+
+func _release_mouse() -> void:
+	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
+	mouse_captured = false
+
+
+func _apply_mouse_look(relative_motion: Vector2) -> void:
+	rotate_y(-relative_motion.x * mouse_sensitivity)
+	pitch = clampf(pitch - relative_motion.y * mouse_sensitivity, deg_to_rad(-86.0), deg_to_rad(86.0))
+	if weapon != null:
+		weapon.add_sway(relative_motion)
 
 
 func _die() -> void:

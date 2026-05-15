@@ -119,6 +119,15 @@ func test_fps_pivot_uses_existing_visual_assets() -> void:
 		assert_true(FileAccess.file_exists(String(asset_path)), "%s should be available for FPS enemy billboards." % asset_path)
 
 
+func test_fps_player_mouse_look_changes_yaw_and_pitch() -> void:
+	var player_script: GDScript = ResourceLoader.load("res://scripts/fps/FPSPlayer.gd", "", ResourceLoader.CACHE_MODE_IGNORE)
+	var player: Node3D = player_script.new()
+	var start_yaw := player.rotation.y
+	player.call("_apply_mouse_look", Vector2(120.0, -60.0))
+	assert_ne(player.rotation.y, start_yaw, "Horizontal mouse motion should rotate the FPS body.")
+	assert_true(float(player.get("pitch")) > 0.0, "Vertical mouse motion should update FPS camera pitch.")
+
+
 func test_action_guide_vfx_loads() -> void:
 	var vfx_script: GDScript = ResourceLoader.load("res://scripts/vfx/CombatVFX.gd", "", ResourceLoader.CACHE_MODE_IGNORE)
 	var vfx: Control = vfx_script.new()
