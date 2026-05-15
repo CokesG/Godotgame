@@ -92,12 +92,21 @@ func _assert_hud_layout(capture_name: String) -> void:
 
 func _assert_reward_report() -> void:
 	var reward_panel := prototype.find_child("RewardPanel", true, false) as Control
+	var reward_summary := prototype.find_child("RewardSummaryLabel", true, false) as Label
+	var reward_focus := prototype.find_child("RewardFocusLabel", true, false) as RichTextLabel
+	var reward_button := prototype.find_child("RewardButton0", true, false) as Button
 	var reward_labels := reward_panel.find_children("*", "RichTextLabel", true, false) if reward_panel != null else []
 	var reward_label = reward_labels[0] if not reward_labels.is_empty() else null
 	if reward_panel == null or not reward_panel.visible:
 		_fail("Reward report should be visible after wave clear.")
 	if reward_label == null:
 		_fail("Reward report should expose summary text.")
+	if reward_summary == null or not reward_summary.text.contains("1-3"):
+		_fail("Reward report should explain payout mouse and keyboard controls.")
+	if reward_focus == null or not reward_focus.text.contains("SELECTED"):
+		_fail("Reward report should expose selected payout explanation copy.")
+	if reward_button == null or not reward_button.text.contains("TAKE"):
+		_fail("Reward buttons should read as clear payout cards.")
 
 
 func _capture_and_assert(capture_name: String) -> void:

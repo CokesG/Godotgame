@@ -38,8 +38,8 @@ var shell_eject: Marker3D
 var magazine: MeshInstance3D
 var firing_hand: MeshInstance3D
 var support_hand: MeshInstance3D
-var base_position := Vector3(0.46, -0.42, -0.88)
-var ads_position := Vector3(0.0, -0.19, -0.74)
+var base_position := Vector3(0.42, -0.39, -0.86)
+var ads_position := Vector3(0.0, -0.165, -0.78)
 var magazine_base_position := Vector3.ZERO
 var support_hand_base_position := Vector3.ZERO
 var support_hand_base_rotation := Vector3.ZERO
@@ -236,6 +236,19 @@ func get_ammo_state() -> Dictionary:
 	}
 
 
+func get_feel_tuning_snapshot() -> Dictionary:
+	return {
+		"weapon_name": weapon_name,
+		"fire_interval": fire_interval,
+		"base_spread_degrees": base_spread_degrees,
+		"hipfire_spread_multiplier": hipfire_spread_multiplier,
+		"ads_recoil_scalar": _get_ads_recoil_scalar(),
+		"base_position": base_position,
+		"ads_position": ads_position,
+		"reload_time": reload_time
+	}
+
+
 func _finish_reload() -> void:
 	if infinite_test_ammo:
 		ammo = magazine_size
@@ -366,15 +379,17 @@ func _recover_viewmodel(delta: float) -> void:
 		viewmodel_root.rotation = recoil_rotation * visual_recoil_scale + Vector3(sway_offset.y * 0.7, sway_offset.x * 1.1, -sway_offset.x * 0.35) * sway_scale + reload_rotation
 	if magazine != null:
 		var progress := _get_reload_progress()
-		var mag_drop := sin(progress * PI)
-		magazine.position = magazine_base_position + Vector3(0.0, -0.18 * mag_drop, 0.05 * mag_drop)
-		magazine.rotation.x = deg_to_rad(-16.0 * mag_drop)
+		var mag_out := sin(clampf(progress / 0.54, 0.0, 1.0) * PI)
+		var mag_seat := sin(clampf((progress - 0.40) / 0.60, 0.0, 1.0) * PI)
+		magazine.position = magazine_base_position + Vector3(0.0, -0.22 * mag_out - 0.055 * mag_seat, 0.06 * mag_out - 0.035 * mag_seat)
+		magazine.rotation.x = deg_to_rad(-22.0 * mag_out + 8.0 * mag_seat)
+		magazine.rotation.z = deg_to_rad(4.0 * mag_out)
 	if support_hand != null:
 		var progress := _get_reload_progress()
-		var grab_curve := sin(progress * PI)
+		var grab_curve := sin(clampf(progress / 0.70, 0.0, 1.0) * PI)
 		var seat_curve := sin(clampf((progress - 0.35) / 0.65, 0.0, 1.0) * PI)
-		support_hand.position = support_hand_base_position + Vector3(0.105, -0.105, 0.235) * grab_curve + Vector3(0.0, -0.035, -0.08) * seat_curve
-		support_hand.rotation = support_hand_base_rotation + Vector3(deg_to_rad(-18.0), deg_to_rad(6.0), deg_to_rad(22.0)) * grab_curve
+		support_hand.position = support_hand_base_position + Vector3(0.125, -0.125, 0.260) * grab_curve + Vector3(0.0, -0.048, -0.105) * seat_curve
+		support_hand.rotation = support_hand_base_rotation + Vector3(deg_to_rad(-22.0), deg_to_rad(7.0), deg_to_rad(26.0)) * grab_curve
 
 
 func _get_reload_progress() -> float:
@@ -392,19 +407,32 @@ func _spawn_muzzle_flash() -> void:
 	flash.mesh = mesh
 	flash.material_override = _make_emissive_material(Color(1.0, 0.72, 0.30), 2.8, true)
 	muzzle.add_child(flash)
+	var crown := MeshInstance3D.new()
+	crown.name = "MuzzleFlashCrown"
+	var crown_mesh := TorusMesh.new()
+	crown_mesh.inner_radius = 0.072
+	crown_mesh.outer_radius = 0.102
+	crown.mesh = crown_mesh
+	crown.rotation_degrees.x = 90.0
+	crown.material_override = _make_emissive_material(Color(0.42, 0.94, 1.0), 1.9, true)
+	muzzle.add_child(crown)
 	var light := OmniLight3D.new()
 	light.name = "MuzzleLight"
 	light.light_color = Color(1.0, 0.58, 0.25)
-	light.light_energy = 1.6
-	light.omni_range = 2.3
+	light.light_energy = 2.1
+	light.omni_range = 2.8
 	muzzle.add_child(light)
 	var tween := create_tween()
 	tween.set_parallel(true)
-	tween.tween_property(flash, "scale", Vector3(2.2, 2.2, 2.2), 0.045).from(Vector3(0.4, 0.4, 0.4))
-	tween.tween_property(light, "light_energy", 0.0, 0.055)
+	tween.tween_property(flash, "scale", Vector3(2.6, 2.6, 2.6), 0.045).from(Vector3(0.4, 0.4, 0.4))
+	tween.tween_property(crown, "scale", Vector3(1.85, 1.85, 1.85), 0.060).from(Vector3(0.35, 0.35, 0.35))
+	tween.tween_property(crown, "transparency", 1.0, 0.070)
+	tween.tween_property(light, "light_energy", 0.0, 0.065)
 	tween.chain().tween_callback(func() -> void:
 		if is_instance_valid(flash):
 			flash.queue_free()
+		if is_instance_valid(crown):
+			crown.queue_free()
 		if is_instance_valid(light):
 			light.queue_free()
 	)

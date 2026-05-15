@@ -15,6 +15,8 @@ const DEFAULT_BRIDGE_PAYLOAD := {
 	"loadout": [],
 	"economy": {"chips": 0, "armor": 0, "ammo": 24},
 	"objective_mode": "hold_pot",
+	"reward_mods": [],
+	"progression": {"card_xp_pool": 0, "wounds_total": 0},
 	"reads": {"target_enemy": &"", "threat": "intent hidden"}
 }
 
@@ -143,6 +145,8 @@ var telemetry_label: Label
 var reward_backdrop: ColorRect
 var reward_panel: PanelContainer
 var reward_label: RichTextLabel
+var reward_summary_label: Label
+var reward_focus_label: RichTextLabel
 var settings_panel: PanelContainer
 var settings_backdrop: ColorRect
 var settings_footer_label: Label
@@ -409,7 +413,10 @@ func get_active_loadout_summary() -> Dictionary:
 		"ammo": int(economy.get("ammo", 24)),
 		"target_enemy": active_bridge_payload.get("reads", {}).get("target_enemy", &""),
 		"objective_mode": objective_mode,
-		"objective_label": String(objective_def.get("label", "Objective"))
+		"objective_label": String(objective_def.get("label", "Objective")),
+		"reward_mods": (active_bridge_payload.get("reward_mods", []) as Array).size(),
+		"card_xp_pool": int((active_bridge_payload.get("progression", {}) as Dictionary).get("card_xp_pool", 0)),
+		"wounds_total": int((active_bridge_payload.get("progression", {}) as Dictionary).get("wounds_total", 0))
 	}
 
 
@@ -1268,12 +1275,17 @@ func _refresh_objective_mode_props() -> void:
 	var color := _get_objective_color()
 	_add_objective_mode_marker(mode_root, _get_objective_position(), float(objective_def.get("radius", 3.2)), String(objective_def.get("short", "OBJ")), color)
 	match objective_mode:
+		"hold_pot":
+			_add_hold_pot_bank_prop(mode_root, color)
 		"extract":
 			_add_objective_mode_marker(mode_root, _get_extract_position(), float(objective_def.get("exit_radius", 3.0)), "EXTRACT", Color(0.34, 0.95, 1.0))
+			_add_extract_gate_prop(mode_root, Color(0.34, 0.95, 1.0))
 		"defend":
 			_add_objective_core_prop(mode_root, color)
+			_add_defend_barrier_props(mode_root, color)
 		"duel":
 			_add_objective_wall_note(mode_root, "DUEL TARGET: %s" % objective_target_name, color)
+			_add_duel_mark_prop(mode_root, color)
 		"boss_gate":
 			_add_boss_gate_prop(mode_root, color)
 
@@ -1313,6 +1325,47 @@ func _add_objective_core_prop(parent: Node3D, color: Color) -> void:
 	core.position = _get_objective_position() + Vector3(0.0, 0.62, 0.0)
 	core.material_override = _make_emissive_material(color, 0.9)
 	parent.add_child(core)
+
+
+func _add_hold_pot_bank_prop(parent: Node3D, color: Color) -> void:
+	for index in range(4):
+		var angle := float(index) * TAU / 4.0 + PI * 0.25
+		var post := _add_box(
+			"HoldPotStake%d" % index,
+			_get_objective_position() + Vector3(cos(angle) * 2.9, 0.64, sin(angle) * 2.9),
+			Vector3(0.16, 1.20, 0.16),
+			_make_marker_material(color, 0.62),
+			Vector3.ZERO,
+			false
+		)
+		arena_root.remove_child(post)
+		parent.add_child(post)
+	_add_objective_wall_note(parent, "HOLD CENTER: BANK THE POT", color)
+
+
+func _add_extract_gate_prop(parent: Node3D, color: Color) -> void:
+	var exit_pos := _get_extract_position()
+	var left := _add_box("ExtractGateLeft", exit_pos + Vector3(-1.55, 1.05, 0.0), Vector3(0.22, 2.1, 0.20), _make_marker_material(color, 0.72), Vector3.ZERO, false)
+	var right := _add_box("ExtractGateRight", exit_pos + Vector3(1.55, 1.05, 0.0), Vector3(0.22, 2.1, 0.20), _make_marker_material(color, 0.72), Vector3.ZERO, false)
+	var top := _add_box("ExtractGateTop", exit_pos + Vector3(0.0, 2.08, 0.0), Vector3(3.4, 0.20, 0.20), _make_marker_material(color, 0.72), Vector3.ZERO, false)
+	for node in [left, right, top]:
+		arena_root.remove_child(node)
+		parent.add_child(node)
+
+
+func _add_defend_barrier_props(parent: Node3D, color: Color) -> void:
+	for offset in [Vector3(-2.2, 0.58, -0.25), Vector3(2.2, 0.58, -0.25), Vector3(0.0, 0.58, 2.35)]:
+		var barrier := _add_box("DefendBarrier", _get_objective_position() + offset, Vector3(1.65, 0.18, 0.76), _make_marker_material(color, 0.46), Vector3(0.0, 0.25 if offset.x < 0.0 else -0.25, 0.0), false)
+		arena_root.remove_child(barrier)
+		parent.add_child(barrier)
+
+
+func _add_duel_mark_prop(parent: Node3D, color: Color) -> void:
+	var mark_pos := Vector3(0.0, 0.10, -10.8)
+	_add_objective_mode_marker(parent, mark_pos, 2.4, "MARK", color)
+	var blade := _add_box("DuelMarkBlade", mark_pos + Vector3(0.0, 1.2, 0.0), Vector3(0.18, 2.3, 0.18), _make_marker_material(color, 0.74), Vector3(0.0, 0.0, deg_to_rad(35.0)), false)
+	arena_root.remove_child(blade)
+	parent.add_child(blade)
 
 
 func _add_boss_gate_prop(parent: Node3D, color: Color) -> void:
@@ -1481,6 +1534,7 @@ func _build_ui() -> void:
 	damage_flash.color = Color(0.95, 0.08, 0.04, 0.0)
 	hud_root.add_child(damage_flash)
 
+	var hud_accent := _get_class_accent_color()
 	var combat_panel := PanelContainer.new()
 	combat_panel.name = "CombatStatusHud"
 	combat_panel.anchor_left = 0.028
@@ -1488,7 +1542,7 @@ func _build_ui() -> void:
 	combat_panel.anchor_right = 0.972
 	combat_panel.anchor_bottom = 0.106
 	combat_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	combat_panel.add_theme_stylebox_override("panel", _make_hud_panel_style(Color(0.018, 0.024, 0.030, 0.66), Color(0.20, 0.84, 1.0, 0.58), 6, 2))
+	combat_panel.add_theme_stylebox_override("panel", _make_hud_panel_style(Color(0.012, 0.018, 0.022, 0.72), Color(hud_accent.r, hud_accent.g, hud_accent.b, 0.68), 6, 2))
 	hud_root.add_child(combat_panel)
 
 	var combat_margin := MarginContainer.new()
@@ -1518,12 +1572,17 @@ func _build_ui() -> void:
 	ammo_label.name = "AmmoLabel"
 	ammo_label.text = "12"
 	ammo_label.add_theme_font_size_override("font_size", 24)
+	ammo_label.add_theme_color_override("font_color", Color(0.96, 0.98, 1.0))
+	ammo_label.add_theme_color_override("font_shadow_color", Color(0.0, 0.0, 0.0, 0.75))
+	ammo_label.add_theme_constant_override("shadow_offset_x", 1)
+	ammo_label.add_theme_constant_override("shadow_offset_y", 1)
 	top_bar.add_child(ammo_label)
 
 	reserve_label = Label.new()
 	reserve_label.name = "ReserveLabel"
 	reserve_label.text = "72"
 	reserve_label.add_theme_font_size_override("font_size", 14)
+	reserve_label.add_theme_color_override("font_color", Color(0.78, 0.88, 0.92))
 	top_bar.add_child(reserve_label)
 
 	reload_bar = ProgressBar.new()
@@ -1533,6 +1592,8 @@ func _build_ui() -> void:
 	reload_bar.custom_minimum_size = Vector2(72, 8)
 	reload_bar.show_percentage = false
 	reload_bar.visible = false
+	reload_bar.add_theme_stylebox_override("background", _make_hud_panel_style(Color(0.07, 0.06, 0.035, 0.80), Color(0.0, 0.0, 0.0, 0.0), 4, 0))
+	reload_bar.add_theme_stylebox_override("fill", _make_hud_panel_style(Color(1.0, 0.68, 0.22, 0.92), Color(1.0, 0.88, 0.42, 0.22), 4, 0))
 	top_bar.add_child(reload_bar)
 
 	reload_status_label = Label.new()
@@ -1557,6 +1618,7 @@ func _build_ui() -> void:
 	kill_label.name = "KillLabel"
 	kill_label.text = "0"
 	kill_label.add_theme_font_size_override("font_size", 14)
+	kill_label.add_theme_color_override("font_color", Color(0.90, 0.96, 1.0))
 	top_bar.add_child(kill_label)
 
 	status_label = Label.new()
@@ -1564,6 +1626,7 @@ func _build_ui() -> void:
 	status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	status_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	status_label.add_theme_font_size_override("font_size", 14)
+	status_label.add_theme_color_override("font_color", Color(0.94, 0.97, 1.0))
 	top_bar.add_child(status_label)
 
 	loadout_label = Label.new()
@@ -1607,6 +1670,7 @@ func _build_ui() -> void:
 	telemetry_label.anchor_bottom = 0.825
 	telemetry_label.add_theme_font_size_override("font_size", 11)
 	telemetry_label.add_theme_color_override("font_color", Color(0.78, 0.84, 0.86, 0.88))
+	telemetry_label.visible = false
 	hud_root.add_child(telemetry_label)
 
 	_build_crosshair(hud_root)
@@ -1623,7 +1687,8 @@ func _build_card_combat_hud(root: Control) -> void:
 	card_hud_panel.anchor_right = 0.865
 	card_hud_panel.anchor_bottom = 0.960
 	card_hud_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	card_hud_panel.add_theme_stylebox_override("panel", _make_hud_panel_style(Color(0.018, 0.016, 0.014, 0.64), Color(1.0, 0.64, 0.20, 0.58), 6, 2))
+	var class_color := _get_class_accent_color()
+	card_hud_panel.add_theme_stylebox_override("panel", _make_hud_panel_style(Color(0.015, 0.014, 0.013, 0.72), Color(class_color.r, class_color.g, class_color.b, 0.64), 6, 2))
 	root.add_child(card_hud_panel)
 
 	var margin := MarginContainer.new()
@@ -1645,7 +1710,7 @@ func _build_card_combat_hud(root: Control) -> void:
 	card_hud_weapon_label.name = "CardHudWeaponLabel"
 	card_hud_weapon_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	card_hud_weapon_label.add_theme_font_size_override("font_size", 11)
-	card_hud_weapon_label.add_theme_color_override("font_color", Color(1.0, 0.82, 0.34))
+	card_hud_weapon_label.add_theme_color_override("font_color", Color(1.0, 0.86, 0.46))
 	top_row.add_child(card_hud_weapon_label)
 
 	card_hud_economy_label = Label.new()
@@ -1664,7 +1729,7 @@ func _build_card_combat_hud(root: Control) -> void:
 	card_hud_summary_label.name = "CardHudSummaryLabel"
 	card_hud_summary_label.add_theme_font_size_override("font_size", 9)
 	card_hud_summary_label.add_theme_color_override("font_color", Color(0.70, 0.76, 0.82, 0.92))
-	card_hud_summary_label.visible = false
+	card_hud_summary_label.visible = true
 	layout.add_child(card_hud_summary_label)
 
 
@@ -2002,58 +2067,76 @@ func _build_reward_panel(root: Control) -> void:
 	reward_backdrop = ColorRect.new()
 	reward_backdrop.name = "RewardBackdrop"
 	reward_backdrop.set_anchors_preset(Control.PRESET_FULL_RECT)
-	reward_backdrop.color = Color(0.01, 0.014, 0.018, 0.42)
+	reward_backdrop.color = Color(0.006, 0.009, 0.012, 0.62)
 	reward_backdrop.visible = false
 	reward_backdrop.mouse_filter = Control.MOUSE_FILTER_STOP
 	root.add_child(reward_backdrop)
 
 	reward_panel = PanelContainer.new()
 	reward_panel.name = "RewardPanel"
-	reward_panel.anchor_left = 0.285
-	reward_panel.anchor_top = 0.205
-	reward_panel.anchor_right = 0.715
-	reward_panel.anchor_bottom = 0.625
+	reward_panel.anchor_left = 0.235
+	reward_panel.anchor_top = 0.155
+	reward_panel.anchor_right = 0.765
+	reward_panel.anchor_bottom = 0.690
 	reward_panel.visible = false
 	reward_panel.mouse_filter = Control.MOUSE_FILTER_STOP
-	reward_panel.add_theme_stylebox_override("panel", _make_hud_panel_style(Color(0.018, 0.024, 0.028, 0.88), Color(0.96, 0.66, 0.24, 0.78), 6, 2))
+	reward_panel.add_theme_stylebox_override("panel", _make_hud_panel_style(Color(0.014, 0.018, 0.022, 0.94), Color(1.0, 0.66, 0.22, 0.86), 6, 2))
 	root.add_child(reward_panel)
 
 	var margin := MarginContainer.new()
-	margin.add_theme_constant_override("margin_left", 22)
-	margin.add_theme_constant_override("margin_top", 18)
-	margin.add_theme_constant_override("margin_right", 22)
-	margin.add_theme_constant_override("margin_bottom", 18)
+	margin.add_theme_constant_override("margin_left", 24)
+	margin.add_theme_constant_override("margin_top", 20)
+	margin.add_theme_constant_override("margin_right", 24)
+	margin.add_theme_constant_override("margin_bottom", 20)
 	reward_panel.add_child(margin)
 
 	var layout := VBoxContainer.new()
-	layout.add_theme_constant_override("separation", 12)
+	layout.add_theme_constant_override("separation", 10)
 	margin.add_child(layout)
 
 	reward_label = RichTextLabel.new()
 	reward_label.bbcode_enabled = true
 	reward_label.fit_content = true
 	reward_label.scroll_active = false
-	reward_label.custom_minimum_size = Vector2(430, 124)
+	reward_label.custom_minimum_size = Vector2(560, 112)
 	reward_label.add_theme_font_size_override("normal_font_size", 16)
 	layout.add_child(reward_label)
 
+	reward_summary_label = Label.new()
+	reward_summary_label.name = "RewardSummaryLabel"
+	reward_summary_label.text = "Pick one payout to bank the arena and return to the table."
+	reward_summary_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	reward_summary_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	reward_summary_label.add_theme_font_size_override("font_size", 12)
+	reward_summary_label.add_theme_color_override("font_color", Color(0.78, 0.90, 0.92, 0.94))
+	layout.add_child(reward_summary_label)
+
 	var row := HBoxContainer.new()
 	row.name = "RewardButtonRow"
-	row.add_theme_constant_override("separation", 10)
+	row.add_theme_constant_override("separation", 12)
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	layout.add_child(row)
 	for i in range(3):
 		var button := Button.new()
 		button.name = "RewardButton%d" % i
 		button.text = "Reward %d" % (i + 1)
-		button.custom_minimum_size = Vector2(132, 64)
+		button.custom_minimum_size = Vector2(160, 92)
 		button.focus_mode = Control.FOCUS_ALL
-		button.add_theme_font_size_override("font_size", 14)
+		button.add_theme_font_size_override("font_size", 13)
 		button.pressed.connect(Callable(self, "_select_reward").bind(i))
 		button.focus_entered.connect(Callable(self, "_set_active_reward_index").bind(i))
 		button.mouse_entered.connect(Callable(self, "_set_active_reward_index").bind(i))
 		_style_reward_button(button, false)
 		row.add_child(button)
+
+	reward_focus_label = RichTextLabel.new()
+	reward_focus_label.name = "RewardFocusLabel"
+	reward_focus_label.bbcode_enabled = true
+	reward_focus_label.fit_content = true
+	reward_focus_label.scroll_active = false
+	reward_focus_label.custom_minimum_size = Vector2(560, 56)
+	reward_focus_label.add_theme_font_size_override("normal_font_size", 13)
+	layout.add_child(reward_focus_label)
 
 
 func _add_slider_row(parent: VBoxContainer, label_text: String, min_value: float, max_value: float, step: float, value: float, callback: Callable, value_suffix: String = "") -> void:
@@ -2863,7 +2946,7 @@ func _show_wave_rewards() -> void:
 	reward_panel.move_to_front()
 	if reward_label != null:
 		var clear_time := float(Time.get_ticks_msec() - wave_started_msec) / 1000.0
-		reward_label.text = "[center][font_size=20][b]WAVE %d CLEARED[/b][/font_size]\n%s %s  |  objective %d\n%s | %s\n%.1fs  %d shots  %.0f%% hit rate  |  abilities %d\n[color=#8feeff]Choose your cut.[/color][/center]" % [
+		reward_label.text = "[center][font_size=22][b]WAVE %d CLEARED[/b][/font_size]\n[color=#ffd36a]%s %s[/color]  |  objective %d\n%s  |  %s\n[color=#8feeff]%.1fs[/color]  %d shots  %.0f%% hit rate  |  card powers %d[/center]" % [
 			wave_index,
 			String(objective_def.get("label", "Objective")),
 			"complete" if objective_completed else ("failed" if objective_failed else "partial"),
@@ -2875,6 +2958,8 @@ func _show_wave_rewards() -> void:
 			_get_hit_rate() * 100.0,
 			_get_total_ability_uses()
 		]
+	if reward_summary_label != null:
+		reward_summary_label.text = "Choose one payout. Mouse, 1-3, arrow keys, A/D, Enter, or Space all work."
 	var buttons := reward_panel.find_children("RewardButton*", "Button", true, false)
 	for i in range(buttons.size()):
 		var button: Button = buttons[i] as Button
@@ -2883,13 +2968,15 @@ func _show_wave_rewards() -> void:
 			button.text = _get_reward_button_text(i, option)
 			button.tooltip_text = _get_reward_tooltip(option)
 			button.disabled = false
-			_style_reward_button(button, false)
+			_style_reward_button(button, false, i == active_reward_index)
 		else:
 			button.disabled = true
-			_style_reward_button(button, true)
+			_style_reward_button(button, true, false)
 	if player != null and player.has_method("set_gameplay_input_enabled"):
 		player.call("set_gameplay_input_enabled", false)
 	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
+	_refresh_reward_focus()
+	_animate_reward_panel_open()
 	_focus_reward_button(active_reward_index)
 
 
@@ -2898,34 +2985,47 @@ func _build_reward_options() -> Array[Dictionary]:
 	match objective_mode:
 		"extract":
 			return [
-				{"label": "Runner Edge", "kind": "damage", "amount": 2, "chip_bonus": 2 + objective_bonus},
-				{"label": "Exit Plating", "kind": "armor", "amount": 8, "chip_bonus": 1 + objective_bonus},
-				{"label": "Sprint Ammo", "kind": "ammo", "amount": 24, "chip_bonus": 1 + objective_bonus}
+				_make_reward_option("Runner Edge", "damage", 2, 2 + objective_bonus, "Uncommon", ["extract", "duel"], "Dash-heavy clears turn into sharper opening weapon pressure."),
+				_make_reward_option("Exit Plating", "armor", 8, 1 + objective_bonus, "Common", ["extract", "defend"], "Bank armor for risky grab-and-leave routes."),
+				_make_reward_option("Sprint Ammo", "ammo", 24, 1 + objective_bonus, "Common", ["extract", "duel"], "Carry extra reserve ammo for longer rotations.")
 			]
 		"duel":
 			return [
-				{"label": "Marked Damage", "kind": "damage", "amount": 4, "chip_bonus": 2 + objective_bonus},
-				{"label": "Read Cache", "kind": "ammo", "amount": 16, "chip_bonus": 1 + objective_bonus},
-				{"label": "Duel Guard", "kind": "armor", "amount": 9, "chip_bonus": 1 + objective_bonus}
+				_make_reward_option("Marked Damage", "damage", 4, 2 + objective_bonus, "Rare" if objective_completed else "Uncommon", ["duel", "boss_gate"], "Marked kills become a bigger burst profile next round."),
+				_make_reward_option("Read Cache", "ammo", 16, 1 + objective_bonus, "Common", ["duel", "extract"], "Intel clears leave enough ammo to play for another mark."),
+				_make_reward_option("Duel Guard", "armor", 9, 1 + objective_bonus, "Common", ["duel", "defend"], "Survive the next committed fight with extra plating.")
 			]
 		"defend":
 			return [
-				{"label": "Fortified Guard", "kind": "armor", "amount": 14, "chip_bonus": 2 + objective_bonus},
-				{"label": "Reload Wall", "kind": "ammo", "amount": 18, "chip_bonus": 1 + objective_bonus},
-				{"label": "Counter Damage", "kind": "damage", "amount": 3, "chip_bonus": 1 + objective_bonus}
+				_make_reward_option("Fortified Guard", "armor", 14, 2 + objective_bonus, "Rare" if objective_completed else "Uncommon", ["defend", "hold_pot"], "Clean defenses become real armor for the next stand."),
+				_make_reward_option("Reload Wall", "ammo", 18, 1 + objective_bonus, "Common", ["defend", "extract"], "A held lane leaves reload stock for longer fights."),
+				_make_reward_option("Counter Damage", "damage", 3, 1 + objective_bonus, "Uncommon", ["defend", "duel"], "A stable hold converts into counter-pressure.")
 			]
 		"boss_gate":
 			return [
-				{"label": "Boss Tech", "kind": "damage", "amount": 5, "chip_bonus": 2 + objective_bonus},
-				{"label": "Gate Plating", "kind": "armor", "amount": 12, "chip_bonus": 1 + objective_bonus},
-				{"label": "Ritual Ammo", "kind": "ammo", "amount": 20, "chip_bonus": 1 + objective_bonus}
+				_make_reward_option("Boss Tech", "damage", 5, 2 + objective_bonus, "Rare", ["boss_gate", "duel"], "Gate pressure becomes a major weapon-damage mod."),
+				_make_reward_option("Gate Plating", "armor", 12, 1 + objective_bonus, "Uncommon", ["boss_gate", "defend"], "Boss survival becomes armor for the next gate or hold."),
+				_make_reward_option("Ritual Ammo", "ammo", 20, 1 + objective_bonus, "Uncommon", ["boss_gate", "extract"], "Ritual clears leave reserve ammo for the next gamble.")
 			]
 		_:
 			return [
-				{"label": "Pot Anchor", "kind": "armor", "amount": 12, "chip_bonus": 2 + objective_bonus},
-				{"label": "Center Cut", "kind": "damage", "amount": 3, "chip_bonus": 1 + objective_bonus},
-				{"label": "Table Ammo", "kind": "ammo", "amount": 18, "chip_bonus": 1 + objective_bonus}
+				_make_reward_option("Pot Anchor", "armor", 12, 2 + objective_bonus, "Uncommon", ["hold_pot", "defend"], "Holding center banks armor for the next stand."),
+				_make_reward_option("Center Cut", "damage", 3, 1 + objective_bonus, "Uncommon", ["hold_pot", "duel"], "Owning center turns into stronger weapon pressure."),
+				_make_reward_option("Table Ammo", "ammo", 18, 1 + objective_bonus, "Common", ["hold_pot", "extract"], "The table pays reserve ammo for another rotation.")
 			]
+
+
+func _make_reward_option(label: String, kind: String, amount: int, chip_bonus: int, rarity: String, bias_modes: Array[String], summary: String) -> Dictionary:
+	return {
+		"label": label,
+		"kind": kind,
+		"amount": amount,
+		"chip_bonus": chip_bonus,
+		"rarity": rarity,
+		"bias_modes": bias_modes.duplicate(),
+		"summary": summary,
+		"mod_id": "%s_%s" % [kind, label.to_lower().replace(" ", "_").replace("-", "_")]
+	}
 
 
 func _select_reward(index: int) -> void:
@@ -2934,6 +3034,8 @@ func _select_reward(index: int) -> void:
 		return
 	var reward: Dictionary = reward_options[index]
 	active_reward_index = index
+	if reward_summary_label != null:
+		reward_summary_label.text = "Banking %s..." % String(reward.get("label", "payout"))
 	var result := _build_arena_result(reward)
 	rewards_pending = false
 	if reward_backdrop != null:
@@ -2944,6 +3046,10 @@ func _select_reward(index: int) -> void:
 
 
 func _handle_reward_input(event: InputEvent) -> bool:
+	var navigation := _get_reward_navigation_delta(event)
+	if navigation != 0:
+		_move_reward_focus(navigation)
+		return true
 	var index := _get_reward_input_index(event)
 	if index < 0:
 		return false
@@ -2973,32 +3079,86 @@ func _get_reward_input_index(event: InputEvent) -> int:
 			return -1
 
 
+func _get_reward_navigation_delta(event: InputEvent) -> int:
+	if not event is InputEventKey:
+		return 0
+	var key_event := event as InputEventKey
+	if not key_event.pressed or key_event.echo:
+		return 0
+	var key := key_event.physical_keycode
+	if key == KEY_NONE:
+		key = key_event.keycode
+	match key:
+		KEY_RIGHT, KEY_D, KEY_DOWN:
+			return 1
+		KEY_LEFT, KEY_A, KEY_UP:
+			return -1
+		_:
+			return 0
+
+
+func _move_reward_focus(direction: int) -> void:
+	if reward_options.is_empty():
+		return
+	var next_index := wrapi(active_reward_index + direction, 0, reward_options.size())
+	_set_active_reward_index(next_index)
+	_focus_reward_button(next_index)
+
+
 func _set_active_reward_index(index: int) -> void:
 	active_reward_index = clampi(index, 0, maxi(0, reward_options.size() - 1))
+	_refresh_reward_focus()
 
 
 func _focus_reward_button(index: int) -> void:
 	if reward_panel == null:
 		return
+	_set_active_reward_index(index)
 	var button := reward_panel.get_node_or_null("MarginContainer/VBoxContainer/RewardButtonRow/RewardButton%d" % index) as Button
 	if button != null and not button.disabled:
 		button.grab_focus()
 
 
 func _get_reward_button_text(index: int, option: Dictionary) -> String:
-	var kind := String(option.get("kind", "reward")).capitalize()
+	var kind := _get_reward_kind_noun(String(option.get("kind", "reward")))
 	var amount := int(option.get("amount", 0))
 	var chips := int(option.get("chip_bonus", 0))
-	return "%d  %s\n+%d %s  +%d chips" % [index + 1, String(option.get("label", "Reward")).to_upper(), amount, kind, chips]
+	return "%d  TAKE %s\n%s +%d %s\n+%d chips  |  %s" % [
+		index + 1,
+		String(option.get("label", "Reward")).to_upper(),
+		String(option.get("rarity", "Common")).to_upper(),
+		amount,
+		kind,
+		chips,
+		_get_reward_kind_detail(String(option.get("kind", "reward")))
+	]
 
 
 func _get_reward_tooltip(option: Dictionary) -> String:
-	return "Cash out with %s and return to the card table." % String(option.get("label", "Reward"))
+	return "%s\n%s\n%s\nBiases future prep toward: %s." % [
+		String(option.get("label", "Reward")),
+		_get_reward_focus_text(option),
+		String(option.get("summary", "Cash out and return to the card table.")),
+		", ".join(_string_array(option.get("bias_modes", [])))
+	]
 
 
-func _style_reward_button(button: Button, disabled: bool) -> void:
+func _string_array(value: Variant) -> Array[String]:
+	var out: Array[String] = []
+	if typeof(value) == TYPE_ARRAY:
+		for entry in value:
+			out.append(String(entry))
+	return out
+
+
+func _style_reward_button(button: Button, disabled: bool, active: bool = false) -> void:
+	var reward_color := _get_reward_kind_color(_get_reward_kind_from_button(button))
+	var active_border := Color(0.42, 0.96, 1.0, 0.92)
 	var normal_bg := Color(0.055, 0.050, 0.044, 0.86) if not disabled else Color(0.03, 0.03, 0.03, 0.55)
-	var normal_border := Color(1.0, 0.62, 0.20, 0.62) if not disabled else Color(0.24, 0.24, 0.24, 0.42)
+	var normal_border := reward_color if not disabled else Color(0.24, 0.24, 0.24, 0.42)
+	if active and not disabled:
+		normal_bg = Color(0.105, 0.078, 0.045, 0.96)
+		normal_border = active_border
 	button.add_theme_stylebox_override("normal", _make_hud_panel_style(normal_bg, normal_border, 5, 1))
 	button.add_theme_stylebox_override("hover", _make_hud_panel_style(Color(0.12, 0.090, 0.050, 0.94), Color(1.0, 0.78, 0.28, 0.92), 5, 2))
 	button.add_theme_stylebox_override("focus", _make_hud_panel_style(Color(0.10, 0.086, 0.052, 0.40), Color(0.42, 0.96, 1.0, 0.86), 5, 2))
@@ -3007,6 +3167,104 @@ func _style_reward_button(button: Button, disabled: bool) -> void:
 	button.add_theme_color_override("font_color", Color(1.0, 0.92, 0.72) if not disabled else Color(0.48, 0.48, 0.48))
 	button.add_theme_color_override("font_hover_color", Color(1.0, 0.98, 0.84))
 	button.add_theme_color_override("font_focus_color", Color(1.0, 0.98, 0.84))
+
+
+func _refresh_reward_focus() -> void:
+	if reward_panel == null:
+		return
+	var buttons := reward_panel.find_children("RewardButton*", "Button", true, false)
+	for i in range(buttons.size()):
+		var button: Button = buttons[i] as Button
+		_style_reward_button(button, button.disabled, i == active_reward_index)
+	if reward_focus_label == null:
+		return
+	if active_reward_index < 0 or active_reward_index >= reward_options.size():
+		reward_focus_label.text = ""
+		return
+	var option: Dictionary = reward_options[active_reward_index]
+	var color := _get_reward_kind_color(String(option.get("kind", "reward")))
+	reward_focus_label.text = "[center][color=#%s][b]SELECTED: %s %s[/b][/color]\n%s\n%s[/center]" % [
+		color.to_html(false),
+		String(option.get("rarity", "Common")).to_upper(),
+		String(option.get("label", "Reward")).to_upper(),
+		_get_reward_focus_text(option),
+		String(option.get("summary", ""))
+	]
+
+
+func _get_reward_focus_text(option: Dictionary) -> String:
+	var kind := String(option.get("kind", "reward"))
+	var amount := int(option.get("amount", 0))
+	var chips := int(option.get("chip_bonus", 0))
+	match kind:
+		"damage":
+			return "Weapon damage carries into the next arena. Great when your hand is trying to end fights fast. +%d damage, +%d chips." % [amount, chips]
+		"armor":
+			return "Adds survivability to the next loadout. Best for hold, defend, and close-range tests. +%d armor, +%d chips." % [amount, chips]
+		"ammo":
+			return "Adds breathing room for reload tests and longer waves. Best for Extract and sustained AR tuning. +%d ammo, +%d chips." % [amount, chips]
+		_:
+			return "Banks a flexible payout for the card table. +%d chips." % chips
+
+
+func _get_reward_kind_noun(kind: String) -> String:
+	match kind:
+		"damage":
+			return "DMG"
+		"armor":
+			return "ARMOR"
+		"ammo":
+			return "AMMO"
+		_:
+			return "PAYOUT"
+
+
+func _get_reward_kind_detail(kind: String) -> String:
+	match kind:
+		"damage":
+			return "lethal"
+		"armor":
+			return "sturdy"
+		"ammo":
+			return "tempo"
+		_:
+			return "flex"
+
+
+func _get_reward_kind_color(kind: String) -> Color:
+	match kind:
+		"damage":
+			return Color(1.0, 0.48, 0.24, 0.82)
+		"armor":
+			return Color(0.48, 0.78, 1.0, 0.82)
+		"ammo":
+			return Color(0.42, 0.96, 0.72, 0.82)
+		_:
+			return Color(1.0, 0.72, 0.28, 0.82)
+
+
+func _get_reward_kind_from_button(button: Button) -> String:
+	if button == null:
+		return "reward"
+	var index := int(button.name.replace("RewardButton", ""))
+	if index >= 0 and index < reward_options.size():
+		return String(reward_options[index].get("kind", "reward"))
+	return "reward"
+
+
+func _animate_reward_panel_open() -> void:
+	if reward_panel == null:
+		return
+	reward_panel.modulate.a = 0.0
+	reward_panel.scale = Vector2(0.975, 0.975)
+	reward_panel.pivot_offset = reward_panel.size * 0.5
+	var tween := create_tween()
+	tween.set_parallel(true)
+	tween.tween_property(reward_panel, "modulate:a", 1.0, 0.16)
+	tween.tween_property(reward_panel, "scale", Vector2.ONE, 0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	if reward_backdrop != null:
+		reward_backdrop.modulate.a = 0.0
+		tween.tween_property(reward_backdrop, "modulate:a", 1.0, 0.14)
 
 
 func get_arena_result_preview(reward_index: int = 0) -> Dictionary:
@@ -3138,6 +3396,7 @@ func _return_to_card_table(result: Dictionary) -> void:
 
 func _on_weapon_fired(_from: Vector3, _to: Vector3) -> void:
 	shots_fired += 1
+	_pulse_crosshair_fire()
 
 
 func _on_weapon_hit_confirmed(_position: Vector3, amount: int, critical: bool, _defeated: bool) -> void:
@@ -3145,6 +3404,8 @@ func _on_weapon_hit_confirmed(_position: Vector3, amount: int, critical: bool, _
 	damage_dealt += amount
 	if critical:
 		critical_hits += 1
+	if _defeated:
+		_show_status_flash("TARGET DOWN", Color(1.0, 0.68, 0.24))
 
 
 func _get_hit_rate() -> float:
@@ -3157,8 +3418,19 @@ func _play_hit_marker(critical: bool) -> void:
 	if hit_marker == null:
 		return
 	hit_marker.modulate = Color(1.0, 0.78, 0.24, 1.0) if critical else Color(0.72, 0.96, 1.0, 0.95)
+	hit_marker.scale = Vector2(1.24, 1.24) if critical else Vector2(1.12, 1.12)
 	var tween := create_tween()
+	tween.set_parallel(true)
 	tween.tween_property(hit_marker, "modulate:a", 0.0, 0.16)
+	tween.tween_property(hit_marker, "scale", Vector2.ONE, 0.14)
+
+
+func _pulse_crosshair_fire() -> void:
+	if crosshair == null:
+		return
+	crosshair.scale = Vector2(1.10, 1.10)
+	var tween := create_tween()
+	tween.tween_property(crosshair, "scale", Vector2.ONE, 0.08).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 
 
 func _on_player_health_changed(current: int, maximum: int) -> void:
@@ -3252,7 +3524,7 @@ func _refresh_card_combat_hud(ammo_state: Dictionary) -> void:
 			card_hud_ability_row.add_child(_build_ability_card_panel(index))
 	if card_hud_summary_label != null:
 		var target_text := String(summary.get("target_enemy", ""))
-		card_hud_summary_label.text = "Cards are live powers. %s" % ("Read: %s." % target_text if not target_text.is_empty() else "Slot cards before arena entry.")
+		card_hud_summary_label.text = "CARD POWERS LIVE  |  %s" % ("read target %s" % target_text if not target_text.is_empty() else "slot cards before arena entry")
 
 
 func _build_ability_card_panel(index: int) -> PanelContainer:
@@ -3320,6 +3592,13 @@ func _build_ability_card_panel(index: int) -> PanelContainer:
 	cooldown.max_value = 1.0
 	cooldown.value = _get_ability_cooldown_ratio(index)
 	cooldown.show_percentage = false
+	var cooldown_color := Color(0.36, 0.40, 0.42, 0.72)
+	if active:
+		var cooldown_entry: Dictionary = active_abilities[index]
+		var cooldown_ability: Dictionary = cooldown_entry.get("ability", {})
+		cooldown_color = _get_ability_color(String(cooldown_ability.get("kind", "")))
+	cooldown.add_theme_stylebox_override("background", _make_hud_panel_style(Color(0.012, 0.014, 0.016, 0.74), Color(0.0, 0.0, 0.0, 0.0), 3, 0))
+	cooldown.add_theme_stylebox_override("fill", _make_hud_panel_style(cooldown_color, Color(cooldown_color.r, cooldown_color.g, cooldown_color.b, 0.22), 3, 0))
 	stack.add_child(cooldown)
 	return panel
 

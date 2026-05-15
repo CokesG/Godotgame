@@ -186,6 +186,8 @@ func test_fps_settings_crosshair_and_ability_contracts() -> void:
 	assert_true(prototype.has_method("_get_ability_glyph"), "FPSPrototype should expose compact card-power icon glyphs.")
 	assert_true(prototype.has_method("_get_class_accent_color"), "FPSPrototype should expose class accent color for HUD/VFX frames.")
 	assert_true(prototype.has_method("_get_reward_input_index"), "FPSPrototype payout should expose keyboard reward selection.")
+	assert_true(prototype.has_method("_get_reward_navigation_delta"), "FPSPrototype payout should expose keyboard focus navigation.")
+	assert_true(prototype.has_method("_get_reward_focus_text"), "FPSPrototype payout should expose selected-card explanation copy.")
 	prototype.call("toggle_settings_menu")
 	assert_true(bool(prototype.call("is_gameplay_paused")), "Escape settings overlay should pause FPS gameplay input.")
 	prototype.call("toggle_settings_menu")
@@ -233,13 +235,18 @@ func test_fps_settings_crosshair_and_ability_contracts() -> void:
 	var cooldown_ratio := float(prototype.call("_get_ability_cooldown_ratio", 0))
 	var expected_cooldown_ratio := 1.0 - 3.0 / (6.0 * float(hero_profile.get("cooldown_scalar", 1.0)))
 	assert_true(is_equal_approx(cooldown_ratio, expected_cooldown_ratio), "Card HUD cooldown progress should track hero-adjusted remaining ability cooldown; got %.3f." % cooldown_ratio)
-	var reward_options: Array[Dictionary] = [{"label": "A"}, {"label": "B"}, {"label": "C"}]
+	var reward_options: Array[Dictionary] = [{"label": "A", "kind": "damage", "amount": 2, "chip_bonus": 3}, {"label": "B", "kind": "armor", "amount": 8, "chip_bonus": 2}, {"label": "C", "kind": "ammo", "amount": 24, "chip_bonus": 2}]
 	prototype.set("reward_options", reward_options)
 	prototype.call("_set_active_reward_index", 2)
 	var reward_key := InputEventKey.new()
 	reward_key.pressed = true
 	reward_key.physical_keycode = KEY_2
 	assert_eq(int(prototype.call("_get_reward_input_index", reward_key)), 1, "Payout keyboard shortcuts should select the matching reward card.")
+	var reward_right := InputEventKey.new()
+	reward_right.pressed = true
+	reward_right.physical_keycode = KEY_RIGHT
+	assert_eq(int(prototype.call("_get_reward_navigation_delta", reward_right)), 1, "Payout arrows should move reward focus without firing gameplay actions.")
+	assert_true(String(prototype.call("_get_reward_focus_text", reward_options[0])).contains("damage"), "Focused reward copy should explain how the payout affects the next arena.")
 	var reward_enter := InputEventKey.new()
 	reward_enter.pressed = true
 	reward_enter.physical_keycode = KEY_ENTER
@@ -252,6 +259,9 @@ func test_fps_weapon_overclock_and_enemy_archetypes() -> void:
 	var weapon: Node = weapon_script.new()
 	assert_true((weapon.call("_get_recoil_pattern_value") as Vector2).y > 0.0, "The first AR should expose a deterministic recoil pattern.")
 	assert_true(float(weapon.call("_get_hipfire_spread_multiplier")) > 2.0, "Hip-fire should be much looser than ADS for the first AR.")
+	var feel_snapshot: Dictionary = weapon.call("get_feel_tuning_snapshot")
+	assert_true(float(feel_snapshot.get("hipfire_spread_multiplier", 0.0)) >= 3.0, "The AR tuning snapshot should preserve close-range hipfire spread separation.")
+	assert_true((feel_snapshot.get("ads_position", Vector3.ZERO) as Vector3).z > (feel_snapshot.get("base_position", Vector3.ZERO) as Vector3).z, "ADS should pull the weapon toward the sights instead of leaving hipfire framing.")
 	weapon.call("apply_temporary_overclock", 4.0, 0.78, 1.2)
 	assert_true(float(weapon.get("overclock_timer")) > 0.0, "Weapon overclock should arm a timed fire-rate/damage modifier.")
 	weapon.set("magazine_size", 12)
@@ -397,6 +407,8 @@ func test_combat_controller_exports_shooter_loadout_payload() -> void:
 	controller.set("arena_carryover_ammo", 9)
 	controller.set("arena_weapon_damage_bonus", 2)
 	controller.set("selected_hero_class_id", "blood_wager")
+	controller.set("active_reward_mods", [{"label": "Runner Edge", "kind": "damage", "bias_modes": ["extract", "duel"], "rarity": "Uncommon"}])
+	controller.set("arena_card_xp_pool", 7)
 	controller.set("loadout_slots", {"weapon": quick_slash, "ability_1": sidestep})
 	var payload: Dictionary = controller.call("_build_combat_bridge_payload")
 	assert_eq(String(payload.get("weapon_card", "")), "quick_slash", "Weapon slot should become the shooter weapon card.")
@@ -410,6 +422,8 @@ func test_combat_controller_exports_shooter_loadout_payload() -> void:
 	assert_true(int(economy.get("armor", 0)) >= 6, "Arena carryover armor should feed the next payload.")
 	var bonuses: Dictionary = payload.get("payout_bonuses", {})
 	assert_eq(int(bonuses.get("weapon_damage", 0)), 2, "Arena damage payout should be visible in the payload.")
+	assert_eq((payload.get("reward_mods", []) as Array).size(), 1, "Bridge payload should carry earned arena reward mods.")
+	assert_eq(int((payload.get("progression", {}) as Dictionary).get("card_xp_pool", 0)), 7, "Bridge payload should carry card XP progression.")
 	assert_eq(String(payload.get("objective_mode", "")), "extract", "Movement-heavy loadouts should recommend the Extract FPS objective.")
 	var weapon_payload: Dictionary = (loadout[0] as Dictionary).get("weapon", {}) if (loadout[0] as Dictionary).has("weapon") else (loadout[1] as Dictionary).get("weapon", {})
 	assert_true(int(weapon_payload.get("damage", 0)) >= 30, "Arena damage payout should boost the next weapon profile.")
@@ -441,6 +455,44 @@ func test_combat_controller_recommends_objective_aware_loadout_cards() -> void:
 	controller.set("selected_hero_class_id", "hex_sharpshooter")
 	var return_state: Dictionary = controller.call("_build_arena_return_state")
 	assert_eq(String(return_state.get("selected_hero_class_id", "")), "hex_sharpshooter", "Arena return state should preserve selected hero class.")
+
+
+func test_arena_payout_records_reward_mods_and_progression() -> void:
+	var controller_script: GDScript = ResourceLoader.load("res://scripts/combat/TestCombatController.gd", "", ResourceLoader.CACHE_MODE_IGNORE)
+	var run_script: GDScript = ResourceLoader.load("res://scripts/run/RunManager.gd", "", ResourceLoader.CACHE_MODE_IGNORE)
+	var controller: Control = controller_script.new()
+	var run_manager: Node = run_script.new()
+	run_manager.call("reset_run")
+	controller.set("run_manager", run_manager)
+	var effects: Array = controller.call("_apply_arena_payout_effects", {
+		"source": "fps_arena",
+		"cleared": true,
+		"kills": 3,
+		"objective_mode": "extract",
+		"objective_label": "Extract",
+		"objective_completed": true,
+		"objective_score": 94,
+		"ability_uses": {"dash": 1, "guard": 1},
+		"wounds_taken": 1,
+		"selected_reward": {
+			"label": "Runner Edge",
+			"kind": "damage",
+			"amount": 2,
+			"chip_bonus": 4,
+			"rarity": "Uncommon",
+			"bias_modes": ["extract", "duel"],
+			"summary": "Dash-heavy clears turn into sharper opening weapon pressure."
+		}
+	})
+	var mods: Array = controller.get("active_reward_mods")
+	assert_eq(mods.size(), 1, "Arena payout should create a persistent reward mod.")
+	assert_eq(String((mods[0] as Dictionary).get("label", "")), "Runner Edge", "Reward mod should preserve the authored reward label.")
+	assert_true(int(controller.get("arena_card_xp_pool")) >= 9, "Arena payout should bank Card XP from kills, objectives, and ability use.")
+	assert_eq(int(controller.get("arena_wounds_total")), 1, "Arena payout should track wounds from the FPS result.")
+	assert_true(String("\n".join(effects)).contains("Mod acquired"), "Payout effects should announce the new mod.")
+	assert_true(int(controller.call("_get_payout_objective_bias_score", "extract")) > 0, "Reward mods should bias future objective recommendations.")
+	var run_state: Dictionary = run_manager.call("get_state")
+	assert_false((run_state.get("reward_history", []) as Array).is_empty(), "Arena reward mods should be written to run reward history.")
 
 
 func test_arena_bridge_stores_and_hands_payload_to_fps() -> void:
@@ -481,6 +533,8 @@ func test_fps_prototype_consumes_bridge_payload_as_active_loadout() -> void:
 			{"slot": "ability_1", "id": "sidestep", "ability": {"kind": "dash", "charges": 1}}
 		],
 		"economy": {"chips": 5, "armor": 7, "ammo": 36},
+		"reward_mods": [{"label": "Runner Edge"}],
+		"progression": {"card_xp_pool": 9, "wounds_total": 1},
 		"reads": {"target_enemy": &"skulker", "threat": "Cut Purse 45%"}
 	})
 	var summary: Dictionary = prototype.call("get_active_loadout_summary")
@@ -488,6 +542,8 @@ func test_fps_prototype_consumes_bridge_payload_as_active_loadout() -> void:
 	assert_eq(int(summary.get("abilities", 0)), 1, "FPS should expose bridged ability count.")
 	assert_eq(int(summary.get("armor", 0)), 9, "FPS should expose bridged armor plus the default hero class armor.")
 	assert_eq(int(summary.get("ammo", 0)), 36, "FPS should expose bridged ammo.")
+	assert_eq(int(summary.get("reward_mods", 0)), 1, "FPS loadout summary should expose carried arena reward mods.")
+	assert_eq(int(summary.get("card_xp_pool", 0)), 9, "FPS loadout summary should expose card XP progression.")
 	assert_eq(String(summary.get("objective_mode", "")), "extract", "FPS loadout summary should include the selected objective mode.")
 	var objective_state: Dictionary = prototype.call("get_objective_state")
 	assert_eq(String(objective_state.get("mode", "")), "extract", "FPS should apply the objective mode from the bridge payload.")
@@ -508,6 +564,8 @@ func test_fps_prototype_consumes_bridge_payload_as_active_loadout() -> void:
 	assert_true(int(result_preview.get("objective_score", 0)) > 0, "FPS payout previews should include objective scoring.")
 	assert_eq(String((result_preview.get("selected_reward", {}) as Dictionary).get("label", "")), "Runner Edge", "FPS payout previews should include objective-authored rewards.")
 	assert_eq(String((result_preview.get("selected_reward", {}) as Dictionary).get("kind", "")), "damage", "Extract's first payout should still feed future weapon damage decisions.")
+	assert_eq(String((result_preview.get("selected_reward", {}) as Dictionary).get("rarity", "")), "Uncommon", "FPS payout previews should expose reward mod rarity.")
+	assert_false(((result_preview.get("selected_reward", {}) as Dictionary).get("bias_modes", []) as Array).is_empty(), "FPS payout previews should expose reward mod objective bias.")
 	assert_true(int(result_preview.get("chips_awarded", 0)) >= 10, "FPS payout previews should calculate a useful chip award.")
 
 

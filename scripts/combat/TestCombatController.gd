@@ -48,9 +48,36 @@ const PHASE_GUIDANCE := TEST_COMBAT_COPY_SCRIPT.PHASE_GUIDANCE
 const RECIPE_STEPS := TEST_COMBAT_COPY_SCRIPT.RECIPE_STEPS
 const RUN_INSPECTOR_FILTERS := TEST_COMBAT_COPY_SCRIPT.RUN_INSPECTOR_FILTERS
 const HERO_CLASS_OPTIONS := [
-	{"id": "gambler_knight", "label": "Gambler-Knight", "role": "Duelist", "summary": "+2 armor, card powers cool down faster."},
-	{"id": "hex_sharpshooter", "label": "Hex Sharpshooter", "role": "Controller", "summary": "Read and trap cards become your natural kit."},
-	{"id": "blood_wager", "label": "Blood Wager", "role": "Berserker", "summary": "Ritual and overclock cards become your natural kit."}
+	{
+		"id": "gambler_knight",
+		"label": "Gambler-Knight",
+		"role": "Duelist",
+		"summary": "+2 armor, card powers cool down faster.",
+		"deck_focus": "Balanced opener: cut, guard, move, read, trap.",
+		"arena_line": "FPS kit: armored duelist with flexible card powers.",
+		"art": "res://art/game/cards/illustrations/card_quick_slash.png",
+		"accent": Color(1.0, 0.74, 0.30)
+	},
+	{
+		"id": "hex_sharpshooter",
+		"label": "Hex Sharpshooter",
+		"role": "Controller",
+		"summary": "Read and trap cards become your natural kit.",
+		"deck_focus": "Control opener: reveals, snares, marks, repositions.",
+		"arena_line": "FPS kit: outline reads, trap fields, marked shots.",
+		"art": "res://art/game/cards/illustrations/card_marked_card.png",
+		"accent": Color(0.82, 0.50, 1.0)
+	},
+	{
+		"id": "blood_wager",
+		"label": "Blood Wager",
+		"role": "Berserker",
+		"summary": "Ritual and overclock cards become your natural kit.",
+		"deck_focus": "Risk opener: blood fuel, burst damage, hard guard.",
+		"arena_line": "FPS kit: sacrifice economy for violent tempo.",
+		"art": "res://art/game/cards/illustrations/card_blood_ritual.png",
+		"accent": Color(1.0, 0.28, 0.22)
+	}
 ]
 
 @onready var turn_manager: Node = $TurnManager
@@ -80,8 +107,11 @@ var pile_counts_label: Label
 var resource_state_label: Label
 var shooter_economy_label: Label
 var objective_plan_label: Label
+var reward_mods_label: Label
+var armory_plan_label: Label
 var start_hero_class_option: OptionButton
 var start_hero_class_summary_label: Label
+var start_hero_class_card_buttons: Array[Button] = []
 var hero_class_option: OptionButton
 var hero_class_summary_label: Label
 var arena_payout_panel: PanelContainer
@@ -228,6 +258,9 @@ var arena_round_armed := false
 var pending_arena_result: Dictionary = {}
 var pending_arena_effect_lines: Array[String] = []
 var arena_payout_pending := false
+var active_reward_mods: Array = []
+var arena_card_xp_pool: int = 0
+var arena_wounds_total: int = 0
 var feedback_history: Array[String] = []
 var run_ceremony_history: Array[String] = []
 var table_rule_effect_history: Array[String] = []
@@ -459,9 +492,9 @@ func _build_ui() -> void:
 
 	opening_click_prompt_label = Label.new()
 	opening_click_prompt_label.name = "OpeningClickPrompt"
-	opening_click_prompt_label.text = "START HERE: CLICK DEAL IN"
+	opening_click_prompt_label.text = "CHOOSE A FIGHTER, THEN DEAL IN"
 	opening_click_prompt_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	opening_click_prompt_label.add_theme_font_size_override("font_size", 18)
+	opening_click_prompt_label.add_theme_font_size_override("font_size", 15)
 	opening_click_prompt_label.add_theme_color_override("font_color", Color(1.0, 0.86, 0.34))
 	run_shell_layout.add_child(opening_click_prompt_label)
 
@@ -483,7 +516,7 @@ func _build_ui() -> void:
 		step_button.tooltip_text = String(opening_steps[index].get("tooltip", ""))
 		step_button.focus_mode = Control.FOCUS_NONE
 		step_button.clip_text = true
-		step_button.custom_minimum_size = Vector2(0, 54)
+		step_button.custom_minimum_size = Vector2(0, 46)
 		step_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		step_button.pressed.connect(_on_opening_step_pressed.bind(index))
 		opening_step_buttons.append(step_button)
@@ -581,10 +614,10 @@ func _build_ui() -> void:
 
 	start_run_button = Button.new()
 	start_run_button.name = "StartRunButton"
-	start_run_button.text = "CLICK DEAL IN\nDraw Hand"
-	start_run_button.custom_minimum_size = Vector2(300, 68)
-	start_run_button.add_theme_font_size_override("font_size", 22)
-	start_run_button.tooltip_text = "Deal into the first fight."
+	start_run_button.text = "DEAL IN\nDraw Class Hand"
+	start_run_button.custom_minimum_size = Vector2(300, 58)
+	start_run_button.add_theme_font_size_override("font_size", 20)
+	start_run_button.tooltip_text = "Deal into the first fight with the selected fighter deck."
 	start_run_button.pressed.connect(_on_start_run_pressed)
 	run_shell_actions.add_child(start_run_button)
 
@@ -630,7 +663,7 @@ func _build_ui() -> void:
 	shell_archive_history_button.text = "Archive Old Summaries"
 	shell_archive_history_button.pressed.connect(_on_archive_history_pressed)
 	run_shell_actions.add_child(shell_archive_history_button)
-	run_shell_layout.move_child(run_shell_actions, 1)
+	run_shell_layout.move_child(run_shell_actions, 4)
 
 	action_cue_panel = PanelContainer.new()
 	action_cue_panel.name = "ActionCuePanel"
@@ -1488,6 +1521,15 @@ func _build_ui() -> void:
 	objective_plan_label.add_theme_constant_override("shadow_offset_y", 1)
 	deck_layout.add_child(objective_plan_label)
 
+	reward_mods_label = Label.new()
+	reward_mods_label.name = "RewardModsLabel"
+	reward_mods_label.text = "ACTIVE MODS: none"
+	reward_mods_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	reward_mods_label.custom_minimum_size = Vector2(0, 34)
+	reward_mods_label.add_theme_font_size_override("font_size", 13)
+	reward_mods_label.add_theme_color_override("font_color", Color(1.0, 0.78, 0.42))
+	deck_layout.add_child(reward_mods_label)
+
 	_build_hero_class_selector(deck_layout)
 
 	arena_payout_panel = PanelContainer.new()
@@ -1529,6 +1571,15 @@ func _build_ui() -> void:
 		slot_button.pressed.connect(_on_loadout_slot_pressed.bind(slot_id))
 		loadout_slot_buttons[slot_id] = slot_button
 		loadout_slot_row.add_child(slot_button)
+
+	armory_plan_label = Label.new()
+	armory_plan_label.name = "ArmoryPlanLabel"
+	armory_plan_label.text = "ARMORY: draw a hand, then build a kit."
+	armory_plan_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	armory_plan_label.custom_minimum_size = Vector2(0, 52)
+	armory_plan_label.add_theme_font_size_override("font_size", 13)
+	armory_plan_label.add_theme_color_override("font_color", Color(0.86, 0.92, 0.98))
+	deck_layout.add_child(armory_plan_label)
 
 	hand_action_button_row = HBoxContainer.new()
 	hand_action_button_row.name = "HandCardActionRow"
@@ -1705,26 +1756,20 @@ func _build_hero_class_selector(parent: VBoxContainer) -> void:
 func _build_start_hero_class_selector(parent: VBoxContainer) -> void:
 	var panel := PanelContainer.new()
 	panel.name = "StartHeroClassPanel"
-	_style_play_panel(panel, Color(0.045, 0.038, 0.035, 0.72), Color(0.78, 0.55, 0.22, 0.62))
+	_style_play_panel(panel, Color(0.030, 0.022, 0.025, 0.88), Color(0.96, 0.66, 0.24, 0.72), "cue")
 	parent.add_child(panel)
 
-	var row := HBoxContainer.new()
-	row.name = "StartHeroClassSelector"
-	row.add_theme_constant_override("separation", 10)
-	panel.add_child(row)
+	var layout := VBoxContainer.new()
+	layout.name = "StartHeroClassLayout"
+	layout.add_theme_constant_override("separation", 8)
+	panel.add_child(layout)
 
 	var label := Label.new()
-	label.text = "CHOOSE FIGHTER"
-	label.custom_minimum_size = Vector2(118, 0)
+	label.text = "CHOOSE YOUR FIGHTER"
+	label.custom_minimum_size = Vector2(188, 0)
+	label.add_theme_font_size_override("font_size", 15)
 	label.add_theme_color_override("font_color", Color(1.0, 0.82, 0.38))
-	row.add_child(label)
-
-	start_hero_class_option = OptionButton.new()
-	start_hero_class_option.name = "StartHeroClassOption"
-	start_hero_class_option.custom_minimum_size = Vector2(220, 34)
-	_populate_hero_class_option(start_hero_class_option)
-	start_hero_class_option.item_selected.connect(_on_start_hero_class_selected)
-	row.add_child(start_hero_class_option)
+	layout.add_child(label)
 
 	start_hero_class_summary_label = Label.new()
 	start_hero_class_summary_label.name = "StartHeroClassSummary"
@@ -1732,8 +1777,111 @@ func _build_start_hero_class_selector(parent: VBoxContainer) -> void:
 	start_hero_class_summary_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	start_hero_class_summary_label.add_theme_font_size_override("font_size", 12)
 	start_hero_class_summary_label.add_theme_color_override("font_color", Color(0.84, 0.96, 1.0))
-	row.add_child(start_hero_class_summary_label)
+	layout.add_child(start_hero_class_summary_label)
+
+	var card_row := HBoxContainer.new()
+	card_row.name = "StartHeroClassCards"
+	card_row.add_theme_constant_override("separation", 8)
+	layout.add_child(card_row)
+
+	start_hero_class_card_buttons.clear()
+	for index in range(HERO_CLASS_OPTIONS.size()):
+		var entry: Dictionary = HERO_CLASS_OPTIONS[index]
+		var button := _build_start_hero_class_card(entry, index)
+		start_hero_class_card_buttons.append(button)
+		card_row.add_child(button)
+
+	start_hero_class_option = OptionButton.new()
+	start_hero_class_option.name = "StartHeroClassOption"
+	start_hero_class_option.visible = false
+	_populate_hero_class_option(start_hero_class_option)
+	start_hero_class_option.item_selected.connect(_on_start_hero_class_selected)
+	layout.add_child(start_hero_class_option)
 	_refresh_hero_class_selector()
+
+
+func _build_start_hero_class_card(entry: Dictionary, index: int) -> Button:
+	var class_id := String(entry.get("id", "gambler_knight"))
+	var button := Button.new()
+	button.name = "StartHeroClassCard%d" % index
+	button.text = ""
+	button.focus_mode = Control.FOCUS_ALL
+	button.clip_text = false
+	button.custom_minimum_size = Vector2(0, 132)
+	button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	button.set_meta("hero_class_id", class_id)
+	button.tooltip_text = "%s: %s" % [String(entry.get("label", "Fighter")), String(entry.get("summary", ""))]
+	button.pressed.connect(Callable(self, "_on_start_hero_class_card_pressed").bind(class_id))
+
+	var margin := MarginContainer.new()
+	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
+	margin.add_theme_constant_override("margin_left", 8)
+	margin.add_theme_constant_override("margin_top", 8)
+	margin.add_theme_constant_override("margin_right", 8)
+	margin.add_theme_constant_override("margin_bottom", 8)
+	button.add_child(margin)
+
+	var row := HBoxContainer.new()
+	row.name = "ClassCardContent"
+	row.add_theme_constant_override("separation", 8)
+	margin.add_child(row)
+
+	var art := TextureRect.new()
+	art.name = "ClassCardArt"
+	art.custom_minimum_size = Vector2(72, 112)
+	art.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	art.texture = DEAD_MANS_ANTE_SKIN_SCRIPT.load_texture(String(entry.get("art", "")))
+	row.add_child(art)
+
+	var copy := VBoxContainer.new()
+	copy.name = "ClassCardCopy"
+	copy.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	copy.add_theme_constant_override("separation", 2)
+	row.add_child(copy)
+
+	var title := Label.new()
+	title.name = "ClassCardTitle"
+	title.text = String(entry.get("label", "Fighter"))
+	title.add_theme_font_size_override("font_size", 15)
+	title.add_theme_color_override("font_color", Color(1.0, 0.92, 0.66))
+	title.clip_text = true
+	copy.add_child(title)
+
+	var role := Label.new()
+	role.name = "ClassCardRole"
+	role.text = String(entry.get("role", "Role")).to_upper()
+	role.add_theme_font_size_override("font_size", 11)
+	role.add_theme_color_override("font_color", _get_hero_class_accent(class_id))
+	copy.add_child(role)
+
+	var deck := Label.new()
+	deck.name = "ClassCardDeck"
+	deck.text = String(entry.get("deck_focus", "Opening deck ready."))
+	deck.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	deck.add_theme_font_size_override("font_size", 11)
+	deck.add_theme_color_override("font_color", Color(0.90, 0.88, 0.78))
+	copy.add_child(deck)
+
+	var arena := Label.new()
+	arena.name = "ClassCardArena"
+	arena.text = String(entry.get("arena_line", "FPS kit ready."))
+	arena.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	arena.add_theme_font_size_override("font_size", 10)
+	arena.add_theme_color_override("font_color", Color(0.70, 0.86, 0.92))
+	copy.add_child(arena)
+
+	_set_descendant_mouse_filter(button, Control.MOUSE_FILTER_IGNORE)
+	button.mouse_filter = Control.MOUSE_FILTER_STOP
+	_style_start_hero_class_button(button, entry, class_id == selected_hero_class_id)
+	return button
+
+
+func _set_descendant_mouse_filter(node: Node, filter: int) -> void:
+	for child in node.get_children():
+		if child is Control:
+			(child as Control).mouse_filter = filter
+		_set_descendant_mouse_filter(child, filter)
 
 
 func _populate_hero_class_option(option: OptionButton) -> void:
@@ -1752,11 +1900,19 @@ func _on_start_hero_class_selected(index: int) -> void:
 	_select_hero_class_from_option(start_hero_class_option, index)
 
 
+func _on_start_hero_class_card_pressed(class_id: String) -> void:
+	_select_hero_class_id(class_id)
+
+
 func _select_hero_class_from_option(option: OptionButton, index: int) -> void:
 	if option == null:
 		return
 	var metadata: Variant = option.get_item_metadata(index)
-	selected_hero_class_id = String(metadata) if metadata != null else "gambler_knight"
+	_select_hero_class_id(String(metadata) if metadata != null else "gambler_knight")
+
+
+func _select_hero_class_id(class_id: String) -> void:
+	selected_hero_class_id = class_id
 	if run_flow_state == RUN_FLOW_START and run_manager != null:
 		run_manager.call("reset_run", selected_hero_class_id)
 		_reset_playable_combat()
@@ -1780,12 +1936,57 @@ func _refresh_hero_class_selector() -> void:
 		hero_class_summary_label.text = _get_selected_hero_class_summary()
 	if start_hero_class_summary_label != null:
 		start_hero_class_summary_label.text = _get_selected_hero_class_summary()
+	for button in start_hero_class_card_buttons:
+		var class_id := String(button.get_meta("hero_class_id", "gambler_knight"))
+		_style_start_hero_class_button(button, _get_hero_class_entry(class_id), class_id == selected_hero_class_id)
+
+
+func _style_start_hero_class_button(button: Button, entry: Dictionary, active: bool) -> void:
+	if button == null:
+		return
+	var color: Color = entry.get("accent", FEEDBACK_CARD_COLOR)
+	var normal := StyleBoxFlat.new()
+	normal.bg_color = Color(color.r * 0.18, color.g * 0.15, color.b * 0.12, 0.58 if active else 0.36)
+	normal.border_color = Color(color.r, color.g, color.b, 0.96 if active else 0.46)
+	normal.set_border_width_all(3 if active else 1)
+	normal.set_corner_radius_all(8)
+	normal.content_margin_left = 8
+	normal.content_margin_top = 8
+	normal.content_margin_right = 8
+	normal.content_margin_bottom = 8
+	button.add_theme_stylebox_override("normal", normal)
+
+	var hover := normal.duplicate() as StyleBoxFlat
+	hover.bg_color = Color(color.r * 0.24, color.g * 0.20, color.b * 0.16, 0.70)
+	hover.border_color = Color(color.r, color.g, color.b, 1.0)
+	hover.set_border_width_all(3)
+	button.add_theme_stylebox_override("hover", hover)
+	button.add_theme_stylebox_override("pressed", hover)
+	button.add_theme_stylebox_override("focus", hover)
+	button.modulate = Color.WHITE if active else Color(0.84, 0.86, 0.88, 0.84)
+	button.tooltip_text = "%s: %s" % [String(entry.get("label", "Fighter")), String(entry.get("summary", ""))]
+
+
+func _get_hero_class_entry(class_id: String) -> Dictionary:
+	for entry in HERO_CLASS_OPTIONS:
+		if String(entry.get("id", "")) == class_id:
+			return entry
+	return HERO_CLASS_OPTIONS[0]
+
+
+func _get_hero_class_accent(class_id: String) -> Color:
+	var entry := _get_hero_class_entry(class_id)
+	return Color(entry.get("accent", FEEDBACK_CARD_COLOR))
 
 
 func _get_selected_hero_class_summary() -> String:
 	for entry in HERO_CLASS_OPTIONS:
 		if String(entry.get("id", "")) == selected_hero_class_id:
-			return "%s: %s" % [String(entry.get("role", "Role")), String(entry.get("summary", ""))]
+			return "%s: %s %s" % [
+				String(entry.get("role", "Role")),
+				String(entry.get("summary", "")),
+				String(entry.get("arena_line", "FPS kit ready."))
+			]
 	return "Duelist: +2 armor, card powers cool down faster."
 
 
@@ -2431,6 +2632,11 @@ func _get_arena_payout_text(result: Dictionary) -> String:
 	var headline := "[b]%s[/b]" % reward_label
 	var economy_line := "+%d Chips | %s | Draw %d next-hand cards" % [chips, reward_line, cards_to_draw] if cleared else "Defeat | %d kills | %d damage taken" % [int(result.get("kills", 0)), int(result.get("damage_taken", 0))]
 	var effects_line := "Effects: %s" % _join_string_array(pending_arena_effect_lines, " | ") if not pending_arena_effect_lines.is_empty() else "Effects: none"
+	var progression_line := "Progression: +%d Card XP | Wounds %d total | Active mods %d" % [
+		_calculate_arena_card_xp(result),
+		arena_wounds_total,
+		active_reward_mods.size()
+	]
 	var objective_line := "%s %s: %d" % [
 		String(result.get("objective_label", "Objective")),
 		"complete" if bool(result.get("objective_completed", false)) else ("failed" if bool(result.get("objective_failed", false)) else "partial"),
@@ -2441,10 +2647,11 @@ func _get_arena_payout_text(result: Dictionary) -> String:
 		String(result.get("class_passive", "Ante Guard")),
 		_count_ability_uses(result.get("ability_uses", {}))
 	]
-	return "%s\n%s\n%s\n%s\n%s Wave %d: %d kills, %.0f%% hit rate, %.1fs, %s." % [
+	return "%s\n%s\n%s\n%s\n%s\n%s Wave %d: %d kills, %.0f%% hit rate, %.1fs, %s." % [
 		headline,
 		economy_line,
 		effects_line,
+		progression_line,
 		class_line,
 		String(result.get("map_name", "Arena")),
 		int(result.get("wave", 1)),
@@ -2510,6 +2717,17 @@ func _apply_arena_payout_effects(result: Dictionary) -> Array[String]:
 			effects.append("+%d ammo reserve carried into next arena" % amount)
 		_:
 			effects.append("Chip payout banked")
+	var mod := _record_arena_reward_mod(result)
+	if not mod.is_empty():
+		effects.append("Mod acquired: %s %s" % [String(mod.get("rarity", "Common")), String(mod.get("label", "Arena Mod"))])
+	var card_xp := _calculate_arena_card_xp(result)
+	arena_card_xp_pool += card_xp
+	if card_xp > 0:
+		effects.append("+%d Card XP banked" % card_xp)
+	var wounds := int(result.get("wounds_taken", 0))
+	if wounds > 0:
+		arena_wounds_total += wounds
+		effects.append("+%d Wound%s recorded" % [wounds, "" if wounds == 1 else "s"])
 	var objective_score := int(result.get("objective_score", 0))
 	if bool(result.get("objective_completed", false)):
 		shooter_chips += 1
@@ -2518,6 +2736,111 @@ func _apply_arena_payout_effects(result: Dictionary) -> Array[String]:
 		shooter_chips += 2
 		effects.append("Objective bonus +2 Chips")
 	return effects
+
+
+func _record_arena_reward_mod(result: Dictionary) -> Dictionary:
+	var mod := _build_arena_reward_mod(result)
+	if mod.is_empty():
+		return {}
+	active_reward_mods.push_front(mod)
+	while active_reward_mods.size() > 8:
+		active_reward_mods.pop_back()
+	if run_manager != null and run_manager.has_method("record_arena_reward_mod"):
+		run_manager.call("record_arena_reward_mod", mod)
+	return mod
+
+
+func _build_arena_reward_mod(result: Dictionary) -> Dictionary:
+	var reward: Dictionary = result.get("selected_reward", {})
+	if reward.is_empty():
+		return {}
+	var label := String(reward.get("label", "Arena Mod"))
+	var kind := String(reward.get("kind", "chips"))
+	var amount := int(reward.get("amount", 0))
+	var objective_mode := String(result.get("objective_mode", "hold_pot"))
+	var objective_score := int(result.get("objective_score", 0))
+	var rarity := String(reward.get("rarity", _get_arena_reward_mod_rarity(objective_score, bool(result.get("objective_completed", false)))))
+	return {
+		"id": String(reward.get("mod_id", _make_reward_mod_id(label, kind))),
+		"kind": kind,
+		"label": label,
+		"amount": amount,
+		"rarity": rarity,
+		"objective_mode": objective_mode,
+		"objective_label": String(result.get("objective_label", _get_objective_label(objective_mode))),
+		"bias_modes": _string_array_from_variant(reward.get("bias_modes", _get_reward_mod_bias_modes(kind, objective_mode))),
+		"summary": String(reward.get("summary", _get_reward_mod_summary(label, kind, amount))),
+		"card_xp": _calculate_arena_card_xp(result),
+		"wounds": int(result.get("wounds_taken", 0)),
+		"source": "fps_arena"
+	}
+
+
+func _get_arena_reward_mod_rarity(objective_score: int, completed: bool) -> String:
+	if completed and objective_score >= 95:
+		return "Rare"
+	if completed and objective_score >= 80:
+		return "Uncommon"
+	return "Common"
+
+
+func _make_reward_mod_id(label: String, kind: String) -> String:
+	return "%s_%s" % [kind, label.to_lower().replace(" ", "_").replace("-", "_")]
+
+
+func _get_reward_mod_summary(label: String, kind: String, amount: int) -> String:
+	match kind:
+		"damage":
+			return "%s adds +%d weapon pressure to the next build and favors duel/boss plans." % [label, amount]
+		"armor":
+			return "%s adds +%d armor value and favors hold/defend plans." % [label, amount]
+		"ammo":
+			return "%s adds +%d reserve ammo and favors extract/duel plans." % [label, amount]
+		_:
+			return "%s banks economy for the next hand." % label
+
+
+func _get_reward_mod_bias_modes(kind: String, objective_mode: String) -> Array[String]:
+	match kind:
+		"damage":
+			return ["duel", "boss_gate", objective_mode]
+		"armor":
+			return ["defend", "hold_pot", objective_mode]
+		"ammo":
+			return ["extract", "duel", objective_mode]
+		_:
+			return [objective_mode]
+
+
+func _calculate_arena_card_xp(result: Dictionary) -> int:
+	if result.is_empty() or not bool(result.get("cleared", String(result.get("outcome", "win")) != "defeat")):
+		return 0
+	var xp := 2 + int(result.get("kills", 0))
+	if bool(result.get("objective_completed", false)):
+		xp += 2
+	if int(result.get("objective_score", 0)) >= 90:
+		xp += 2
+	xp += mini(3, _count_ability_uses(result.get("ability_uses", {})))
+	return xp
+
+
+func _string_array_from_variant(value: Variant) -> Array[String]:
+	var out: Array[String] = []
+	if typeof(value) == TYPE_ARRAY:
+		for entry in value:
+			var text := String(entry)
+			if not text.is_empty() and not out.has(text):
+				out.append(text)
+	return out
+
+
+func _dictionary_array_from_variant(value: Variant) -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	if typeof(value) == TYPE_ARRAY:
+		for entry in value:
+			if typeof(entry) == TYPE_DICTIONARY:
+				out.append((entry as Dictionary).duplicate(true))
+	return out
 
 
 func _build_arena_return_state() -> Dictionary:
@@ -2530,6 +2853,9 @@ func _build_arena_return_state() -> Dictionary:
 		"arena_carryover_armor": arena_carryover_armor,
 		"arena_carryover_ammo": arena_carryover_ammo,
 		"arena_weapon_damage_bonus": arena_weapon_damage_bonus,
+		"active_reward_mods": active_reward_mods.duplicate(true),
+		"arena_card_xp_pool": arena_card_xp_pool,
+		"arena_wounds_total": arena_wounds_total,
 		"held_hand_indices": held_hand_indices.duplicate(true),
 		"selected_hand_index": selected_hand_index,
 		"arena_bridge_payload": arena_bridge_payload.duplicate(true),
@@ -2552,6 +2878,9 @@ func _restore_arena_return_state(return_state: Dictionary) -> void:
 	arena_carryover_armor = int(return_state.get("arena_carryover_armor", arena_carryover_armor))
 	arena_carryover_ammo = int(return_state.get("arena_carryover_ammo", arena_carryover_ammo))
 	arena_weapon_damage_bonus = int(return_state.get("arena_weapon_damage_bonus", arena_weapon_damage_bonus))
+	active_reward_mods = _dictionary_array_from_variant(return_state.get("active_reward_mods", active_reward_mods))
+	arena_card_xp_pool = int(return_state.get("arena_card_xp_pool", arena_card_xp_pool))
+	arena_wounds_total = int(return_state.get("arena_wounds_total", arena_wounds_total))
 	held_hand_indices = Dictionary(return_state.get("held_hand_indices", {})).duplicate(true)
 	selected_hand_index = int(return_state.get("selected_hand_index", selected_hand_index))
 	arena_bridge_payload = Dictionary(return_state.get("arena_bridge_payload", {})).duplicate(true)
@@ -2593,7 +2922,10 @@ func _get_arena_bonus_snapshot() -> Dictionary:
 	return {
 		"armor": arena_carryover_armor,
 		"ammo": arena_carryover_ammo,
-		"weapon_damage": arena_weapon_damage_bonus
+		"weapon_damage": arena_weapon_damage_bonus,
+		"reward_mods": active_reward_mods.duplicate(true),
+		"card_xp_pool": arena_card_xp_pool,
+		"wounds_total": arena_wounds_total
 	}
 
 
@@ -2916,6 +3248,10 @@ func _refresh_loadout_ui() -> void:
 			_get_payout_bias_text()
 		]
 		objective_plan_label.tooltip_text = "The card table sends objective_mode=%s through the ArenaBridge payload." % preview_objective_mode
+	if reward_mods_label != null:
+		reward_mods_label.text = _get_reward_mods_label_text()
+	if armory_plan_label != null:
+		armory_plan_label.text = _get_armory_plan_text(preview_objective_mode)
 	_refresh_hero_class_selector()
 	for slot_id in loadout_slot_buttons.keys():
 		var button: Button = loadout_slot_buttons[slot_id]
@@ -3015,6 +3351,11 @@ func _build_combat_bridge_payload() -> Dictionary:
 		"economy": economy,
 		"objective_mode": _get_loadout_objective_mode(),
 		"payout_bonuses": _get_arena_bonus_snapshot(),
+		"reward_mods": active_reward_mods.duplicate(true),
+		"progression": {
+			"card_xp_pool": arena_card_xp_pool,
+			"wounds_total": arena_wounds_total
+		},
 		"reads": {
 			"target_enemy": _get_selected_enemy_target_id(),
 			"threat": _get_enemy_intent_line(_get_selected_enemy_target_id())
@@ -3116,6 +3457,10 @@ func _get_payout_objective_bias_score(mode: String) -> int:
 		score += 2
 	if arena_carryover_ammo > 0 and (mode == "extract" or mode == "duel"):
 		score += 1
+	for mod in active_reward_mods:
+		var bias_modes: Array[String] = _string_array_from_variant(mod.get("bias_modes", []))
+		if bias_modes.has(mode):
+			score += 2 if String(mod.get("rarity", "Common")) == "Rare" else 1
 	return score
 
 
@@ -3169,9 +3514,123 @@ func _get_payout_bias_text() -> String:
 		lines.append("+%d armor favors Hold Pot or Defend" % arena_carryover_armor)
 	if arena_carryover_ammo > 0:
 		lines.append("+%d ammo favors Extract or Duel" % arena_carryover_ammo)
+	var mod_bias := _get_reward_mod_bias_summary()
+	if not mod_bias.is_empty():
+		lines.append(mod_bias)
 	if lines.is_empty():
 		return ""
 	return "\nPAYOUT BIAS: %s" % _join_string_array(lines, " | ")
+
+
+func _get_reward_mod_bias_summary() -> String:
+	if active_reward_mods.is_empty():
+		return ""
+	var names: Array[String] = []
+	for index in range(mini(3, active_reward_mods.size())):
+		var mod: Dictionary = active_reward_mods[index]
+		names.append("%s %s" % [String(mod.get("rarity", "Common")), String(mod.get("label", "Arena Mod"))])
+	return "mods bias: %s" % _join_string_array(names, ", ")
+
+
+func _get_reward_mods_label_text() -> String:
+	if active_reward_mods.is_empty() and arena_card_xp_pool <= 0 and arena_wounds_total <= 0:
+		return "ACTIVE MODS: none yet | Card XP 0 | Wounds 0"
+	var mod_names: Array[String] = []
+	for index in range(mini(3, active_reward_mods.size())):
+		var mod: Dictionary = active_reward_mods[index]
+		mod_names.append("%s %s" % [String(mod.get("rarity", "Common")).to_upper(), String(mod.get("label", "Arena Mod"))])
+	var mod_text := "none" if mod_names.is_empty() else _join_string_array(mod_names, " | ")
+	return "ACTIVE MODS: %s | Card XP %d | Wounds %d" % [mod_text, arena_card_xp_pool, arena_wounds_total]
+
+
+func _get_armory_plan_text(target_mode: String) -> String:
+	if deck_manager == null:
+		return "ARMORY: deck not ready."
+	if _get_slotted_card_count() > 0:
+		return "ARMORY: %s | %s | %s" % [
+			_get_current_loadout_summary_text(),
+			_get_loadout_strength_text(target_mode),
+			_get_objective_label(target_mode)
+		]
+	var preview := _build_recommended_loadout_preview(target_mode)
+	var entries: Array[String] = preview.get("entries", [])
+	if entries.is_empty():
+		return "ARMORY: no affordable recommendation yet. Burn a low-fit card for Chips or manual-slot your best card."
+	return "ARMORY RECOMMENDS: %s | Cost %d/%d Chips | %s" % [
+		_join_string_array(entries, ", "),
+		int(preview.get("cost", 0)),
+		shooter_chips,
+		_get_loadout_strength_text(target_mode)
+	]
+
+
+func _build_recommended_loadout_preview(target_mode: String) -> Dictionary:
+	var used_indices: Dictionary = {}
+	var entries: Array[String] = []
+	var remaining_chips := shooter_chips
+	var total_cost := 0
+	for slot_id in _get_recommended_slot_order_for_objective(target_mode):
+		var hand_index := _find_recommended_hand_index_for_slot_with_budget(slot_id, target_mode, remaining_chips, used_indices)
+		if hand_index < 0:
+			continue
+		var card: Resource = deck_manager.call("get_card_at", hand_index)
+		if card == null:
+			continue
+		var cost := _get_loadout_slot_cost(card, slot_id)
+		remaining_chips -= cost
+		total_cost += cost
+		used_indices[hand_index] = true
+		entries.append("%s -> %s (%dc)" % [_get_card_name(card), _get_loadout_slot_label(slot_id), cost])
+		if entries.size() >= 3 and target_mode != "boss_gate":
+			break
+	return {"entries": entries, "cost": total_cost}
+
+
+func _find_recommended_hand_index_for_slot_with_budget(slot_id: String, target_mode: String, budget: int, used_indices: Dictionary) -> int:
+	var best_index := -1
+	var best_score := -9999
+	var hand_count := int(deck_manager.call("get_hand_count")) if deck_manager != null else 0
+	for index in range(hand_count):
+		if used_indices.has(index):
+			continue
+		var card: Resource = deck_manager.call("get_card_at", index)
+		if card == null:
+			continue
+		if _get_loadout_slot_cost(card, slot_id) > budget:
+			continue
+		var score := _get_card_loadout_recommendation_score(card, target_mode, slot_id)
+		if score > best_score:
+			best_score = score
+			best_index = index
+	return best_index if best_score > -9000 else -1
+
+
+func _get_current_loadout_summary_text() -> String:
+	var entries: Array[String] = []
+	for slot_id in ["weapon", "ability_1", "ability_2", "passive", "wager"]:
+		if not loadout_slots.has(slot_id):
+			continue
+		var card: Resource = loadout_slots[slot_id]
+		if card == null:
+			continue
+		entries.append("%s %s" % [_get_loadout_slot_label(slot_id), _get_card_name(card)])
+	if entries.is_empty():
+		return "empty kit"
+	return _join_string_array(entries, ", ")
+
+
+func _get_loadout_strength_text(target_mode: String) -> String:
+	match target_mode:
+		"extract":
+			return "Extract wants movement plus enough ammo to leave clean."
+		"duel":
+			return "Duel wants read/trap control and weapon damage."
+		"defend":
+			return "Defend wants armor, trap control, and a stable weapon."
+		"boss_gate":
+			return "Boss Gate wants weapon burst and ritual/wager pressure."
+		_:
+			return "Hold Pot wants a balanced weapon plus sustain."
 
 
 func _refresh_hand_loadout_recommendations(target_mode: String) -> void:
@@ -3512,6 +3971,9 @@ func _reset_run_slice() -> void:
 	pending_arena_result.clear()
 	pending_arena_effect_lines.clear()
 	arena_payout_pending = false
+	active_reward_mods.clear()
+	arena_card_xp_pool = 0
+	arena_wounds_total = 0
 	_clear_arena_bonuses()
 	run_ceremony_history.clear()
 	selected_run_path_index = -1
@@ -3539,6 +4001,9 @@ func _reset_playable_combat() -> void:
 	committed_card_context.clear()
 	shooter_chips = 7
 	_clear_arena_bonuses()
+	active_reward_mods.clear()
+	arena_card_xp_pool = 0
+	arena_wounds_total = 0
 	loadout_slots.clear()
 	held_hand_indices.clear()
 	arena_bridge_payload.clear()
@@ -4699,7 +5164,7 @@ func _get_action_guide_snapshot(session_state: Dictionary, run_state: Dictionary
 			return {
 				"target": start_run_button,
 				"label": "CLICK",
-				"detail": "Deal In",
+				"detail": "Choose fighter, then Deal In",
 				"color": FEEDBACK_CARD_COLOR
 			}
 		RUN_FLOW_REWARD:
@@ -5396,10 +5861,10 @@ func _refresh_run_shell(state: Dictionary) -> void:
 	if start_run_button != null:
 		start_run_button.visible = run_flow_state == RUN_FLOW_START
 		start_run_button.disabled = run_flow_state != RUN_FLOW_START
-		start_run_button.text = "CLICK DEAL IN\nDraw Hand"
+		start_run_button.text = "DEAL IN\nDraw Class Hand"
 		if run_flow_state == RUN_FLOW_START:
-			start_run_button.custom_minimum_size = Vector2(300, 68)
-			start_run_button.add_theme_font_size_override("font_size", 21)
+			start_run_button.custom_minimum_size = Vector2(300, 58)
+			start_run_button.add_theme_font_size_override("font_size", 20)
 	if next_encounter_button != null:
 		next_encounter_button.visible = run_flow_state == RUN_FLOW_NEXT_ENCOUNTER
 		next_encounter_button.disabled = run_flow_state != RUN_FLOW_NEXT_ENCOUNTER
@@ -5485,7 +5950,7 @@ func _sync_opening_idle_animation() -> void:
 func _get_run_shell_title(state: Dictionary) -> String:
 	match run_flow_state:
 		RUN_FLOW_START:
-			return "Opening Table"
+			return "Opening Table: Pick Your Fighter"
 		RUN_FLOW_REWARD:
 			return "Post-Combat Reward"
 		RUN_FLOW_NEXT_ENCOUNTER:
@@ -5502,7 +5967,7 @@ func _get_run_shell_detail(state: Dictionary) -> String:
 	var node_count := int(state.get("current_node_count", 0))
 	match run_flow_state:
 		RUN_FLOW_START:
-			return "Your first click: Deal In.\nThen the fight becomes target -> glowing card -> Resolve Turn."
+			return "Choose a fighter deck, then Deal In. Your cards become weapons, armor, reads, traps, and FPS abilities in the arena."
 		RUN_FLOW_REWARD:
 			var card_rewards: Array = state.get("pending_card_rewards", [])
 			var relic_rewards: Array = state.get("pending_relic_rewards", [])
@@ -8558,6 +9023,8 @@ func _refresh_intent_call_options() -> void:
 
 
 func _get_selected_metadata(option_button: OptionButton):
+	if option_button == null:
+		return null
 	if option_button.item_count == 0 or option_button.selected < 0:
 		return null
 	return option_button.get_item_metadata(option_button.selected)

@@ -40,6 +40,8 @@ The return now preserves the card-run snapshot through `ArenaBridge`: current ru
 
 The prep table now shows the next FPS objective before launch. `ObjectivePlanLabel` names the objective, explains the practical plan, and surfaces payout carryover bias such as bonus weapon damage, armor, or ammo. Cards in hand carry FPS recommendation badges (`WEAPON CORE`, `PICK FOR EXTRACT`, `GOOD FOR DEFEND`, `BOSS TECH`) plus tooltip/selected-card reasoning so the player can understand why a card belongs in the arena kit. `Recommend Loadout` auto-slots affordable cards toward the strongest objective in the current hand while still leaving manual slot/burn/hold decisions available.
 
+Arena rewards now become visible run mods. The card table tracks active reward mods, rarity, Card XP, and wounds, writes arena mod decisions into run reward history, and shows an `ARMORY RECOMMENDS` line with the predicted kit and chip cost. Reward mods bias future objective recommendations, so choosing `Runner Edge`, `Fortified Guard`, or `Boss Tech` changes what the next hand wants to become.
+
 The opening screen now asks the player to choose a fighter before `Deal In`. That class changes the run deck before the first hand is drawn:
 
 - `Gambler-Knight`: balanced duel/guard/movement/read/trap starter.
@@ -358,11 +360,13 @@ Done in the prototype:
 14. Add class selection to the prep table and carry `hero_class` into the FPS arena/result payload.
 15. Mirror weapon/economy/ability cards into a compact in-FPS card HUD with icon-like slots, cooldown bars, and screenshot QA coverage.
 16. Make class selection affect the first run deck before `Deal In`; tint FPS ability frames and VFX with class accents.
+17. Promote FPS payouts into visible arena reward mods with rarity, objective-bias tags, Card XP, wound tracking, run-history entries, and bridge persistence.
+18. Add objective-specific FPS room props for center-hold stakes, extract gates, duel marks, defend barriers, and boss gates.
 
 Next implementation steps:
 
-1. Promote authored payout bonuses into real reward cards/mods with art, names, rarity, and deck/run history entries.
-2. Add wound, card XP, card mutation, and upgrade events to the run history.
+1. Turn arena reward mods into inspectable cards/artifacts with icons, art, rarity frames, and mutation choices.
+2. Spend Card XP on card upgrades/mutations and make wounds alter the next run node.
 3. Replace text-glyph HUD icons with generated or hand-painted card-power icon textures.
 4. Give each class a unique passive that changes scoring or card economy, not only starting deck/HUD/VFX identity.
 5. Add escort and multi-stage boss variants after the five first objective modes feel good.

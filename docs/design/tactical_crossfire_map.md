@@ -57,7 +57,9 @@ The FPS branch now has five objective modes layered onto the same map:
 
 The objective mode is carried in the arena bridge payload as `objective_mode`, and the FPS arena returns `objective_label`, `objective_completed`, `objective_failed`, `objective_events`, and `objective_score` with the payout result.
 
-On the card table, the same objective contract is now visible before launch: the loadout prep panel previews the next objective plan, hand cards show objective badges/reasons, and payout carryovers can bias whether the next recommendation leans damage, armor, or ammo.
+On the card table, the same objective contract is now visible before launch: the loadout prep panel previews the next objective plan, hand cards show objective badges/reasons, and payout carryovers can bias whether the next recommendation leans damage, armor, or ammo. Arena reward mods now persist that bias with rarity tags, Card XP, and wound tracking.
+
+The FPS room should show the active objective through geometry as well as HUD text: Hold Pot adds center stakes, Extract adds a gate in the player-side lane, Duel adds a marked target ring/blade, Defend adds a table core and barriers, and Boss Gate adds the gate arch.
 
 The dev hub and map viewer make the shared map easy to test without playing the whole loop:
 

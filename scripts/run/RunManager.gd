@@ -428,6 +428,27 @@ func skip_rewards() -> void:
 	_emit_state()
 
 
+func record_arena_reward_mod(mod: Dictionary) -> void:
+	if mod.is_empty():
+		return
+	var label := String(mod.get("label", "Arena Mod"))
+	_record_reward_history({
+		"kind": "Arena Mod",
+		"name": label,
+		"path": "",
+		"choice": 0,
+		"table": String(mod.get("objective_label", last_completed_node_name)),
+		"summary": "FPS arena mod earned: %s." % label,
+		"reason": String(mod.get("summary", "Arena payout now shapes future loadout planning.")),
+		"impact": "Biases %s and banks %d Card XP." % [
+			_join_or_none(_string_array(mod.get("bias_modes", []))),
+			int(mod.get("card_xp", 0))
+		],
+		"deck_change": "Deck size stayed at %d while arena mod count changed." % deck_paths.size()
+	})
+	_emit_state()
+
+
 func is_waiting_for_reward() -> bool:
 	return not pending_card_reward_paths.is_empty() or not pending_relic_reward_paths.is_empty()
 
