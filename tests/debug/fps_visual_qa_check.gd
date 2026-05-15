@@ -68,6 +68,8 @@ func _build_visual_payload() -> Dictionary:
 			{"slot": "ability_4", "id": "snare_card", "name": "Snare Card", "ability": {"kind": "snare_field", "duration": 4.0, "radius": 4.2, "cooldown": 12.0}}
 		],
 		"economy": {"chips": 7, "armor": 3, "ammo": 36},
+		"card_upgrades": {"quick_slash": {"level": 1, "mutation": "Deadeye"}},
+		"progression": {"card_xp_pool": 6, "wounds_total": 1, "wound_penalties": {"draw_penalty": 1, "armor_penalty": 2, "chip_tax": 1}},
 		"reads": {"target_enemy": &"needle_eye", "threat": "Marked duel target on Long Rail"}
 	}
 

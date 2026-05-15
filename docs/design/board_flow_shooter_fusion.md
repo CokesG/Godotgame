@@ -1,6 +1,6 @@
 # Dead Man's Ante - Board Flow / Shooter Fusion
 
-Status: UI/flow contract for the shooter-combat branch
+Status: Phase 83 armory/wound loop contract
 Last updated: 2026-05-15
 
 ## North Star
@@ -40,7 +40,17 @@ The return now preserves the card-run snapshot through `ArenaBridge`: current ru
 
 The prep table now shows the next FPS objective before launch. `ObjectivePlanLabel` names the objective, explains the practical plan, and surfaces payout carryover bias such as bonus weapon damage, armor, or ammo. Cards in hand carry FPS recommendation badges (`WEAPON CORE`, `PICK FOR EXTRACT`, `GOOD FOR DEFEND`, `BOSS TECH`) plus tooltip/selected-card reasoning so the player can understand why a card belongs in the arena kit. `Recommend Loadout` auto-slots affordable cards toward the strongest objective in the current hand while still leaving manual slot/burn/hold decisions available.
 
-Arena rewards now become visible run mods. The card table tracks active reward mods, rarity, Card XP, and wounds, writes arena mod decisions into run reward history, and shows an `ARMORY RECOMMENDS` line with the predicted kit and chip cost. Reward mods bias future objective recommendations, so choosing `Runner Edge`, `Fortified Guard`, or `Boss Tech` changes what the next hand wants to become.
+Arena rewards now become visible run mods. The card table tracks active reward mods, rarity, Card XP, wounds, and card upgrades, writes arena mod decisions into run reward history, and shows an `ARMORY RECOMMENDS` line with the predicted kit and chip cost. Reward mods bias future objective recommendations, so choosing `Runner Edge`, `Fortified Guard`, or `Boss Tech` changes what the next hand wants to become.
+
+Card XP can now be spent immediately in prep:
+
+- `Upgrade` raises the selected hand card level.
+- `Mutate` applies a style-based mutation such as `Deadeye`, `Bulwark`, `Fleet`, `Marked`, `Snare`, or `Wager`.
+- The upgrade state persists by card id through the arena return snapshot.
+- The bridge payload exposes `card_upgrades`, and each upgraded loadout entry can include an `upgrade` summary.
+- Upgrades affect the table and shooter: card damage/Guard bonuses on the table, weapon damage for attack cards, armor/cooldown/duration/radius/dash/wager improvements for FPS abilities.
+
+Wounds now alter the next loop instead of waiting for a future run system. The table exports `progression.wound_penalties`, taxes payout chips, draws fewer next-hand cards, and reduces bridged armor before the next arena.
 
 The opening screen now asks the player to choose a fighter before `Deal In`. That class changes the run deck before the first hand is drawn:
 
@@ -306,7 +316,14 @@ Board sends:
 	"ability_cards": ["smoke_veil", "guard_wall"],
 	"passive_cards": ["loaded_dice"],
 	"wager_cards": ["blood_ritual"],
+	"loadout": [
+		{"slot": "weapon", "id": "quick_slash", "weapon": {"name": "Ace Cutter Revolver", "damage": 31}, "upgrade": {"level": 1, "mutation": "Deadeye"}},
+		{"slot": "ability_1", "id": "sidestep", "ability": {"kind": "dash", "cooldown": 5.0}}
+	],
 	"economy": {"chips": 7, "armor": 2, "ammo": 18},
+	"reward_mods": [{"label": "Runner Edge", "kind": "damage", "rarity": "Uncommon"}],
+	"card_upgrades": {"quick_slash": {"level": 1, "mutation": "Deadeye"}},
+	"progression": {"card_xp_pool": 6, "wounds_total": 1, "wound_penalties": {"chip_tax": 1, "draw_penalty": 1, "armor_penalty": 2}},
 	"reads": {"enemy_plan": "left_rush", "confidence": 0.65}
 }
 ```
@@ -362,14 +379,17 @@ Done in the prototype:
 16. Make class selection affect the first run deck before `Deal In`; tint FPS ability frames and VFX with class accents.
 17. Promote FPS payouts into visible arena reward mods with rarity, objective-bias tags, Card XP, wound tracking, run-history entries, and bridge persistence.
 18. Add objective-specific FPS room props for center-hold stakes, extract gates, duel marks, defend barriers, and boss gates.
+19. Spend Card XP on selected-card upgrades/mutations and export those changes into table resolver context plus FPS weapon/ability payloads.
+20. Make wounds alter the next loop through chip tax, draw penalty, and armor penalty.
+21. Add first-pass objective pressure: Hold Pot contest, Extract timer, stronger Defend drain, empowered Duel target, and harder Boss Gate champion.
 
 Next implementation steps:
 
 1. Turn arena reward mods into inspectable cards/artifacts with icons, art, rarity frames, and mutation choices.
-2. Spend Card XP on card upgrades/mutations and make wounds alter the next run node.
-3. Replace text-glyph HUD icons with generated or hand-painted card-power icon textures.
-4. Give each class a unique passive that changes scoring or card economy, not only starting deck/HUD/VFX identity.
-5. Add escort and multi-stage boss variants after the five first objective modes feel good.
+2. Replace text-glyph HUD icons with generated or hand-painted card-power icon textures.
+3. Give each class a unique passive that changes scoring or card economy, not only starting deck/HUD/VFX identity.
+4. Add escort and multi-stage boss variants after the five first objective modes feel good.
+5. Build a dedicated armory screen once upgrade branches become real choices instead of single selected-card actions.
 
 ## Design Rule
 

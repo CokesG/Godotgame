@@ -16,6 +16,7 @@ const DEFAULT_BRIDGE_PAYLOAD := {
 	"economy": {"chips": 0, "armor": 0, "ammo": 24},
 	"objective_mode": "hold_pot",
 	"reward_mods": [],
+	"card_upgrades": {},
 	"progression": {"card_xp_pool": 0, "wounds_total": 0},
 	"reads": {"target_enemy": &"", "threat": "intent hidden"}
 }
@@ -36,6 +37,7 @@ const OBJECTIVE_MODE_DEFS := {
 		"summary": "Touch the Ante Pot, then reach the player-side exit alive.",
 		"radius": 3.1,
 		"exit_radius": 3.0,
+		"time_limit": 18.0,
 		"color": Color(0.34, 0.95, 1.0)
 	},
 	"duel": {
@@ -193,9 +195,11 @@ var objective_hold_time := 0.0
 var objective_completed := false
 var objective_failed := false
 var objective_extract_collected := false
+var objective_extract_timer := 0.0
 var objective_core_health := 100.0
 var objective_target_name := ""
 var objective_target_defeated := false
+var objective_contested_count := 0
 var objective_events: Array[String] = []
 var current_wave_enemy_total := 0
 
@@ -341,9 +345,12 @@ func get_objective_state() -> Dictionary:
 		"failed": objective_failed,
 		"hold_time": objective_hold_time,
 		"extract_collected": objective_extract_collected,
+		"extract_timer": objective_extract_timer,
+		"extract_time_limit": float(objective_def.get("time_limit", 0.0)),
 		"core_health": int(roundf(objective_core_health)),
 		"target": objective_target_name,
 		"target_defeated": objective_target_defeated,
+		"contested_count": objective_contested_count,
 		"events": objective_events.duplicate()
 	}
 
@@ -415,8 +422,10 @@ func get_active_loadout_summary() -> Dictionary:
 		"objective_mode": objective_mode,
 		"objective_label": String(objective_def.get("label", "Objective")),
 		"reward_mods": (active_bridge_payload.get("reward_mods", []) as Array).size(),
+		"card_upgrades": (active_bridge_payload.get("card_upgrades", {}) as Dictionary).size(),
 		"card_xp_pool": int((active_bridge_payload.get("progression", {}) as Dictionary).get("card_xp_pool", 0)),
-		"wounds_total": int((active_bridge_payload.get("progression", {}) as Dictionary).get("wounds_total", 0))
+		"wounds_total": int((active_bridge_payload.get("progression", {}) as Dictionary).get("wounds_total", 0)),
+		"wound_penalties": ((active_bridge_payload.get("progression", {}) as Dictionary).get("wound_penalties", {}) as Dictionary).duplicate(true)
 	}
 
 
@@ -617,9 +626,11 @@ func _set_objective_mode(mode: String) -> void:
 	objective_completed = false
 	objective_failed = false
 	objective_extract_collected = false
+	objective_extract_timer = 0.0
 	objective_core_health = _get_objective_core_max_health()
 	objective_target_name = String(objective_def.get("target", ""))
 	objective_target_defeated = false
+	objective_contested_count = 0
 	objective_events.clear()
 	_refresh_objective_mode_props()
 
@@ -633,7 +644,7 @@ func _update_objective(delta: float) -> void:
 		"hold_pot":
 			_update_hold_pot_objective(delta)
 		"extract":
-			_update_extract_objective()
+			_update_extract_objective(delta)
 		"defend":
 			_update_defend_objective(delta)
 		"duel", "boss_gate":
@@ -644,6 +655,12 @@ func _update_objective(delta: float) -> void:
 func _update_hold_pot_objective(delta: float) -> void:
 	if objective_completed:
 		return
+	objective_contested_count = _count_living_enemies_near(_get_objective_position(), float(objective_def.get("radius", 3.2)) + 0.85)
+	if objective_contested_count > 0:
+		objective_hold_time = maxf(0.0, objective_hold_time - delta * float(objective_contested_count) * 0.7)
+		objective_score_bank = maxf(0.0, objective_score_bank - delta * float(objective_contested_count) * 1.2)
+		_record_objective_event("Ante Pot contested.")
+		return
 	if _is_player_near(_get_objective_position(), float(objective_def.get("radius", 3.2))):
 		objective_hold_time += delta
 		objective_score_bank += delta * 4.5
@@ -652,11 +669,19 @@ func _update_hold_pot_objective(delta: float) -> void:
 			_add_objective_score(18.0, "Held the Ante Pot.")
 
 
-func _update_extract_objective() -> void:
+func _update_extract_objective(delta: float) -> void:
 	if not objective_extract_collected and _is_player_near(_get_objective_position(), float(objective_def.get("radius", 3.1))):
 		objective_extract_collected = true
 		_add_objective_score(28.0, "Collected the pot.")
 		_show_status_flash("Pot taken: reach the extract lane", Color(0.34, 0.95, 1.0))
+	if objective_extract_collected and not objective_completed:
+		objective_extract_timer += delta
+		var time_limit := float(objective_def.get("time_limit", 18.0))
+		if objective_extract_timer >= time_limit:
+			objective_failed = true
+			_record_objective_event("Extract window closed.")
+			_show_status_flash("Extract window closed", Color(1.0, 0.34, 0.22))
+			return
 	if objective_extract_collected and not objective_completed and _is_player_near(_get_extract_position(), float(objective_def.get("exit_radius", 3.0))):
 		objective_completed = true
 		_add_objective_score(32.0, "Extracted alive.")
@@ -664,12 +689,11 @@ func _update_extract_objective() -> void:
 
 
 func _update_defend_objective(delta: float) -> void:
-	var pressure := 0
-	for enemy in get_living_enemies():
-		if enemy.global_position.distance_to(_get_objective_position()) <= float(objective_def.get("radius", 3.6)):
-			pressure += 1
+	var pressure := _count_living_enemies_near(_get_objective_position(), float(objective_def.get("radius", 3.6)))
+	objective_contested_count = pressure
 	if pressure > 0:
-		objective_core_health = maxf(0.0, objective_core_health - delta * float(pressure) * 5.5)
+		objective_core_health = maxf(0.0, objective_core_health - delta * float(pressure) * 6.4)
+		_record_objective_event("Core under pressure.")
 		if objective_core_health <= 0.0:
 			objective_failed = true
 			_show_status_flash("Ante core broken", Color(1.0, 0.25, 0.18))
@@ -679,10 +703,27 @@ func _update_defend_objective(delta: float) -> void:
 
 func _add_objective_score(amount: float, reason: String = "") -> void:
 	objective_score_bank = minf(100.0, objective_score_bank + amount)
-	if not reason.is_empty() and not objective_events.has(reason):
-		objective_events.append(reason)
-		if objective_events.size() > 5:
-			objective_events.pop_front()
+	_record_objective_event(reason)
+
+
+func _record_objective_event(reason: String) -> void:
+	if reason.is_empty() or objective_events.has(reason):
+		return
+	objective_events.append(reason)
+	if objective_events.size() > 5:
+		objective_events.pop_front()
+
+
+func _count_living_enemies_near(position: Vector3, radius: float) -> int:
+	var count := 0
+	var target := position
+	target.y = 0.0
+	for enemy in get_living_enemies():
+		var enemy_position: Vector3 = enemy.global_position
+		enemy_position.y = 0.0
+		if enemy_position.distance_to(target) <= radius:
+			count += 1
+	return count
 
 
 func _is_player_near(position: Vector3, radius: float) -> bool:
@@ -718,7 +759,10 @@ func _get_objective_progress_ratio() -> float:
 		"extract":
 			if objective_completed:
 				return 1.0
-			return 0.52 if objective_extract_collected else 0.0
+			if objective_extract_collected:
+				var time_limit := maxf(0.1, float(objective_def.get("time_limit", 18.0)))
+				return clampf(0.52 + (1.0 - clampf(objective_extract_timer / time_limit, 0.0, 1.0)) * 0.18, 0.52, 0.70)
+			return 0.0
 		"defend":
 			return clampf(objective_core_health / maxf(1.0, _get_objective_core_max_health()), 0.0, 1.0)
 		"duel", "boss_gate":
@@ -732,12 +776,15 @@ func _get_objective_hud_text() -> String:
 	var summary := String(objective_def.get("summary", ""))
 	match objective_mode:
 		"hold_pot":
-			return "%s %.1fs/%.1fs | %s" % [label, objective_hold_time, float(objective_def.get("target_seconds", 8.0)), summary]
+			var contested := " contested x%d" % objective_contested_count if objective_contested_count > 0 else ""
+			return "%s %.1fs/%.1fs%s | %s" % [label, objective_hold_time, float(objective_def.get("target_seconds", 8.0)), contested, summary]
 		"extract":
 			var step := "Reach extract" if objective_extract_collected else "Touch Ante Pot"
-			return "%s | %s | %s" % [label, step, summary]
+			var timer_text := " %.0fs" % maxf(0.0, float(objective_def.get("time_limit", 18.0)) - objective_extract_timer) if objective_extract_collected and not objective_completed else ""
+			return "%s | %s%s | %s" % [label, step, timer_text, summary]
 		"defend":
-			return "%s core %d/%d | %s" % [label, int(roundf(objective_core_health)), int(roundf(_get_objective_core_max_health())), summary]
+			var pressure_text := " pressure x%d" % objective_contested_count if objective_contested_count > 0 else ""
+			return "%s core %d/%d%s | %s" % [label, int(roundf(objective_core_health)), int(roundf(_get_objective_core_max_health())), pressure_text, summary]
 		"duel", "boss_gate":
 			var target_state := "DOWN" if objective_target_defeated else objective_target_name
 			return "%s target: %s | %s" % [label, target_state, summary]
@@ -2889,16 +2936,25 @@ func _get_objective_enemy_defs() -> Array[Dictionary]:
 			"duel":
 				if String(copy.get("name", "")) == objective_target_name:
 					copy["health"] = int(copy.get("health", 70)) + 28
+					copy["speed"] = float(copy.get("speed", 3.5)) + 0.35
+					copy["attack_damage"] = int(copy.get("attack_damage", 12)) + 2
+					copy["ranged_attack_range"] = float(copy.get("ranged_attack_range", 10.0)) + 1.5
+					copy["hold_distance"] = float(copy.get("hold_distance", 6.5)) + 0.75
 					copy["color"] = Color(1.0, 0.48, 0.24)
 					copy["objective_target"] = true
 			"defend":
 				if String(copy.get("archetype", "")) == "charger":
-					copy["speed"] = float(copy.get("speed", 3.5)) + 0.35
+					copy["speed"] = float(copy.get("speed", 3.5)) + 0.55
+					copy["attack_damage"] = int(copy.get("attack_damage", 10)) + 2
 				if String(copy.get("archetype", "")) == "shield":
 					copy["position"] = _map_cell_to_world(Vector2i(1, 1)) + Vector3(0.8, 0.17, -2.1)
+					copy["health"] = int(copy.get("health", 90)) + 24
 			"extract":
 				if String(copy.get("archetype", "")) == "charger":
 					copy["position"] = _map_cell_to_world(Vector2i(0, 1)) + Vector3(-1.2, 0.17, 0.0)
+					copy["speed"] = float(copy.get("speed", 3.5)) + 0.55
+				if String(copy.get("archetype", "")) == "ranged":
+					copy["position"] = _map_cell_to_world(Vector2i(1, 2)) + Vector3(3.4, 0.17, 1.6)
 			"boss_gate":
 				if String(copy.get("name", "")) == "Hexmonger":
 					continue
@@ -2927,10 +2983,11 @@ func _get_boss_gate_enemy_def() -> Dictionary:
 		"texture": "res://art/game/enemies/enemy_hexmonger.png",
 		"color": Color(0.86, 0.42, 1.0),
 		"archetype": "shield",
-		"health": 218,
-		"speed": 2.55,
-		"attack_damage": 22,
+		"health": 238,
+		"speed": 2.72,
+		"attack_damage": 24,
 		"attack_range": 2.05,
+		"attack_cooldown": 0.92,
 		"objective_target": true
 	}
 
@@ -3287,6 +3344,8 @@ func _build_arena_result(reward: Dictionary, cleared: bool = true) -> Dictionary
 		"objective_completed": objective_completed,
 		"objective_failed": objective_failed,
 		"objective_events": objective_events.duplicate(),
+		"objective_extract_timer": objective_extract_timer,
+		"objective_contested_count": objective_contested_count,
 		"hero_class": active_hero_class_id,
 		"hero": String(active_hero_profile.get("name", "Gambler-Knight")),
 		"class_passive": String(active_hero_profile.get("passive", "Ante Guard")),
@@ -3348,6 +3407,8 @@ func _calculate_objective_score(cleared: bool, clear_time: float) -> int:
 		"extract":
 			objective_part += 35 if objective_extract_collected else 0
 			objective_part += 35 if objective_completed else 0
+			if objective_completed:
+				objective_part += int(roundf(maxf(0.0, float(objective_def.get("time_limit", 18.0)) - objective_extract_timer) * 0.8))
 		"defend":
 			objective_part += int(roundf(_get_objective_progress_ratio() * 54.0))
 		"duel", "boss_gate":
@@ -3480,12 +3541,14 @@ func _refresh_ui() -> void:
 	if loadout_label != null:
 		var summary := get_active_loadout_summary()
 		loadout_label.add_theme_color_override("font_color", _get_class_accent_color())
-		loadout_label.text = "%s %s | %s | Armor %d | Chips %d" % [
+		loadout_label.text = "%s %s | %s | Armor %d | Chips %d | Upg %d W%d" % [
 			summary.get("hero", "Gambler-Knight"),
 			summary.get("hero_role", "Duelist"),
 			summary.get("weapon", "House Sidearm"),
 			summary.get("armor", 0),
-			summary.get("chips", 0)
+			summary.get("chips", 0),
+			summary.get("card_upgrades", 0),
+			summary.get("wounds_total", 0)
 		]
 	if ability_label != null:
 		ability_label.text = _get_ability_hud_text()
@@ -3524,7 +3587,11 @@ func _refresh_card_combat_hud(ammo_state: Dictionary) -> void:
 			card_hud_ability_row.add_child(_build_ability_card_panel(index))
 	if card_hud_summary_label != null:
 		var target_text := String(summary.get("target_enemy", ""))
-		card_hud_summary_label.text = "CARD POWERS LIVE  |  %s" % ("read target %s" % target_text if not target_text.is_empty() else "slot cards before arena entry")
+		var wound_text := " | wounds %d" % int(summary.get("wounds_total", 0)) if int(summary.get("wounds_total", 0)) > 0 else ""
+		card_hud_summary_label.text = "CARD POWERS LIVE  |  %s%s" % [
+			"read target %s" % target_text if not target_text.is_empty() else "slot cards before arena entry",
+			wound_text
+		]
 
 
 func _build_ability_card_panel(index: int) -> PanelContainer:

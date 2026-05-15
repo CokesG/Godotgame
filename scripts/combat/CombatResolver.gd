@@ -215,18 +215,24 @@ func add_player_guard(amount: int, source: String = "Relic") -> void:
 
 
 func _apply_card_damage(amount: int, source: String, context: Dictionary) -> void:
-	var scaled_amount := _scale_card_amount(amount, source, context)
+	var upgrade_bonus := maxi(0, int(context.get("upgrade_damage_bonus", 0)))
+	var scaled_amount := _scale_card_amount(amount + upgrade_bonus, source, context)
 	scaled_amount = _apply_player_map_bonus(scaled_amount, "card_damage_bonus", "damage", source, context)
 	if scaled_amount <= 0:
 		return
+	if upgrade_bonus > 0:
+		log_requested.emit("%s armory upgrade adds +%d damage." % [source, upgrade_bonus])
 	_damage_targeted_enemy(scaled_amount, source, context)
 
 
 func _apply_card_guard(amount: int, source: String, context: Dictionary) -> void:
-	var scaled_amount := _scale_card_amount(amount, source, context)
+	var upgrade_bonus := maxi(0, int(context.get("upgrade_guard_bonus", 0)))
+	var scaled_amount := _scale_card_amount(amount + upgrade_bonus, source, context)
 	scaled_amount = _apply_player_map_bonus(scaled_amount, "guard_bonus", "Guard", source, context)
 	if scaled_amount <= 0:
 		return
+	if upgrade_bonus > 0:
+		log_requested.emit("%s armory upgrade adds +%d Guard." % [source, upgrade_bonus])
 	_add_player_guard(scaled_amount, source)
 
 

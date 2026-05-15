@@ -1,6 +1,6 @@
 # Dead Man's Ante - UI Skin And Effect Asset Plan
 
-Status: Phase 82 class key-art asset pass wired
+Status: Phase 83 armory prep controls wired
 Last updated: 2026-05-15
 
 ## What Is Wired Now
@@ -72,6 +72,17 @@ hero_blood_wager_portrait.png
 These were generated as production-sized derivative assets from the existing generated card illustrations, then framed/tinted by class accent. The opening screen uses the wide `*_keyart.png` files. The taller `*_portrait.png` files are ready for future class cards, reward screens, profile panels, or 2D dialogue/event UI.
 
 Asset note for future agents: these are class identity/key-art assets, not final 3D character model sources. They are enough for current UI, HUD, card, and marketing-style screens. For third-person/FPS visible bodies we will eventually want character model work, but the prototype can continue with 3D silhouettes, weapon/viewmodel pieces, particles, and HUD identity before committing to full hero rigs.
+
+## Phase 83 Armory Prep Controls
+
+The card prep row now supports direct card progression testing without playing a full loop:
+
+- `Upgrade` spends Card XP on the selected hand card and raises its level.
+- `Mutate` spends Card XP on the selected hand card and applies a style-driven mutation.
+- `ArmoryPlanLabel` shows the selected card's current level/mutation, upgrade cost, and mutation state alongside the recommended FPS kit.
+- `ActiveModsLabel` now reports active reward mods, Card XP, upgrade count, wounds, and the current wound burden.
+
+Keep the armory controls compact. They are tactical prep actions, not a shop screen yet. The eventual full armory can get its own screen once upgrade choices branch beyond one selected card action.
 
 What we need from the user is mostly taste direction, not technical files yet:
 

@@ -345,6 +345,23 @@ func test_action_skill_multiplier_changes_card_damage() -> void:
 	assert_eq(miss_hp, 14, "Missed Quick Slash should not damage Skulker.")
 
 
+func test_armory_upgrade_context_changes_card_damage_and_guard() -> void:
+	var resolver_script: GDScript = ResourceLoader.load("res://scripts/combat/CombatResolver.gd", "", ResourceLoader.CACHE_MODE_IGNORE)
+	var resolver: Node = resolver_script.new()
+	var quick_slash: Resource = load("res://resources/cards/quick_slash.tres")
+	var guard_up: Resource = load("res://resources/cards/guard_up.tres")
+	resolver.call("reset_combat", ENEMY_PATHS)
+	resolver.call("apply_card_with_context", quick_slash, {
+		"target_enemy_id": &"skulker",
+		"target_enemy_name": "Skulker",
+		"upgrade_damage_bonus": 2
+	})
+	assert_eq(_get_enemy_hp(resolver, &"skulker"), 8, "Armory damage bonus should make Quick Slash hit harder.")
+	resolver.call("apply_card_with_context", guard_up, {"upgrade_guard_bonus": 3})
+	var player_state: Dictionary = resolver.call("get_state").get("player", {})
+	assert_eq(int(player_state.get("guard", 0)), 8, "Armory guard bonus should add to guard cards.")
+
+
 func test_deck_manager_can_burn_cards_for_economy_flow() -> void:
 	var deck_script: GDScript = ResourceLoader.load("res://scripts/cards/DeckManager.gd", "", ResourceLoader.CACHE_MODE_IGNORE)
 	var deck: Node = deck_script.new()
@@ -414,7 +431,9 @@ func test_combat_controller_exports_shooter_loadout_payload() -> void:
 	controller.set("arena_weapon_damage_bonus", 2)
 	controller.set("selected_hero_class_id", "blood_wager")
 	controller.set("active_reward_mods", [{"label": "Runner Edge", "kind": "damage", "bias_modes": ["extract", "duel"], "rarity": "Uncommon"}])
+	controller.set("card_upgrade_mods", {"quick_slash": {"level": 2, "mutation": "Deadeye", "spent_xp": 11}})
 	controller.set("arena_card_xp_pool", 7)
+	controller.set("arena_wounds_total", 1)
 	controller.set("loadout_slots", {"weapon": quick_slash, "ability_1": sidestep})
 	var payload: Dictionary = controller.call("_build_combat_bridge_payload")
 	assert_eq(String(payload.get("weapon_card", "")), "quick_slash", "Weapon slot should become the shooter weapon card.")
@@ -425,14 +444,35 @@ func test_combat_controller_exports_shooter_loadout_payload() -> void:
 	assert_true(weapon.has("weapon") or (loadout[1] as Dictionary).has("weapon"), "Attack cards should export a weapon profile.")
 	var economy: Dictionary = payload.get("economy", {})
 	assert_true(int(economy.get("ammo", 0)) > 20, "Attack cards and carryover should increase arena ammo.")
-	assert_true(int(economy.get("armor", 0)) >= 6, "Arena carryover armor should feed the next payload.")
+	assert_eq(int(economy.get("armor", 0)), 4, "Wounds should reduce carryover armor before the next arena.")
 	var bonuses: Dictionary = payload.get("payout_bonuses", {})
 	assert_eq(int(bonuses.get("weapon_damage", 0)), 2, "Arena damage payout should be visible in the payload.")
 	assert_eq((payload.get("reward_mods", []) as Array).size(), 1, "Bridge payload should carry earned arena reward mods.")
+	assert_eq((payload.get("card_upgrades", {}) as Dictionary).size(), 1, "Bridge payload should carry bought card upgrades.")
 	assert_eq(int((payload.get("progression", {}) as Dictionary).get("card_xp_pool", 0)), 7, "Bridge payload should carry card XP progression.")
+	assert_eq(int(((payload.get("progression", {}) as Dictionary).get("wound_penalties", {}) as Dictionary).get("draw_penalty", 0)), 1, "Bridge payload should expose wound draw penalties.")
 	assert_eq(String(payload.get("objective_mode", "")), "extract", "Movement-heavy loadouts should recommend the Extract FPS objective.")
 	var weapon_payload: Dictionary = (loadout[0] as Dictionary).get("weapon", {}) if (loadout[0] as Dictionary).has("weapon") else (loadout[1] as Dictionary).get("weapon", {})
-	assert_true(int(weapon_payload.get("damage", 0)) >= 30, "Arena damage payout should boost the next weapon profile.")
+	assert_true(int(weapon_payload.get("damage", 0)) >= 34, "Arena payout and armory upgrades should boost the next weapon profile.")
+	assert_eq(String((weapon_payload.get("upgrade", {}) as Dictionary).get("mutation", "")), "Deadeye", "Weapon payload should expose the selected card mutation.")
+
+
+func test_combat_controller_buys_armory_upgrades_and_mutations() -> void:
+	var controller_script: GDScript = ResourceLoader.load("res://scripts/combat/TestCombatController.gd", "", ResourceLoader.CACHE_MODE_IGNORE)
+	var controller: Control = controller_script.new()
+	var quick_slash: Resource = load("res://resources/cards/quick_slash.tres")
+	controller.set("arena_card_xp_pool", 24)
+	var upgraded: Dictionary = controller.call("_apply_card_upgrade_purchase", quick_slash, false)
+	assert_true(bool(upgraded.get("ok", false)), "Card XP should buy a selected card upgrade.")
+	var mutated: Dictionary = controller.call("_apply_card_upgrade_purchase", quick_slash, true)
+	assert_true(bool(mutated.get("ok", false)), "Card XP should buy a card mutation.")
+	var upgrades: Dictionary = controller.get("card_upgrade_mods")
+	assert_eq(int((upgrades.get("quick_slash", {}) as Dictionary).get("level", 0)), 1, "Armory upgrade should persist by card id.")
+	assert_eq(String((upgrades.get("quick_slash", {}) as Dictionary).get("mutation", "")), "Deadeye", "Attack cards should mutate into Deadeye.")
+	var weapon_payload: Dictionary = controller.call("_get_shooter_card_payload", quick_slash, "weapon")
+	assert_true(int((weapon_payload.get("weapon", {}) as Dictionary).get("damage", 0)) > 28, "Mutated weapon cards should export stronger FPS weapon damage.")
+	var context: Dictionary = controller.call("_get_card_upgrade_context", quick_slash)
+	assert_true(int(context.get("upgrade_damage_bonus", 0)) >= 3, "Card table context should carry upgrade damage.")
 
 
 func test_combat_controller_recommends_objective_aware_loadout_cards() -> void:
@@ -496,6 +536,7 @@ func test_arena_payout_records_reward_mods_and_progression() -> void:
 	assert_true(int(controller.get("arena_card_xp_pool")) >= 9, "Arena payout should bank Card XP from kills, objectives, and ability use.")
 	assert_eq(int(controller.get("arena_wounds_total")), 1, "Arena payout should track wounds from the FPS result.")
 	assert_true(String("\n".join(effects)).contains("Mod acquired"), "Payout effects should announce the new mod.")
+	assert_true(String("\n".join(effects)).contains("Wound burden"), "Payout effects should explain wound tax, draw, and armor pressure.")
 	assert_true(int(controller.call("_get_payout_objective_bias_score", "extract")) > 0, "Reward mods should bias future objective recommendations.")
 	var run_state: Dictionary = run_manager.call("get_state")
 	assert_false((run_state.get("reward_history", []) as Array).is_empty(), "Arena reward mods should be written to run reward history.")
@@ -540,7 +581,8 @@ func test_fps_prototype_consumes_bridge_payload_as_active_loadout() -> void:
 		],
 		"economy": {"chips": 5, "armor": 7, "ammo": 36},
 		"reward_mods": [{"label": "Runner Edge"}],
-		"progression": {"card_xp_pool": 9, "wounds_total": 1},
+		"card_upgrades": {"quick_slash": {"level": 1, "mutation": "Deadeye"}},
+		"progression": {"card_xp_pool": 9, "wounds_total": 1, "wound_penalties": {"draw_penalty": 1, "armor_penalty": 2, "chip_tax": 1}},
 		"reads": {"target_enemy": &"skulker", "threat": "Cut Purse 45%"}
 	})
 	var summary: Dictionary = prototype.call("get_active_loadout_summary")
@@ -549,10 +591,13 @@ func test_fps_prototype_consumes_bridge_payload_as_active_loadout() -> void:
 	assert_eq(int(summary.get("armor", 0)), 9, "FPS should expose bridged armor plus the default hero class armor.")
 	assert_eq(int(summary.get("ammo", 0)), 36, "FPS should expose bridged ammo.")
 	assert_eq(int(summary.get("reward_mods", 0)), 1, "FPS loadout summary should expose carried arena reward mods.")
+	assert_eq(int(summary.get("card_upgrades", 0)), 1, "FPS loadout summary should expose card upgrade count.")
 	assert_eq(int(summary.get("card_xp_pool", 0)), 9, "FPS loadout summary should expose card XP progression.")
+	assert_eq(int(summary.get("wounds_total", 0)), 1, "FPS loadout summary should expose wound totals.")
 	assert_eq(String(summary.get("objective_mode", "")), "extract", "FPS loadout summary should include the selected objective mode.")
 	var objective_state: Dictionary = prototype.call("get_objective_state")
 	assert_eq(String(objective_state.get("mode", "")), "extract", "FPS should apply the objective mode from the bridge payload.")
+	assert_true(float(objective_state.get("extract_time_limit", 0.0)) > 0.0, "Extract objective should expose its timed escape window.")
 	var objective_modes: Array = prototype.call("get_objective_modes")
 	assert_true(objective_modes.has("hold_pot") and objective_modes.has("boss_gate"), "FPS should expose Hold Pot through Boss Gate objective tests.")
 	prototype.set("kills", 3)

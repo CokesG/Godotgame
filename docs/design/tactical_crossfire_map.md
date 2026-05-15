@@ -1,6 +1,6 @@
 # Tactical Crossfire Map
 
-Status: Phase 61 implementation note
+Status: Phase 83 armory/objective pressure note
 Last updated: 2026-05-15
 
 ## Goal
@@ -57,9 +57,30 @@ The FPS branch now has five objective modes layered onto the same map:
 
 The objective mode is carried in the arena bridge payload as `objective_mode`, and the FPS arena returns `objective_label`, `objective_completed`, `objective_failed`, `objective_events`, and `objective_score` with the payout result.
 
-On the card table, the same objective contract is now visible before launch: the loadout prep panel previews the next objective plan, hand cards show objective badges/reasons, and payout carryovers can bias whether the next recommendation leans damage, armor, or ammo. Arena reward mods now persist that bias with rarity tags, Card XP, and wound tracking.
+On the card table, the same objective contract is now visible before launch: the loadout prep panel previews the next objective plan, hand cards show objective badges/reasons, and payout carryovers can bias whether the next recommendation leans damage, armor, or ammo. Arena reward mods now persist that bias with rarity tags, Card XP, wound tracking, and card-upgrade state.
+
+Card XP is now an armory currency in the prep layer:
+
+- `Upgrade` raises the selected hand card's level, then exports damage/Guard/cooldown/duration improvements into card play and FPS loadouts.
+- `Mutate` gives the selected card a style-specific identity such as `Deadeye`, `Bulwark`, `Fleet`, `Marked`, `Snare`, or `Wager`.
+- Upgrades persist through `ArenaBridge` return state and are included in the next shooter payload as `card_upgrades`.
+- Attack upgrades raise FPS weapon damage and table damage; guard/movement upgrades improve Guard and armor tools; utility upgrades improve cooldown, duration, radius, or wager reward.
+
+Wounds are no longer only a stat line. The current wound burden is exported as `wound_penalties` and applies to the next loop:
+
+- chip tax on arena payout collection
+- reduced next-hand draw
+- reduced bridged armor before entering the next arena
 
 The FPS room should show the active objective through geometry as well as HUD text: Hold Pot adds center stakes, Extract adds a gate in the player-side lane, Duel adds a marked target ring/blade, Defend adds a table core and barriers, and Boss Gate adds the gate arch.
+
+Objective pressure is live:
+
+- `Hold Pot` stops/decays progress while enemies contest the pot.
+- `Extract` starts a timed escape window after the pot is taken.
+- `Defend` drains the table core faster while enemies pressure the center.
+- `Duel` empowers the marked target with extra health, damage, speed, and range.
+- `Boss Gate` uses a tougher Gate Champion with higher health, damage, and attack cadence.
 
 The dev hub and map viewer make the shared map easy to test without playing the whole loop:
 

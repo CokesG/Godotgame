@@ -125,6 +125,8 @@ var hand_action_button_row: HBoxContainer
 var slot_selected_button: Button
 var burn_selected_button: Button
 var hold_selected_button: Button
+var upgrade_selected_button: Button
+var mutate_selected_button: Button
 var recommend_loadout_button: Button
 var bridge_payload_button: Button
 var enter_arena_button: Button
@@ -261,6 +263,7 @@ var pending_arena_result: Dictionary = {}
 var pending_arena_effect_lines: Array[String] = []
 var arena_payout_pending := false
 var active_reward_mods: Array = []
+var card_upgrade_mods: Dictionary = {}
 var arena_card_xp_pool: int = 0
 var arena_wounds_total: int = 0
 var feedback_history: Array[String] = []
@@ -1578,7 +1581,7 @@ func _build_ui() -> void:
 	armory_plan_label.name = "ArmoryPlanLabel"
 	armory_plan_label.text = "ARMORY: draw a hand, then build a kit."
 	armory_plan_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	armory_plan_label.custom_minimum_size = Vector2(0, 52)
+	armory_plan_label.custom_minimum_size = Vector2(0, 64)
 	armory_plan_label.add_theme_font_size_override("font_size", 13)
 	armory_plan_label.add_theme_color_override("font_color", Color(0.86, 0.92, 0.98))
 	deck_layout.add_child(armory_plan_label)
@@ -1605,6 +1608,18 @@ func _build_ui() -> void:
 	hold_selected_button.text = "Hold"
 	hold_selected_button.pressed.connect(_on_hold_selected_card_pressed)
 	hand_action_button_row.add_child(hold_selected_button)
+
+	upgrade_selected_button = Button.new()
+	upgrade_selected_button.name = "UpgradeSelectedCardButton"
+	upgrade_selected_button.text = "Upgrade"
+	upgrade_selected_button.pressed.connect(_on_upgrade_selected_card_pressed)
+	hand_action_button_row.add_child(upgrade_selected_button)
+
+	mutate_selected_button = Button.new()
+	mutate_selected_button.name = "MutateSelectedCardButton"
+	mutate_selected_button.text = "Mutate"
+	mutate_selected_button.pressed.connect(_on_mutate_selected_card_pressed)
+	hand_action_button_row.add_child(mutate_selected_button)
 
 	recommend_loadout_button = Button.new()
 	recommend_loadout_button.name = "RecommendLoadoutButton"
@@ -2447,6 +2462,14 @@ func _on_hold_selected_card_pressed() -> void:
 	_refresh_loadout_ui()
 
 
+func _on_upgrade_selected_card_pressed() -> void:
+	_upgrade_selected_card(false)
+
+
+func _on_mutate_selected_card_pressed() -> void:
+	_upgrade_selected_card(true)
+
+
 func _on_recommend_loadout_pressed() -> void:
 	if arena_payout_pending:
 		_push_feedback("Collect the arena payout before changing the next hand.", FEEDBACK_CARD_COLOR, arena_payout_continue_button)
@@ -2566,7 +2589,10 @@ func _apply_arena_result(result: Dictionary) -> void:
 		if deck_manager.has_method("resolve_loadout_pile"):
 			deck_manager.call("resolve_loadout_pile")
 		if cleared:
-			var next_draw := int(result.get("cards_to_draw", combat_session.get("hand_target")))
+			var base_draw := int(result.get("cards_to_draw", combat_session.get("hand_target")))
+			var next_draw := _get_next_hand_draw_count_after_wounds(base_draw)
+			pending_arena_result["cards_drawn_after_wounds"] = next_draw
+			pending_arena_result["wound_draw_penalty"] = _get_wound_draw_penalty()
 			deck_manager.call("draw_cards", maxi(0, next_draw))
 	if not cleared and run_manager != null and run_manager.has_method("apply_arena_defeat"):
 		run_manager.call("apply_arena_defeat", result)
@@ -2604,9 +2630,11 @@ func _get_arena_payout_text(result: Dictionary) -> String:
 	var hit_rate := float(result.get("hit_rate", 0.0)) * 100.0
 	var clear_time := float(result.get("clear_time", 0.0))
 	var chips := int(result.get("chips_awarded", 0))
-	var cards_to_draw := int(result.get("cards_to_draw", combat_session.get("hand_target")))
+	var cards_to_draw := int(result.get("cards_drawn_after_wounds", result.get("cards_to_draw", combat_session.get("hand_target"))))
+	var draw_penalty := int(result.get("wound_draw_penalty", 0))
 	var headline := "[b]%s[/b]" % reward_label
-	var economy_line := "+%d Chips | %s | Draw %d next-hand cards" % [chips, reward_line, cards_to_draw] if cleared else "Defeat | %d kills | %d damage taken" % [int(result.get("kills", 0)), int(result.get("damage_taken", 0))]
+	var draw_text := "Draw %d next-hand cards%s" % [cards_to_draw, " (-%d wound)" % draw_penalty if draw_penalty > 0 else ""]
+	var economy_line := "+%d Chips | %s | %s" % [chips, reward_line, draw_text] if cleared else "Defeat | %d kills | %d damage taken" % [int(result.get("kills", 0)), int(result.get("damage_taken", 0))]
 	var effects_line := "Effects: %s" % _join_string_array(pending_arena_effect_lines, " | ") if not pending_arena_effect_lines.is_empty() else "Effects: none"
 	var progression_line := "Progression: +%d Card XP | Wounds %d total | Active mods %d" % [
 		_calculate_arena_card_xp(result),
@@ -2704,6 +2732,11 @@ func _apply_arena_payout_effects(result: Dictionary) -> Array[String]:
 	if wounds > 0:
 		arena_wounds_total += wounds
 		effects.append("+%d Wound%s recorded" % [wounds, "" if wounds == 1 else "s"])
+	if arena_wounds_total > 0:
+		var chip_tax := _get_wound_chip_tax()
+		if chip_tax > 0:
+			shooter_chips = maxi(0, shooter_chips - chip_tax)
+		effects.append("%s" % _get_wound_burden_text())
 	var objective_score := int(result.get("objective_score", 0))
 	if bool(result.get("objective_completed", false)):
 		shooter_chips += 1
@@ -2830,6 +2863,7 @@ func _build_arena_return_state() -> Dictionary:
 		"arena_carryover_ammo": arena_carryover_ammo,
 		"arena_weapon_damage_bonus": arena_weapon_damage_bonus,
 		"active_reward_mods": active_reward_mods.duplicate(true),
+		"card_upgrade_mods": card_upgrade_mods.duplicate(true),
 		"arena_card_xp_pool": arena_card_xp_pool,
 		"arena_wounds_total": arena_wounds_total,
 		"held_hand_indices": held_hand_indices.duplicate(true),
@@ -2855,6 +2889,7 @@ func _restore_arena_return_state(return_state: Dictionary) -> void:
 	arena_carryover_ammo = int(return_state.get("arena_carryover_ammo", arena_carryover_ammo))
 	arena_weapon_damage_bonus = int(return_state.get("arena_weapon_damage_bonus", arena_weapon_damage_bonus))
 	active_reward_mods = _dictionary_array_from_variant(return_state.get("active_reward_mods", active_reward_mods))
+	card_upgrade_mods = _dictionary_from_variant(return_state.get("card_upgrade_mods", card_upgrade_mods))
 	arena_card_xp_pool = int(return_state.get("arena_card_xp_pool", arena_card_xp_pool))
 	arena_wounds_total = int(return_state.get("arena_wounds_total", arena_wounds_total))
 	held_hand_indices = Dictionary(return_state.get("held_hand_indices", {})).duplicate(true)
@@ -2900,6 +2935,7 @@ func _get_arena_bonus_snapshot() -> Dictionary:
 		"ammo": arena_carryover_ammo,
 		"weapon_damage": arena_weapon_damage_bonus,
 		"reward_mods": active_reward_mods.duplicate(true),
+		"card_upgrade_mods": card_upgrade_mods.duplicate(true),
 		"card_xp_pool": arena_card_xp_pool,
 		"wounds_total": arena_wounds_total
 	}
@@ -2909,6 +2945,335 @@ func _clear_arena_bonuses() -> void:
 	arena_carryover_armor = 0
 	arena_carryover_ammo = 0
 	arena_weapon_damage_bonus = 0
+
+
+func _upgrade_selected_card(mutate: bool = false) -> bool:
+	if arena_payout_pending:
+		_push_feedback("Collect the arena payout before changing the next hand.", FEEDBACK_CARD_COLOR, arena_payout_continue_button)
+		return false
+	if selected_hand_index < 0:
+		_push_feedback("Select a hand card first, then upgrade it with Card XP.", FEEDBACK_PHASE_COLOR, hand_action_status_label)
+		return false
+	if deck_manager == null:
+		_push_feedback("Deck is not ready for armory work.", FEEDBACK_DAMAGE_COLOR, hand_action_status_label)
+		return false
+	var card: Resource = deck_manager.call("get_card_at", selected_hand_index)
+	if card == null:
+		selected_hand_index = -1
+		_push_feedback("Selected card is no longer in hand.", FEEDBACK_DAMAGE_COLOR, hand_action_status_label)
+		_refresh_loadout_ui()
+		return false
+	var result := _apply_card_upgrade_purchase(card, mutate)
+	if not bool(result.get("ok", false)):
+		var card_name := _get_card_name(card)
+		match String(result.get("code", "")):
+			"xp":
+				_push_feedback("Need %d Card XP to %s %s; you have %d." % [
+					int(result.get("cost", 0)),
+					"mutate" if mutate else "upgrade",
+					card_name,
+					arena_card_xp_pool
+				], FEEDBACK_DAMAGE_COLOR, reward_mods_label)
+			"max":
+				_push_feedback("%s is already at upgrade cap." % card_name, FEEDBACK_CARD_COLOR, hand_action_status_label)
+			"mutated":
+				_push_feedback("%s already has a mutation." % card_name, FEEDBACK_CARD_COLOR, hand_action_status_label)
+			_:
+				_push_feedback(String(result.get("reason", "Could not upgrade that card.")), FEEDBACK_DAMAGE_COLOR, hand_action_status_label)
+		_refresh_loadout_ui()
+		return false
+	var summary := String(result.get("summary", _get_card_upgrade_summary(card)))
+	_push_feedback("%s upgraded: %s." % [_get_card_name(card), summary], FEEDBACK_CARD_COLOR, hand_action_status_label)
+	_refresh_loadout_ui()
+	return true
+
+
+func _apply_card_upgrade_purchase(card: Resource, mutate: bool = false) -> Dictionary:
+	if card == null:
+		return {"ok": false, "code": "card", "reason": "No card selected."}
+	var card_id := _get_card_upgrade_key(card)
+	if card_id.is_empty():
+		return {"ok": false, "code": "card", "reason": "Card has no upgrade key."}
+	var upgrade := _get_card_upgrade(card)
+	var cost := _get_card_mutation_cost(card) if mutate else _get_card_upgrade_cost(card)
+	if arena_card_xp_pool < cost:
+		return {"ok": false, "code": "xp", "cost": cost}
+	if mutate:
+		if not String(upgrade.get("mutation", "")).is_empty():
+			return {"ok": false, "code": "mutated"}
+		upgrade["mutation"] = _get_card_mutation_for_card(card)
+	else:
+		var current_level := int(upgrade.get("level", 0))
+		if current_level >= 3:
+			return {"ok": false, "code": "max"}
+		upgrade["level"] = current_level + 1
+	arena_card_xp_pool -= cost
+	upgrade["id"] = card_id
+	upgrade["spent_xp"] = int(upgrade.get("spent_xp", 0)) + cost
+	upgrade["source"] = "armory"
+	card_upgrade_mods[card_id] = upgrade
+	var payload := _get_card_upgrade_payload(card)
+	return {
+		"ok": true,
+		"cost": cost,
+		"upgrade": payload.duplicate(true),
+		"summary": _format_card_upgrade_summary(payload)
+	}
+
+
+func _get_card_upgrade(card: Resource) -> Dictionary:
+	var card_id := _get_card_upgrade_key(card)
+	if card_id.is_empty():
+		return {}
+	var existing: Variant = card_upgrade_mods.get(card_id, {})
+	if typeof(existing) == TYPE_DICTIONARY:
+		var upgrade: Dictionary = existing
+		return upgrade.duplicate(true)
+	return {}
+
+
+func _get_card_upgrade_key(card: Resource) -> String:
+	if card == null:
+		return ""
+	var card_id := String(card.get("id"))
+	if not card_id.is_empty():
+		return card_id
+	return String(card.resource_path)
+
+
+func _get_card_upgrade_level(card: Resource) -> int:
+	return clampi(int(_get_card_upgrade(card).get("level", 0)), 0, 3)
+
+
+func _get_card_upgrade_mutation(card: Resource) -> String:
+	return String(_get_card_upgrade(card).get("mutation", ""))
+
+
+func _get_card_upgrade_cost(card: Resource) -> int:
+	var level := _get_card_upgrade_level(card)
+	return 4 + level * 3
+
+
+func _get_card_mutation_cost(card: Resource) -> int:
+	return 7 + _get_card_upgrade_level(card) * 2
+
+
+func _get_card_mutation_for_card(card: Resource) -> String:
+	match _get_card_vfx_style(card):
+		&"attack":
+			return "Deadeye"
+		&"guard":
+			return "Bulwark"
+		&"move":
+			return "Fleet"
+		&"read":
+			return "Marked"
+		&"trap":
+			return "Snare"
+		&"ritual", &"bluff":
+			return "Wager"
+	var latest_kind := ""
+	if not active_reward_mods.is_empty() and typeof(active_reward_mods[0]) == TYPE_DICTIONARY:
+		latest_kind = String((active_reward_mods[0] as Dictionary).get("kind", ""))
+	match latest_kind:
+		"damage":
+			return "Deadeye"
+		"armor":
+			return "Bulwark"
+		"ammo":
+			return "Fleet"
+	return "Lucky"
+
+
+func _get_card_upgrade_damage_bonus(card: Resource) -> int:
+	var level := _get_card_upgrade_level(card)
+	var mutation := _get_card_upgrade_mutation(card)
+	var bonus := 0
+	match _get_card_vfx_style(card):
+		&"attack", &"read", &"trap", &"ritual":
+			bonus += level
+	if mutation == "Deadeye":
+		bonus += 2
+	elif mutation == "Marked" or mutation == "Wager":
+		bonus += 1
+	return bonus
+
+
+func _get_card_upgrade_guard_bonus(card: Resource) -> int:
+	var level := _get_card_upgrade_level(card)
+	var mutation := _get_card_upgrade_mutation(card)
+	var bonus := 0
+	match _get_card_vfx_style(card):
+		&"guard":
+			bonus += level * 2
+		&"move":
+			bonus += level
+	if mutation == "Bulwark":
+		bonus += 3
+	elif mutation == "Fleet":
+		bonus += 1
+	return bonus
+
+
+func _get_card_upgrade_slot_discount(card: Resource) -> int:
+	var mutation := _get_card_upgrade_mutation(card)
+	if mutation == "Fleet":
+		return 1
+	return 1 if _get_card_upgrade_level(card) >= 3 else 0
+
+
+func _get_card_upgrade_cooldown_discount(card: Resource) -> float:
+	var discount := float(_get_card_upgrade_level(card)) * 0.45
+	match _get_card_upgrade_mutation(card):
+		"Fleet":
+			discount += 1.0
+		"Marked", "Snare":
+			discount += 0.65
+		"Bulwark":
+			discount += 0.4
+	return discount
+
+
+func _get_card_upgrade_duration_bonus(card: Resource) -> float:
+	var bonus := float(_get_card_upgrade_level(card)) * 0.55
+	match _get_card_upgrade_mutation(card):
+		"Marked", "Snare", "Wager":
+			bonus += 1.0
+	return bonus
+
+
+func _get_card_upgrade_context(card: Resource) -> Dictionary:
+	return {
+		"upgrade_level": _get_card_upgrade_level(card),
+		"upgrade_mutation": _get_card_upgrade_mutation(card),
+		"upgrade_damage_bonus": _get_card_upgrade_damage_bonus(card),
+		"upgrade_guard_bonus": _get_card_upgrade_guard_bonus(card)
+	}
+
+
+func _get_card_upgrade_payload(card: Resource) -> Dictionary:
+	var upgrade := _get_card_upgrade(card)
+	if upgrade.is_empty():
+		return {}
+	upgrade["level"] = _get_card_upgrade_level(card)
+	upgrade["mutation"] = _get_card_upgrade_mutation(card)
+	upgrade["damage_bonus"] = _get_card_upgrade_damage_bonus(card)
+	upgrade["guard_bonus"] = _get_card_upgrade_guard_bonus(card)
+	upgrade["slot_discount"] = _get_card_upgrade_slot_discount(card)
+	upgrade["cooldown_discount"] = _get_card_upgrade_cooldown_discount(card)
+	upgrade["duration_bonus"] = _get_card_upgrade_duration_bonus(card)
+	upgrade["summary"] = _format_card_upgrade_summary(upgrade)
+	return upgrade
+
+
+func _get_card_upgrade_summary(card: Resource) -> String:
+	var upgrade := _get_card_upgrade_payload(card)
+	if upgrade.is_empty():
+		return "L0 | upgrade %d XP | mutate %d XP" % [_get_card_upgrade_cost(card), _get_card_mutation_cost(card)]
+	return _format_card_upgrade_summary(upgrade)
+
+
+func _format_card_upgrade_summary(upgrade: Dictionary) -> String:
+	var level := int(upgrade.get("level", 0))
+	var mutation := String(upgrade.get("mutation", ""))
+	var parts: Array[String] = ["L%d" % level]
+	if not mutation.is_empty():
+		parts.append(mutation)
+	var damage := int(upgrade.get("damage_bonus", 0))
+	var guard := int(upgrade.get("guard_bonus", 0))
+	var discount := int(upgrade.get("slot_discount", 0))
+	if damage > 0:
+		parts.append("+%d dmg" % damage)
+	if guard > 0:
+		parts.append("+%d guard" % guard)
+	if discount > 0:
+		parts.append("-%d slot" % discount)
+	return _join_string_array(parts, " ")
+
+
+func _get_selected_card_upgrade_prompt() -> String:
+	if selected_hand_index < 0 or deck_manager == null:
+		return ""
+	var card: Resource = deck_manager.call("get_card_at", selected_hand_index)
+	if card == null:
+		return ""
+	var summary := _get_card_upgrade_summary(card)
+	var mutation := _get_card_upgrade_mutation(card)
+	var mutate_text := "mutate %dXP" % _get_card_mutation_cost(card) if mutation.is_empty() else "mutated"
+	var upgrade_text := "upgrade cap" if _get_card_upgrade_level(card) >= 3 else "upgrade %dXP" % _get_card_upgrade_cost(card)
+	return "Selected %s: %s | %s | %s" % [_get_card_name(card), summary, upgrade_text, mutate_text]
+
+
+func _selected_card_can_buy_upgrade(mutate: bool) -> bool:
+	if selected_hand_index < 0 or deck_manager == null:
+		return false
+	var card: Resource = deck_manager.call("get_card_at", selected_hand_index)
+	if card == null:
+		return false
+	if mutate and not _get_card_upgrade_mutation(card).is_empty():
+		return false
+	if not mutate and _get_card_upgrade_level(card) >= 3:
+		return false
+	var cost := _get_card_mutation_cost(card) if mutate else _get_card_upgrade_cost(card)
+	return arena_card_xp_pool >= cost
+
+
+func _get_upgrade_button_tooltip(mutate: bool) -> String:
+	if arena_payout_pending:
+		return "Collect the arena payout first."
+	if selected_hand_index < 0 or deck_manager == null:
+		return "Select a hand card first."
+	var card: Resource = deck_manager.call("get_card_at", selected_hand_index)
+	if card == null:
+		return "Selected card is no longer in hand."
+	if mutate and not _get_card_upgrade_mutation(card).is_empty():
+		return "%s already has %s." % [_get_card_name(card), _get_card_upgrade_mutation(card)]
+	if not mutate and _get_card_upgrade_level(card) >= 3:
+		return "%s is at upgrade cap." % _get_card_name(card)
+	var cost := _get_card_mutation_cost(card) if mutate else _get_card_upgrade_cost(card)
+	var verb := "Mutate" if mutate else "Upgrade"
+	return "%s %s for %d Card XP. Current: %s" % [verb, _get_card_name(card), cost, _get_card_upgrade_summary(card)]
+
+
+func _get_wound_chip_tax() -> int:
+	return mini(3, maxi(0, arena_wounds_total))
+
+
+func _get_wound_draw_penalty() -> int:
+	return mini(2, int(floor(float(arena_wounds_total + 1) / 2.0)))
+
+
+func _get_wound_armor_penalty() -> int:
+	return mini(8, maxi(0, arena_wounds_total * 2))
+
+
+func _get_next_hand_draw_count_after_wounds(base_draw: int) -> int:
+	return maxi(0, base_draw - _get_wound_draw_penalty())
+
+
+func _get_wound_penalty_payload() -> Dictionary:
+	return {
+		"chip_tax": _get_wound_chip_tax(),
+		"draw_penalty": _get_wound_draw_penalty(),
+		"armor_penalty": _get_wound_armor_penalty()
+	}
+
+
+func _get_wound_burden_text() -> String:
+	if arena_wounds_total <= 0:
+		return ""
+	return "Wound burden: -%d Chips on payout, -%d draw, -%d armor" % [
+		_get_wound_chip_tax(),
+		_get_wound_draw_penalty(),
+		_get_wound_armor_penalty()
+	]
+
+
+func _dictionary_from_variant(value: Variant) -> Dictionary:
+	if typeof(value) == TYPE_DICTIONARY:
+		var dict: Dictionary = value
+		return dict.duplicate(true)
+	return {}
 
 
 func _join_string_array(values: Array[String], separator: String) -> String:
@@ -3185,6 +3550,7 @@ func _get_first_empty_loadout_slot(fallback: String) -> String:
 
 func _get_loadout_slot_cost(card: Resource, slot_id: String) -> int:
 	var base_cost: int = maxi(1, _get_card_cost(card))
+	base_cost = maxi(1, base_cost - _get_card_upgrade_slot_discount(card))
 	if slot_id == "passive":
 		return max(1, base_cost + 1)
 	if slot_id == "wager":
@@ -3246,6 +3612,14 @@ func _refresh_loadout_ui() -> void:
 		burn_selected_button.disabled = arena_payout_pending or selected_hand_index < 0
 	if hold_selected_button != null:
 		hold_selected_button.disabled = arena_payout_pending or selected_hand_index < 0
+	if upgrade_selected_button != null:
+		var can_upgrade := _selected_card_can_buy_upgrade(false)
+		upgrade_selected_button.disabled = arena_payout_pending or not can_upgrade
+		_style_compact_button(upgrade_selected_button, can_upgrade, FEEDBACK_CARD_COLOR, _get_upgrade_button_tooltip(false))
+	if mutate_selected_button != null:
+		var can_mutate := _selected_card_can_buy_upgrade(true)
+		mutate_selected_button.disabled = arena_payout_pending or not can_mutate
+		_style_compact_button(mutate_selected_button, can_mutate, FEEDBACK_REVEAL_COLOR, _get_upgrade_button_tooltip(true))
 	if recommend_loadout_button != null:
 		var hand_count := int(deck_manager.call("get_hand_count")) if deck_manager != null else 0
 		recommend_loadout_button.disabled = arena_payout_pending or hand_count <= 0 or _get_slotted_card_count() >= 5
@@ -3280,8 +3654,8 @@ func _get_bridge_armor_value() -> int:
 			continue
 		var style := _get_card_vfx_style(card)
 		if style == &"guard":
-			armor += 2 + _get_card_cost(card)
-	return armor
+			armor += 2 + _get_card_cost(card) + _get_card_upgrade_guard_bonus(card)
+	return maxi(0, armor - _get_wound_armor_penalty())
 
 
 func _get_bridge_ammo_value() -> int:
@@ -3328,9 +3702,11 @@ func _build_combat_bridge_payload() -> Dictionary:
 		"objective_mode": _get_loadout_objective_mode(),
 		"payout_bonuses": _get_arena_bonus_snapshot(),
 		"reward_mods": active_reward_mods.duplicate(true),
+		"card_upgrades": card_upgrade_mods.duplicate(true),
 		"progression": {
 			"card_xp_pool": arena_card_xp_pool,
-			"wounds_total": arena_wounds_total
+			"wounds_total": arena_wounds_total,
+			"wound_penalties": _get_wound_penalty_payload()
 		},
 		"reads": {
 			"target_enemy": _get_selected_enemy_target_id(),
@@ -3509,35 +3885,47 @@ func _get_reward_mod_bias_summary() -> String:
 
 
 func _get_reward_mods_label_text() -> String:
-	if active_reward_mods.is_empty() and arena_card_xp_pool <= 0 and arena_wounds_total <= 0:
-		return "ACTIVE MODS: none yet | Card XP 0 | Wounds 0"
+	if active_reward_mods.is_empty() and card_upgrade_mods.is_empty() and arena_card_xp_pool <= 0 and arena_wounds_total <= 0:
+		return "ACTIVE MODS: none yet | Card XP 0 | Upgrades 0 | Wounds 0"
 	var mod_names: Array[String] = []
 	for index in range(mini(3, active_reward_mods.size())):
 		var mod: Dictionary = active_reward_mods[index]
 		mod_names.append("%s %s" % [String(mod.get("rarity", "Common")).to_upper(), String(mod.get("label", "Arena Mod"))])
 	var mod_text := "none" if mod_names.is_empty() else _join_string_array(mod_names, " | ")
-	return "ACTIVE MODS: %s | Card XP %d | Wounds %d" % [mod_text, arena_card_xp_pool, arena_wounds_total]
+	var wound_text := _get_wound_burden_text()
+	var suffix := " | %s" % wound_text if not wound_text.is_empty() else ""
+	return "ACTIVE MODS: %s | Card XP %d | Upgrades %d | Wounds %d%s" % [
+		mod_text,
+		arena_card_xp_pool,
+		card_upgrade_mods.size(),
+		arena_wounds_total,
+		suffix
+	]
 
 
 func _get_armory_plan_text(target_mode: String) -> String:
 	if deck_manager == null:
 		return "ARMORY: deck not ready."
+	var selected_upgrade := _get_selected_card_upgrade_prompt()
 	if _get_slotted_card_count() > 0:
-		return "ARMORY: %s | %s | %s" % [
+		var slotted_text := "ARMORY: %s | %s | %s" % [
 			_get_current_loadout_summary_text(),
 			_get_loadout_strength_text(target_mode),
 			_get_objective_label(target_mode)
 		]
+		return "%s | %s" % [slotted_text, selected_upgrade] if not selected_upgrade.is_empty() else slotted_text
 	var preview := _build_recommended_loadout_preview(target_mode)
 	var entries: Array[String] = preview.get("entries", [])
 	if entries.is_empty():
-		return "ARMORY: no affordable recommendation yet. Burn a low-fit card for Chips or manual-slot your best card."
-	return "ARMORY RECOMMENDS: %s | Cost %d/%d Chips | %s" % [
+		var empty_text := "ARMORY: no affordable recommendation yet. Burn a low-fit card for Chips or manual-slot your best card."
+		return "%s | %s" % [empty_text, selected_upgrade] if not selected_upgrade.is_empty() else empty_text
+	var recommend_text := "ARMORY RECOMMENDS: %s | Cost %d/%d Chips | %s" % [
 		_join_string_array(entries, ", "),
 		int(preview.get("cost", 0)),
 		shooter_chips,
 		_get_loadout_strength_text(target_mode)
 	]
+	return "%s | %s" % [recommend_text, selected_upgrade] if not selected_upgrade.is_empty() else recommend_text
 
 
 func _build_recommended_loadout_preview(target_mode: String) -> Dictionary:
@@ -3716,6 +4104,9 @@ func _get_card_loadout_recommendation_score(card: Resource, target_mode: String,
 		return -9999
 	var style := _get_card_vfx_style(card)
 	var score: int = 10 + maxi(0, 4 - _get_card_cost(card))
+	score += _get_card_upgrade_level(card) * 5
+	if not _get_card_upgrade_mutation(card).is_empty():
+		score += 8
 	if _get_objective_mode_for_card(card) == target_mode:
 		score += 30
 	match slot_id:
@@ -3773,6 +4164,10 @@ func _card_fits_recommended_slot(card: Resource, slot_id: String) -> bool:
 func _get_shooter_card_payload(card: Resource, slot_id: String) -> Dictionary:
 	var style := _get_card_vfx_style(card)
 	var card_id := String(card.get("id"))
+	var cooldown_discount := _get_card_upgrade_cooldown_discount(card)
+	var duration_bonus := _get_card_upgrade_duration_bonus(card)
+	var upgrade_guard := _get_card_upgrade_guard_bonus(card)
+	var upgrade_damage := _get_card_upgrade_damage_bonus(card)
 	var payload := {
 		"slot": slot_id,
 		"id": card_id,
@@ -3781,35 +4176,38 @@ func _get_shooter_card_payload(card: Resource, slot_id: String) -> Dictionary:
 		"cost": _get_card_cost(card),
 		"input": "instant"
 	}
+	var upgrade_payload := _get_card_upgrade_payload(card)
+	if not upgrade_payload.is_empty():
+		payload["upgrade"] = upgrade_payload
 	match style:
 		&"attack":
 			payload["combat_role"] = "weapon"
-			payload["weapon"] = _get_weapon_profile_for_card(card_id)
+			payload["weapon"] = _get_weapon_profile_for_card(card_id, card)
 		&"guard":
 			payload["combat_role"] = "defense_ability"
-			payload["ability"] = {"kind": "guard_shimmer", "armor": 2 + _get_card_cost(card), "cooldown": 8.0}
+			payload["ability"] = {"kind": "guard_shimmer", "armor": 2 + _get_card_cost(card) + upgrade_guard, "cooldown": maxf(3.0, 8.0 - cooldown_discount)}
 		&"move":
 			payload["combat_role"] = "movement_ability"
-			payload["ability"] = {"kind": "dash", "charges": 1, "cooldown": 6.0}
+			payload["ability"] = {"kind": "dash", "charges": 2 if _get_card_upgrade_mutation(card) == "Fleet" else 1, "strength": 12.5 + float(_get_card_upgrade_level(card)) * 1.5, "cooldown": maxf(2.5, 6.0 - cooldown_discount)}
 		&"read":
 			payload["combat_role"] = "intel_ability"
-			payload["ability"] = {"kind": "reveal_target", "duration": 3.5, "cooldown": 10.0}
+			payload["ability"] = {"kind": "reveal_target", "duration": 3.5 + duration_bonus, "cooldown": maxf(4.0, 10.0 - cooldown_discount)}
 		&"trap":
 			payload["combat_role"] = "area_control"
-			payload["ability"] = {"kind": "snare_field", "duration": 4.0, "cooldown": 12.0}
+			payload["ability"] = {"kind": "snare_field", "duration": 4.0 + duration_bonus, "radius": 4.2 + float(_get_card_upgrade_level(card)) * 0.22 + (0.75 if _get_card_upgrade_mutation(card) == "Snare" else 0.0), "cooldown": maxf(4.5, 12.0 - cooldown_discount)}
 		&"ritual":
 			payload["combat_role"] = "wager"
-			payload["ability"] = {"kind": "blood_overclock", "risk": 2, "reward": 4}
+			payload["ability"] = {"kind": "blood_overclock", "risk": maxi(1, 2 - int(_get_card_upgrade_level(card) / 2)), "reward": 4 + upgrade_damage, "duration": 4.0 + duration_bonus, "cooldown": maxf(5.0, 11.0 - cooldown_discount)}
 		&"bluff":
 			payload["combat_role"] = "debuff"
-			payload["ability"] = {"kind": "bait_ping", "duration": 2.5, "cooldown": 9.0}
+			payload["ability"] = {"kind": "bait_ping", "duration": 2.5 + duration_bonus, "cooldown": maxf(3.5, 9.0 - cooldown_discount)}
 		_:
 			payload["combat_role"] = "passive"
-			payload["ability"] = {"kind": "minor_stat_boost"}
+			payload["ability"] = {"kind": "minor_stat_boost", "damage_bonus": upgrade_damage, "guard_bonus": upgrade_guard}
 	return payload
 
 
-func _get_weapon_profile_for_card(card_id: String) -> Dictionary:
+func _get_weapon_profile_for_card(card_id: String, card: Resource = null) -> Dictionary:
 	var profile: Dictionary
 	match card_id:
 		"quick_slash":
@@ -3825,6 +4223,12 @@ func _get_weapon_profile_for_card(card_id: String) -> Dictionary:
 	if arena_weapon_damage_bonus > 0:
 		profile["damage"] = int(profile.get("damage", 0)) + arena_weapon_damage_bonus
 		profile["payout_bonus_damage"] = arena_weapon_damage_bonus
+	if card != null:
+		var upgrade_damage := _get_card_upgrade_damage_bonus(card)
+		if upgrade_damage > 0:
+			profile["damage"] = int(profile.get("damage", 0)) + upgrade_damage
+			profile["upgrade_damage_bonus"] = upgrade_damage
+			profile["upgrade"] = _get_card_upgrade_payload(card)
 	return profile
 
 
@@ -3948,6 +4352,7 @@ func _reset_run_slice() -> void:
 	pending_arena_effect_lines.clear()
 	arena_payout_pending = false
 	active_reward_mods.clear()
+	card_upgrade_mods.clear()
 	arena_card_xp_pool = 0
 	arena_wounds_total = 0
 	_clear_arena_bonuses()
@@ -3978,6 +4383,7 @@ func _reset_playable_combat() -> void:
 	shooter_chips = 7
 	_clear_arena_bonuses()
 	active_reward_mods.clear()
+	card_upgrade_mods.clear()
 	arena_card_xp_pool = 0
 	arena_wounds_total = 0
 	loadout_slots.clear()
@@ -6963,7 +7369,7 @@ func _build_card_context(card: Resource) -> Dictionary:
 	var map_context: Dictionary = combat_grid.call("get_map_context", target_cell) if combat_grid.has_method("get_map_context") else {}
 	var target_enemy_id: StringName = StringName(target_enemy.get("id", &""))
 	var target_enemy_name: String = String(target_enemy.get("name", "Enemy"))
-	return {
+	var context := {
 		"target_enemy_id": target_enemy_id,
 		"target_enemy_name": target_enemy_name,
 		"target_cell": target_cell,
@@ -6972,6 +7378,8 @@ func _build_card_context(card: Resource) -> Dictionary:
 		"map_context": map_context,
 		"card_id": card.get("id")
 	}
+	context.merge(_get_card_upgrade_context(card), true)
+	return context
 
 
 func _build_reveal_context(bluff_state: Dictionary) -> Dictionary:
@@ -7038,6 +7446,11 @@ func _apply_card_side_effects(card: Resource, context: Dictionary = {}) -> void:
 			bluff_system.call("gain_nerve", 1, card_name)
 		&"shadow_step":
 			combat_resolver.call("add_player_guard", 2, card_name)
+	var upgrade_guard := int(context.get("upgrade_guard_bonus", 0))
+	if _is_movement_card(card) and upgrade_guard > 0:
+		combat_resolver.call("add_player_guard", upgrade_guard, "%s armory guard" % card_name)
+	if String(context.get("upgrade_mutation", "")) == "Wager":
+		bluff_system.call("gain_nerve", 1, "%s wager mutation" % card_name)
 
 
 func _apply_enemy_grid_moves(revealed: Array) -> void:
