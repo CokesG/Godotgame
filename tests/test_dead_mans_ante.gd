@@ -675,21 +675,37 @@ func test_tactical_map_changes_damage_and_cover() -> void:
 	assert_eq(int(resolver.call("get_state").get("player", {}).get("hp", -1)), 24, "Back Cover should reduce the lane hit by 2.")
 
 
-func test_command_table_cells_explain_fps_bridge() -> void:
+func test_main_flow_uses_card_table_not_tactical_board_identity() -> void:
+	var controller_script: GDScript = ResourceLoader.load("res://scripts/combat/TestCombatController.gd", "", ResourceLoader.CACHE_MODE_IGNORE)
+	var controller: Control = controller_script.new()
+	var identity_text := String(controller.call("_get_arena_prep_identity_text"))
+	assert_true(identity_text.contains("THE HAND IS THE RUN"), "Main flow should explain that cards are the primary game layer.")
+	assert_true(identity_text.contains("weapon, two powers, passive, and wager"), "Card table identity should map the original card game into the FPS kit.")
+	assert_false(identity_text.contains("POT MID"), "Main table identity should not ask the player to parse tactical cell callouts.")
+	controller.set("run_flow_state", "combat")
+	controller.set("debug_controls_visible", false)
+	controller.set("arena_payout_pending", false)
+	assert_true(bool(controller.call("_should_show_player_card_table")), "Normal combat flow should show the card kit table.")
+	assert_false(bool(controller.call("_should_show_debug_tactical_board")), "Normal combat flow should hide the tactical board.")
+	controller.set("debug_controls_visible", true)
+	assert_false(bool(controller.call("_should_show_player_card_table")), "Opening debug should replace the kit table.")
+	assert_true(bool(controller.call("_should_show_debug_tactical_board")), "Tactical board should only return as a debug surface.")
+
 	var map_script: GDScript = ResourceLoader.load("res://scripts/grid/TacticalMapDefinition.gd", "", ResourceLoader.CACHE_MODE_IGNORE)
 	var map_data: Dictionary = map_script.get_default_map()
 	var grid_script: GDScript = ResourceLoader.load("res://scripts/grid/CombatGrid.gd", "", ResourceLoader.CACHE_MODE_IGNORE)
 	var grid: Control = grid_script.new()
 	grid.set("map_data", map_data)
-	assert_true(String(grid.call("format_cell", Vector2i(1, 1))).contains("POT"), "Board callouts should use map language instead of raw coordinates.")
+	grid.call("_ready")
+	var table_title := grid.find_child("TableTitle", true, false)
+	assert_true(table_title is Label and String((table_title as Label).text).contains("Debug Tactical Grid"), "Tactical grid should be clearly marked as debug support.")
 	grid.queue_free()
 
 	var cell_script: GDScript = ResourceLoader.load("res://scripts/grid/GridCellView.gd", "", ResourceLoader.CACHE_MODE_IGNORE)
 	var cell: Button = cell_script.new()
 	cell.call("configure", Vector2i(1, 1))
 	cell.call("configure_map_feature", map_script.get_cell_feature(map_data, Vector2i(1, 1)))
-	assert_true(String(cell.text).contains("POT"), "Center cell should visibly show the Center Pot callout.")
-	assert_true(String(cell.tooltip_text).contains("FPS link"), "Board cells should explain how table callouts feed the shooter.")
+	assert_true(String(cell.text).contains("POT"), "Debug grid cells can still expose the underlying tactical map data.")
 	cell.free()
 
 

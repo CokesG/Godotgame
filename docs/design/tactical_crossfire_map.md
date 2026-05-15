@@ -84,9 +84,9 @@ Objective pressure is live:
 - `Duel` empowers the marked target with extra health, damage, speed, and range.
 - `Boss Gate` uses a tougher Gate Champion with higher health, damage, and attack cadence.
 
-The dev hub and map viewer make the shared map easy to test without playing the whole loop:
+The hidden Dev Tools drawer and map viewer make the shared map easy to test without playing the whole loop:
 
-- `res://scenes/ui/MainMenu.tscn` opens to Full Game Experience, Card / Loadout Table, the five FPS objective shortcuts, Shooter Arena, Tactical Map Viewer, and debug checks.
+- `res://scenes/ui/MainMenu.tscn` opens as a player title screen; Dev Tools contains the card table shortcut, the five FPS objective shortcuts, Shooter Arena, Tactical Map Viewer, and debug checks.
 - `res://scenes/ui/TacticalMapViewer.tscn` shows all nine Crossfire cells and their rule details.
 - FPS arena reward selection now returns to the card table with a result payload, so Crossfire stats can pay out into the next hand.
 

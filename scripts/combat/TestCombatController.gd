@@ -93,6 +93,9 @@ var combat_vfx: Control
 var arena_view: Control
 var battlefield_focus_label: Label
 var battlefield_callout_label: Label
+var arena_prep_panel: PanelContainer
+var arena_prep_title_label: Label
+var arena_prep_summary_label: RichTextLabel
 var action_beat_panel: PanelContainer
 var action_beat_label: Label
 var action_beat_progress: ProgressBar
@@ -516,10 +519,10 @@ func _build_ui() -> void:
 	run_shell_layout.add_child(opening_step_row)
 
 	var opening_steps := [
-		{"label": "1 DEAL IN\nDraw 5", "tooltip": "Start the first table and draw your opening hand."},
-		{"label": "2 TARGET\nClick enemy", "tooltip": "Combat starts with a visible enemy target."},
-		{"label": "3 CARD\nPlay glow", "tooltip": "Glowing hand cards are playable."},
-		{"label": "4 RESOLVE\nEnemy acts", "tooltip": "Resolve Turn lets the table answer."}
+		{"label": "1 DEAL IN\nDraw hand", "tooltip": "Start the first table and draw your opening hand."},
+		{"label": "2 BUILD KIT\nSlot cards", "tooltip": "Cards become the FPS weapon, powers, passive, and wager."},
+		{"label": "3 UPGRADE\nSpend XP", "tooltip": "Improve or mutate cards after arena payouts."},
+		{"label": "4 ENTER FPS\nFight arena", "tooltip": "Take the card kit into the shooter arena."}
 	]
 	for index in range(opening_steps.size()):
 		var step_button := Button.new()
@@ -1207,6 +1210,40 @@ func _build_ui() -> void:
 	table_stage.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	table_board_panel.add_child(table_stage)
 
+	arena_prep_panel = PanelContainer.new()
+	arena_prep_panel.name = "ArenaPrepPanel"
+	arena_prep_panel.visible = false
+	arena_prep_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	arena_prep_panel.z_index = 30
+	_style_play_panel(arena_prep_panel, Color(0.058, 0.044, 0.034, 0.94), Color(1.0, 0.62, 0.22), "cue")
+	table_stage.add_child(arena_prep_panel)
+	arena_prep_panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+
+	var arena_prep_layout := VBoxContainer.new()
+	arena_prep_layout.name = "ArenaPrepLayout"
+	arena_prep_layout.add_theme_constant_override("separation", 12)
+	arena_prep_panel.add_child(arena_prep_layout)
+
+	arena_prep_title_label = Label.new()
+	arena_prep_title_label.name = "ArenaPrepTitle"
+	arena_prep_title_label.text = "CARD TABLE - BUILD THE FPS KIT"
+	arena_prep_title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	arena_prep_title_label.add_theme_font_size_override("font_size", 26)
+	arena_prep_title_label.add_theme_color_override("font_color", Color(1.0, 0.86, 0.44))
+	arena_prep_title_label.add_theme_color_override("font_outline_color", Color(0.02, 0.015, 0.012))
+	arena_prep_title_label.add_theme_constant_override("outline_size", 3)
+	arena_prep_layout.add_child(arena_prep_title_label)
+
+	arena_prep_summary_label = RichTextLabel.new()
+	arena_prep_summary_label.name = "ArenaPrepSummary"
+	arena_prep_summary_label.bbcode_enabled = true
+	arena_prep_summary_label.fit_content = true
+	arena_prep_summary_label.scroll_active = false
+	arena_prep_summary_label.custom_minimum_size = Vector2(0, 190)
+	arena_prep_summary_label.add_theme_font_size_override("normal_font_size", 18)
+	arena_prep_summary_label.add_theme_color_override("default_color", Color(0.92, 0.90, 0.84))
+	arena_prep_layout.add_child(arena_prep_summary_label)
+
 	arena_view = ARENA_3D_VIEW_SCRIPT.new()
 	arena_view.name = "Arena3DView"
 	arena_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -1357,7 +1394,7 @@ func _build_ui() -> void:
 	target_controls_panel.add_child(target_controls_layout)
 
 	var target_title := Label.new()
-	target_title.text = "Advanced Target Controls"
+	target_title.text = "Debug Board Controls"
 	target_title.add_theme_font_size_override("font_size", 16)
 	target_controls_layout.add_child(target_title)
 
@@ -1388,12 +1425,12 @@ func _build_ui() -> void:
 	target_options_row.add_child(move_target_box)
 
 	var move_target_label := Label.new()
-	move_target_label.text = "Move"
+	move_target_label.text = "Debug Cell"
 	move_target_box.add_child(move_target_label)
 
 	movement_cell_option = OptionButton.new()
 	movement_cell_option.name = "MovementCellOption"
-	movement_cell_option.tooltip_text = "Movement and trap cards use this table cell."
+	movement_cell_option.tooltip_text = "Debug-only tactical cell. The main game loop builds a card kit and enters the FPS arena."
 	movement_cell_option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	movement_cell_option.item_selected.connect(_on_movement_cell_selected)
 	move_target_box.add_child(movement_cell_option)
@@ -3689,6 +3726,7 @@ func _refresh_loadout_ui() -> void:
 	if reward_mods_label != null:
 		reward_mods_label.text = _get_reward_mods_label_text()
 	_refresh_reward_artifact_cards()
+	_refresh_arena_prep_panel()
 	if armory_plan_label != null:
 		armory_plan_label.text = _get_armory_plan_text(preview_objective_mode)
 	_refresh_hero_class_selector()
@@ -3735,6 +3773,43 @@ func _refresh_loadout_ui() -> void:
 	_refresh_hand_loadout_recommendations(preview_objective_mode)
 	_refresh_selected_card_loadout_reason(preview_objective_mode)
 	_refresh_arena_payout_panel()
+	var compact_live := run_flow_state == RUN_FLOW_COMBAT and not debug_controls_visible
+	if hand_action_status_label != null:
+		hand_action_status_label.visible = not compact_live
+	if reward_mods_label != null:
+		reward_mods_label.visible = not compact_live
+	if compact_live:
+		if combat_action_badge_label != null:
+			combat_action_badge_label.text = "NEXT: KIT - Auto-build or slot cards"
+		if next_phase_button != null:
+			next_phase_button.text = "Table Step"
+
+
+func _refresh_arena_prep_panel() -> void:
+	if arena_prep_summary_label == null:
+		return
+	if arena_prep_title_label != null:
+		arena_prep_title_label.text = "CARD TABLE - BUILD THE FPS KIT"
+	arena_prep_summary_label.text = _get_arena_prep_identity_text()
+
+
+func _get_arena_prep_identity_text() -> String:
+	var objective_label := _get_objective_label(_get_preview_objective_mode())
+	var target := _get_selected_enemy_target()
+	var target_name := String(target.get("name", "nearest fighter")) if not target.is_empty() else "nearest fighter"
+	var kit_text := _get_current_loadout_summary_text()
+	var action_text := "slot cards or press Auto-Build Kit" if _get_slotted_card_count() <= 0 else "press Enter FPS Arena"
+	var wound_text := _get_wound_burden_text()
+	if wound_text.is_empty():
+		wound_text = "no wounds carried"
+	return "[center][b]THE HAND IS THE RUN[/b][/center]\nCards are the original game layer: weapon, two powers, passive, and wager. The board grid is debug-only now; the main decision is the kit you bring into FPS.\n\n[b]Kit:[/b] %s\n[b]Next FPS:[/b] %s against %s\n[b]Growth:[/b] Card XP %d | %s\n[b]Next Action:[/b] %s." % [
+		_safe_bbcode_text(kit_text),
+		_safe_bbcode_text(objective_label),
+		_safe_bbcode_text(target_name),
+		arena_card_xp_pool,
+		_safe_bbcode_text(wound_text),
+		_safe_bbcode_text(action_text)
+	]
 
 
 func _get_selected_card_label() -> String:
@@ -5718,6 +5793,8 @@ func _refresh_action_controls() -> void:
 		next_phase_button.text = "Choose Reward"
 	else:
 		next_phase_button.text = "Combat Over" if not can_debug_adjust else String(PHASE_ACTION_LABELS.get(phase_key, "Continue"))
+	if run_flow_state == RUN_FLOW_COMBAT and not debug_controls_visible and not arena_payout_pending:
+		next_phase_button.text = "Table Step"
 	_refresh_primary_action_emphasis(shell_blocks_combat, payout_blocks_combat or can_debug_adjust, phase_key)
 	reset_grid_button.disabled = payout_blocks_combat or not can_debug_adjust
 	draw_button.disabled = payout_blocks_combat or not can_debug_adjust
@@ -5879,11 +5956,18 @@ func _get_action_guide_snapshot(session_state: Dictionary, run_state: Dictionary
 
 func _get_player_commit_action_guide() -> Dictionary:
 	if _is_first_table_coach_active() and not first_play_coach_complete:
+		if recommend_loadout_button != null and not bool(recommend_loadout_button.get("disabled")):
+			return {
+				"target": recommend_loadout_button,
+				"label": "KIT",
+				"detail": "Auto-build",
+				"color": FEEDBACK_MOVE_COLOR
+			}
 		if not bool(first_play_coach_steps.get("target", false)):
 			return {
 				"target": _get_first_live_enemy_target_card(),
-				"label": "TARGET",
-				"detail": "Click enemy",
+				"label": "READ",
+				"detail": "Pick threat",
 				"color": FEEDBACK_DAMAGE_COLOR
 			}
 		if not bool(first_play_coach_steps.get("card", false)):
@@ -5896,7 +5980,7 @@ func _get_player_commit_action_guide() -> Dictionary:
 		return {
 			"target": next_phase_button,
 			"label": "RESOLVE",
-			"detail": "Enemy acts",
+			"detail": "Table beat",
 			"color": FEEDBACK_REVEAL_COLOR
 		}
 
@@ -5956,6 +6040,23 @@ func _refresh_battlefield_focus() -> void:
 			battlefield_callout_label.add_theme_color_override("font_color", FEEDBACK_CARD_COLOR)
 		if opponent_title_label != null:
 			opponent_title_label.text = "Arena Payout"
+		return
+	if not debug_controls_visible:
+		var player_target := _get_selected_enemy_target()
+		var player_target_name := String(player_target.get("name", "nearest fighter")) if not player_target.is_empty() else "nearest fighter"
+		var next_objective := _get_objective_label(_get_preview_objective_mode())
+		battlefield_focus_label.text = "CARD TABLE  |  FPS KIT %d/5  |  NEXT %s  |  TARGET %s" % [
+			_get_slotted_card_count(),
+			next_objective.to_upper(),
+			player_target_name.to_upper()
+		]
+		battlefield_focus_label.tooltip_text = "Cards are the main board game: choose the kit, spend Card XP, carry wounds, then enter the FPS arena."
+		battlefield_focus_label.add_theme_color_override("font_color", FEEDBACK_CARD_COLOR)
+		if battlefield_callout_label != null:
+			battlefield_callout_label.text = "Build the kit below. The tactical grid is hidden in normal play and only appears when Debug is open."
+			battlefield_callout_label.add_theme_color_override("font_color", FEEDBACK_CARD_COLOR)
+		if opponent_title_label != null:
+			opponent_title_label.text = "Arena Targets"
 		return
 	var target := _get_selected_enemy_target()
 	var target_name := String(target.get("name", "Enemy")) if not target.is_empty() else "none"
@@ -7614,7 +7715,7 @@ func _refresh_targeting_options() -> void:
 	for cell in move_cells:
 		if typeof(cell) != TYPE_VECTOR2I:
 			continue
-		movement_cell_option.add_item("Route: %s" % combat_grid.call("format_cell", cell))
+		movement_cell_option.add_item("Debug cell: %s" % combat_grid.call("format_cell", cell))
 		movement_cell_option.set_item_metadata(movement_cell_option.item_count - 1, cell)
 		if cell == selected_cell:
 			movement_cell_option.select(movement_cell_option.item_count - 1)
@@ -8103,12 +8204,12 @@ func _refresh_first_play_step_buttons(session_state: Dictionary, run_state: Dict
 		return
 
 	var active_indices: Array[int] = _get_active_first_play_step_indices(session_state, run_state)
-	var labels := ["1 Deal", "2 Target", "3 Card", "4 Resolve"]
+	var labels := ["1 Deal", "2 Kit", "3 Card", "4 Resolve"]
 	var tooltips := [
 		"Deal into the current table.",
-		"Pick the enemy target or move cell.",
-		"Click a ready hand card.",
-		"Resolve Turn advances the plan."
+		"Build the FPS kit from the hand.",
+		"Click a hand card for slotting, upgrading, or table play.",
+		"Resolve Turn advances only the legacy card-combat layer."
 	]
 	for index in range(first_play_step_buttons.size()):
 		var button := first_play_step_buttons[index]
@@ -8140,6 +8241,8 @@ func _sync_live_text_density() -> void:
 	var compact_live := run_flow_state == RUN_FLOW_COMBAT and not debug_controls_visible
 	var payout_stage := run_flow_state == RUN_FLOW_COMBAT and arena_payout_pending
 	var show_expanded_combat_detail := run_flow_state == RUN_FLOW_COMBAT and not compact_live
+	var show_player_card_table := _should_show_player_card_table()
+	var show_debug_tactical_board := _should_show_debug_tactical_board()
 	var title_plate := find_child("TitlePlaque", true, false)
 	if title_plate is Control:
 		(title_plate as Control).visible = not compact_live
@@ -8163,6 +8266,10 @@ func _sync_live_text_density() -> void:
 		(start_class_panel as Control).visible = run_flow_state == RUN_FLOW_START
 	if pile_counts_label != null:
 		pile_counts_label.visible = not compact_live
+	if hand_action_status_label != null:
+		hand_action_status_label.visible = show_expanded_combat_detail
+	if reward_mods_label != null:
+		reward_mods_label.visible = show_expanded_combat_detail
 	var run_path_panel := find_child("RunPathPanel", true, false)
 	if run_path_panel is Control:
 		(run_path_panel as Control).visible = not compact_live and run_flow_state != RUN_FLOW_REWARD
@@ -8174,7 +8281,7 @@ func _sync_live_text_density() -> void:
 			(panel as Control).visible = not route_decision_shell
 	var target_controls_panel := find_child("TargetControlsPanel", true, false)
 	if target_controls_panel is Control:
-		(target_controls_panel as Control).visible = not compact_live
+		(target_controls_panel as Control).visible = run_flow_state == RUN_FLOW_COMBAT and debug_controls_visible
 	if run_shell_panel != null:
 		var show_shell_in_live := run_ceremony_panel != null and bool(run_ceremony_panel.get("visible"))
 		run_shell_panel.visible = not compact_live or show_shell_in_live
@@ -8186,6 +8293,12 @@ func _sync_live_text_density() -> void:
 	if action_cue_panel != null:
 		action_cue_panel.visible = not compact_live and not route_decision_shell and run_flow_state != RUN_FLOW_START
 		action_cue_panel.custom_minimum_size = Vector2(0, 62) if compact_live else Vector2(0, 72)
+	if arena_prep_panel != null:
+		arena_prep_panel.visible = show_player_card_table
+	if arena_view != null:
+		arena_view.visible = show_debug_tactical_board
+	if combat_grid != null:
+		combat_grid.visible = show_debug_tactical_board
 	if combat_grid != null and combat_grid.has_method("set_compact_mode"):
 		combat_grid.call("set_compact_mode", compact_live)
 	_sync_compact_live_layout(compact_live)
@@ -8274,6 +8387,14 @@ func _sync_live_text_density() -> void:
 		combat_feedback_label.visible = show_expanded_combat_detail
 
 
+func _should_show_player_card_table() -> bool:
+	return run_flow_state == RUN_FLOW_COMBAT and not debug_controls_visible and not arena_payout_pending
+
+
+func _should_show_debug_tactical_board() -> bool:
+	return run_flow_state == RUN_FLOW_COMBAT and debug_controls_visible and not arena_payout_pending
+
+
 func _sync_compact_live_layout(compact_live: bool) -> void:
 	var body := find_child("CombatBody", true, false)
 	if body is Control:
@@ -8289,9 +8410,9 @@ func _sync_compact_live_layout(compact_live: bool) -> void:
 
 	var table_row := find_child("TableRow", true, false)
 	if table_row is Control:
-		(table_row as Control).custom_minimum_size = Vector2(0, 258) if compact_live else Vector2(0, 300)
+		(table_row as Control).custom_minimum_size = Vector2(0, 224) if compact_live else Vector2(0, 300)
 	if combat_grid != null:
-		combat_grid.custom_minimum_size = Vector2(520, 250) if compact_live else Vector2(620, 300)
+		combat_grid.custom_minimum_size = Vector2(500, 218) if compact_live else Vector2(620, 300)
 
 	var opponent_panel := find_child("OpponentCardsPanel", true, false)
 	if opponent_panel is Control:
@@ -8306,7 +8427,7 @@ func _sync_compact_live_layout(compact_live: bool) -> void:
 
 	var hand_scroll := find_child("HandScroll", true, false)
 	if hand_scroll is Control:
-		(hand_scroll as Control).custom_minimum_size = Vector2(0, 174) if compact_live else Vector2(0, 188)
+		(hand_scroll as Control).custom_minimum_size = Vector2(0, 158) if compact_live else Vector2(0, 188)
 
 
 func _sync_reward_panel_priority(compact_reward: bool) -> void:

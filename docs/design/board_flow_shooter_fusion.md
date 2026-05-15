@@ -1,6 +1,6 @@
 # Dead Man's Ante - Board Flow / Shooter Fusion
 
-Status: Phase 84 command-table/FPS bridge contract
+Status: Phase 87 card-table identity cleanup
 Last updated: 2026-05-15
 
 ## North Star
@@ -30,7 +30,7 @@ Deal In / card prep -> Slot Selected / Burn -> Enter Arena -> FPS wave payout ->
 
 Live files:
 
-- `res://scenes/ui/MainMenu.tscn`: dev hub with direct access to full game, board/loadout table, shooter arena, tactical map viewer, and debug checks.
+- `res://scenes/ui/MainMenu.tscn`: player title screen with one primary `Deal In` action, a small settings note, and hidden Dev Tools for shortcuts/checks.
 - `res://scenes/combat/TestCombat.tscn`: card table, chip economy, loadout slots, bridge payload preview, `Enter Arena`, and the return payout screen.
 - `res://scenes/fps/FPSPrototype.tscn`: shooter arena that consumes the card loadout, runs the FPS fight, and returns a result when the player picks a reward.
 - `res://scripts/combat/ArenaBridge.gd`: autoload handoff for card-to-FPS payloads and FPS-to-card results.
@@ -38,11 +38,11 @@ Live files:
 
 The return now preserves the card-run snapshot through `ArenaBridge`: current run node, run HP/reward state, deck piles, hand, discard, exhaust, slotted loadout cards, chips, and pending carryover bonuses. When the FPS scene returns, the card table restores that snapshot, resolves spent loadout cards into discard/exhaust, applies payout effects, draws the next hand, and unlocks normal card/loadout actions when `Collect Payout` is pressed.
 
-Arena return is a reward state, not a board-targeting state. While an FPS payout is pending, the Crossfire command table and deck/loadout controls should hide so the player sees one dominant post-wave panel: what they earned, what changed, and the single next click. The board only returns after payout collection, when there is again a real prep/loadout decision to make.
+Arena return is a reward state, not a board-targeting state. While an FPS payout is pending, the table and deck/loadout controls hide so the player sees one dominant post-wave panel: what they earned, what changed, and the single next click. The card table only returns after payout collection, when there is again a real prep/loadout decision to make.
 
 The prep table now shows the next FPS objective before launch. `ObjectivePlanLabel` names the objective, explains the practical plan, and surfaces payout carryover bias such as bonus weapon damage, armor, or ammo. Cards in hand carry FPS recommendation badges (`WEAPON CORE`, `PICK FOR EXTRACT`, `GOOD FOR DEFEND`, `BOSS TECH`) plus tooltip/selected-card reasoning so the player can understand why a card belongs in the arena kit. `Recommend Loadout` auto-slots affordable cards toward the strongest objective in the current hand while still leaving manual slot/burn/hold decisions available.
 
-The visible board is now the `Crossfire Command Table`, not a separate debug grid. `CombatGrid.format_cell()` returns map callouts such as `POT MID` or `COV SMOKE`; cells show the authored feature plus its shooter role (`COVER`, `ANGLE`, `FLANK`, `POT`), and tooltips explain the FPS link. Card hover preview now includes both `FPS Bridge` and `Table` lines so a player can see how an attack becomes the weapon, a move becomes route utility, a guard becomes armor, and reads/traps/rituals shape the next arena objective.
+The visible player-facing surface is now the Card Table, not the tactical grid. Normal play shows `CARD TABLE - BUILD THE FPS KIT`, the current weapon/ability/passive/wager kit, next FPS objective, target, Card XP, and wound burden. The old `CombatGrid` remains available behind Debug as a legacy tactical/support surface for tests and card-combat internals, but normal players should not be asked to parse `POT MID`, lane, route, or cell callouts.
 
 Arena rewards now become visible run mods. The card table tracks active reward mods, rarity, Card XP, wounds, and card upgrades, writes arena mod decisions into run reward history, and shows an `ARMORY RECOMMENDS` line with the predicted kit and chip cost. Reward mods bias future objective recommendations, so choosing `Runner Edge`, `Fortified Guard`, or `Boss Tech` changes what the next hand wants to become.
 
@@ -62,7 +62,7 @@ The opening screen now asks the player to choose a fighter before `Deal In`. Tha
 - `Hex Sharpshooter`: read, trap, and mobility starter for control-focused arena kits.
 - `Blood Wager`: ritual, overclock, guard, and high-risk attack starter for pressure-focused arena kits.
 
-The dev hub also has phase launcher shortcuts:
+The title screen keeps phase launcher shortcuts inside the hidden `Dev Tools` drawer:
 
 - `Card Prep With Sample Hand`: jumps to the card/loadout prep table.
 - `FPS With Slotted Weapon`: seeds a sample weapon/ability payload before opening the FPS arena.
@@ -71,9 +71,9 @@ The dev hub also has phase launcher shortcuts:
 - `FPS Defeat Return`: jumps directly to a failed arena handoff for loss-state testing.
 - `Arena Return Payout Check`: runs the focused persisted-return smoke check.
 
-## What The Board Is Now
+## What The Table Is Now
 
-The board is the command table before and around a fight.
+The table is the card/loadout layer before and after an FPS fight.
 
 It answers:
 
@@ -85,7 +85,7 @@ It answers:
 - What risk am I wagering?
 - What do I carry into the next round?
 
-It should not ask the player to solve abstract coordinates. The 3x3 table can remain as a readable tactical lane/zone abstraction, but the actual combat fantasy is a real arena.
+It should not ask the player to solve abstract coordinates. The 3x3 tactical grid can remain in Debug and under the hood where older resolver tests need it, but the actual player fantasy is a cursed card table that builds a real arena loadout.
 
 ## Core Loop
 

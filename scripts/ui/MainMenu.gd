@@ -15,6 +15,8 @@ const PHASE_CHECKS := [
 ]
 
 var status_label: Label
+var dev_tools_panel: Control
+var settings_panel: Control
 var map_data: Dictionary = {}
 
 
@@ -29,113 +31,196 @@ func _build_ui() -> void:
 	var background := ColorRect.new()
 	background.name = "MenuBackground"
 	background.set_anchors_preset(Control.PRESET_FULL_RECT)
-	background.color = Color(0.035, 0.030, 0.026)
+	background.color = Color(0.026, 0.022, 0.020)
 	add_child(background)
 
 	var margin := MarginContainer.new()
 	margin.name = "MenuMargin"
 	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
-	margin.add_theme_constant_override("margin_left", 32)
-	margin.add_theme_constant_override("margin_top", 28)
-	margin.add_theme_constant_override("margin_right", 32)
-	margin.add_theme_constant_override("margin_bottom", 28)
+	margin.add_theme_constant_override("margin_left", 42)
+	margin.add_theme_constant_override("margin_top", 34)
+	margin.add_theme_constant_override("margin_right", 42)
+	margin.add_theme_constant_override("margin_bottom", 34)
 	add_child(margin)
 
 	var layout := HBoxContainer.new()
 	layout.name = "MenuLayout"
-	layout.add_theme_constant_override("separation", 24)
+	layout.add_theme_constant_override("separation", 30)
 	margin.add_child(layout)
-
-	var nav_scroll := ScrollContainer.new()
-	nav_scroll.name = "NavigationScroll"
-	nav_scroll.custom_minimum_size = Vector2(380, 0)
-	nav_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	nav_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	layout.add_child(nav_scroll)
 
 	var nav := VBoxContainer.new()
 	nav.name = "NavigationColumn"
-	nav.custom_minimum_size = Vector2(360, 0)
-	nav.add_theme_constant_override("separation", 12)
-	nav_scroll.add_child(nav)
+	nav.custom_minimum_size = Vector2(420, 0)
+	nav.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	nav.add_theme_constant_override("separation", 14)
+	layout.add_child(nav)
 
 	var title := Label.new()
 	title.name = "TitleLabel"
 	title.text = "DEAD MAN'S ANTE"
-	title.add_theme_font_size_override("font_size", 34)
+	title.add_theme_font_size_override("font_size", 42)
 	title.add_theme_color_override("font_color", Color(1.0, 0.83, 0.35))
 	nav.add_child(title)
 
 	var subtitle := Label.new()
 	subtitle.name = "SubtitleLabel"
-	subtitle.text = "DEV HUB"
-	subtitle.add_theme_font_size_override("font_size", 16)
-	subtitle.add_theme_color_override("font_color", Color(0.66, 0.90, 0.92))
+	subtitle.text = "Build a cursed card kit. Survive the FPS arena."
+	subtitle.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	subtitle.add_theme_font_size_override("font_size", 18)
+	subtitle.add_theme_color_override("font_color", Color(0.82, 0.88, 0.84))
 	nav.add_child(subtitle)
 
 	_add_divider(nav)
-	nav.add_child(_make_button("Full Game Experience", CARD_SCENE, "FullGameButton"))
-	nav.add_child(_make_button("Card Prep With Sample Hand", CARD_SCENE, "CardPrepButton"))
-	nav.add_child(_make_action_button("FPS With Slotted Weapon", "SlottedFPSButton", _open_fps_with_sample_loadout))
-	nav.add_child(_make_action_button("Hold Pot Test", "HoldPotTestButton", _open_objective_fps.bind("hold_pot")))
-	nav.add_child(_make_action_button("Extract Test", "ExtractTestButton", _open_objective_fps.bind("extract")))
-	nav.add_child(_make_action_button("Duel Test", "DuelTestButton", _open_objective_fps.bind("duel")))
-	nav.add_child(_make_action_button("Defend Test", "DefendTestButton", _open_objective_fps.bind("defend")))
-	nav.add_child(_make_action_button("Boss Gate Test", "BossGateTestButton", _open_objective_fps.bind("boss_gate")))
-	nav.add_child(_make_action_button("FPS Return Payout", "PayoutDemoButton", _open_payout_demo))
-	nav.add_child(_make_action_button("FPS Defeat Return", "DefeatDemoButton", _open_defeat_demo))
-	nav.add_child(_make_button("Shooter Arena Sandbox", SHOOTER_SCENE, "ShooterArenaButton"))
-	nav.add_child(_make_button("Tactical Map Viewer", MAP_VIEWER_SCENE, "MapViewerButton"))
+	var deal_in_button := _make_button("DEAL IN\nStart Run", CARD_SCENE, "DealInButton")
+	deal_in_button.custom_minimum_size = Vector2(0, 76)
+	deal_in_button.add_theme_font_size_override("font_size", 22)
+	nav.add_child(deal_in_button)
+	nav.add_child(_make_action_button("Settings", "SettingsButton", _toggle_settings))
+	nav.add_child(_make_action_button("Dev Tools", "DevToolsButton", _toggle_dev_tools))
+	nav.add_child(_make_action_button("Quit", "QuitButton", _quit_game))
 
-	_add_divider(nav)
-	var checks_title := Label.new()
-	checks_title.text = "PHASE CHECKS"
-	checks_title.add_theme_font_size_override("font_size", 15)
-	checks_title.add_theme_color_override("font_color", Color(0.72, 0.74, 0.70))
-	nav.add_child(checks_title)
-	for check in PHASE_CHECKS:
-		nav.add_child(_make_button(String(check.get("label", "Check")), String(check.get("scene", "")), "PhaseCheckButton"))
+	settings_panel = _build_settings_panel()
+	nav.add_child(settings_panel)
+	dev_tools_panel = _build_dev_tools_panel()
+	nav.add_child(dev_tools_panel)
+
+	var spacer := Control.new()
+	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	nav.add_child(spacer)
 
 	status_label = Label.new()
 	status_label.name = "LaunchStatus"
 	status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	status_label.text = "Deal In starts the card table. Dev Tools are for testing shortcuts."
 	status_label.add_theme_font_size_override("font_size", 13)
 	status_label.add_theme_color_override("font_color", Color(0.88, 0.64, 0.38))
-	status_label.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	nav.add_child(status_label)
 
 	var details := VBoxContainer.new()
 	details.name = "DetailsColumn"
 	details.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	details.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	details.add_theme_constant_override("separation", 16)
 	layout.add_child(details)
 
-	var map_title := Label.new()
-	map_title.name = "MapTitle"
-	map_title.text = String(map_data.get("name", "Crossfire Table"))
-	map_title.add_theme_font_size_override("font_size", 25)
-	map_title.add_theme_color_override("font_color", Color(0.94, 0.96, 0.88))
-	details.add_child(map_title)
+	details.add_child(_build_identity_panel())
+	details.add_child(_build_loop_panel())
+	details.add_child(_build_progression_panel())
 
-	var map_summary := RichTextLabel.new()
-	map_summary.name = "MapSummary"
-	map_summary.bbcode_enabled = false
-	map_summary.fit_content = true
-	map_summary.text = "%s\n%s" % [
-		String(map_data.get("summary", "")),
-		String(map_data.get("rules_summary", ""))
-	]
-	map_summary.add_theme_color_override("default_color", Color(0.78, 0.82, 0.80))
-	details.add_child(map_summary)
 
-	details.add_child(_build_map_preview())
+func _build_dev_tools_panel() -> Control:
+	var panel := PanelContainer.new()
+	panel.name = "DevToolsPanel"
+	panel.visible = false
+	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_apply_menu_panel_style(panel, Color(0.050, 0.046, 0.044, 0.92), Color(0.42, 0.42, 0.46))
 
-	var lanes := Label.new()
-	lanes.name = "ModeSummary"
-	lanes.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	lanes.text = "Full Game starts the card run. Card Prep opens the table. The FPS objective tests seed Hold, Extract, Duel, Defend, or Boss Gate modes without replaying the whole loop. FPS Return Payout and FPS Defeat Return jump straight to arena handoff outcomes. Tactical Map Viewer opens the shared Crossfire Table data."
-	lanes.add_theme_color_override("font_color", Color(0.72, 0.80, 0.78))
-	details.add_child(lanes)
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 10)
+	margin.add_theme_constant_override("margin_top", 10)
+	margin.add_theme_constant_override("margin_right", 10)
+	margin.add_theme_constant_override("margin_bottom", 10)
+	panel.add_child(margin)
+
+	var scroll := ScrollContainer.new()
+	scroll.name = "DevToolsScroll"
+	scroll.custom_minimum_size = Vector2(0, 300)
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	margin.add_child(scroll)
+
+	var dev := VBoxContainer.new()
+	dev.name = "DevToolsList"
+	dev.add_theme_constant_override("separation", 8)
+	scroll.add_child(dev)
+	_add_section_label(dev, "TESTING LAB")
+	dev.add_child(_make_button("Card Prep With Sample Hand", CARD_SCENE, "CardPrepButton"))
+	dev.add_child(_make_action_button("FPS With Slotted Weapon", "SlottedFPSButton", _open_fps_with_sample_loadout))
+	dev.add_child(_make_action_button("Hold Pot Test", "HoldPotTestButton", _open_objective_fps.bind("hold_pot")))
+	dev.add_child(_make_action_button("Extract Test", "ExtractTestButton", _open_objective_fps.bind("extract")))
+	dev.add_child(_make_action_button("Duel Test", "DuelTestButton", _open_objective_fps.bind("duel")))
+	dev.add_child(_make_action_button("Defend Test", "DefendTestButton", _open_objective_fps.bind("defend")))
+	dev.add_child(_make_action_button("Boss Gate Test", "BossGateTestButton", _open_objective_fps.bind("boss_gate")))
+	dev.add_child(_make_action_button("FPS Return Payout", "PayoutDemoButton", _open_payout_demo))
+	dev.add_child(_make_action_button("FPS Defeat Return", "DefeatDemoButton", _open_defeat_demo))
+	dev.add_child(_make_button("Shooter Arena Sandbox", SHOOTER_SCENE, "ShooterArenaButton"))
+	dev.add_child(_make_button("Tactical Map Viewer", MAP_VIEWER_SCENE, "MapViewerButton"))
+	_add_divider(dev)
+	_add_section_label(dev, "PHASE CHECKS")
+	for check in PHASE_CHECKS:
+		dev.add_child(_make_button(String(check.get("label", "Check")), String(check.get("scene", "")), "PhaseCheckButton"))
+	return panel
+
+
+func _build_settings_panel() -> Control:
+	var panel := PanelContainer.new()
+	panel.name = "SettingsPanel"
+	panel.visible = false
+	_apply_menu_panel_style(panel, Color(0.046, 0.050, 0.048, 0.92), Color(0.48, 0.58, 0.55))
+	var label := Label.new()
+	label.name = "SettingsSummary"
+	label.text = "Settings live inside the FPS pause menu for now: press Esc in the arena to adjust aim, reticle, sensitivity, and controls."
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.add_theme_font_size_override("font_size", 13)
+	label.add_theme_color_override("font_color", Color(0.82, 0.88, 0.84))
+	panel.add_child(label)
+	return panel
+
+
+func _build_identity_panel() -> Control:
+	var panel := PanelContainer.new()
+	panel.name = "GameIdentityPanel"
+	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_apply_menu_panel_style(panel, Color(0.080, 0.054, 0.036, 0.92), Color(1.0, 0.63, 0.20))
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 10)
+	panel.add_child(box)
+	_add_section_label(box, "THE GAME")
+	var copy := RichTextLabel.new()
+	copy.name = "IdentityCopy"
+	copy.bbcode_enabled = true
+	copy.fit_content = true
+	copy.scroll_active = false
+	copy.text = "[b]Cards are the run.[/b]\nDraw a hand, build a weapon and ability kit, then take it into a first-person arena. Payouts become artifacts, Card XP, upgrades, mutations, and wounds that change the next table."
+	copy.add_theme_font_size_override("normal_font_size", 18)
+	copy.add_theme_color_override("default_color", Color(0.92, 0.88, 0.78))
+	box.add_child(copy)
+	return panel
+
+
+func _build_loop_panel() -> Control:
+	var panel := PanelContainer.new()
+	panel.name = "RunLoopPanel"
+	_apply_menu_panel_style(panel, Color(0.045, 0.052, 0.055, 0.90), Color(0.44, 0.72, 0.76))
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 8)
+	panel.add_child(box)
+	_add_section_label(box, "RUN LOOP")
+	var loop := Label.new()
+	loop.name = "RunLoopSummary"
+	loop.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	loop.text = "Deal In -> build FPS kit -> enter arena -> choose payout -> upgrade cards -> survive the next fight."
+	loop.add_theme_font_size_override("font_size", 17)
+	loop.add_theme_color_override("font_color", Color(0.84, 0.90, 0.88))
+	box.add_child(loop)
+	return panel
+
+
+func _build_progression_panel() -> Control:
+	var panel := PanelContainer.new()
+	panel.name = "ProgressionPanel"
+	_apply_menu_panel_style(panel, Color(0.052, 0.042, 0.058, 0.90), Color(0.70, 0.46, 0.82))
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 8)
+	panel.add_child(box)
+	_add_section_label(box, "WHAT CHANGES")
+	var progression := Label.new()
+	progression.name = "ProgressionSummary"
+	progression.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	progression.text = "Reward artifacts bias future objectives. Card XP upgrades or mutates cards. Wounds tax chips, draw, and armor."
+	progression.add_theme_font_size_override("font_size", 16)
+	progression.add_theme_color_override("font_color", Color(0.88, 0.84, 0.92))
+	box.add_child(progression)
+	return panel
 
 
 func _make_button(label: String, scene_path: String, node_name: String) -> Button:
@@ -156,6 +241,51 @@ func _make_action_button(label: String, node_name: String, callback: Callable) -
 	button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	button.pressed.connect(callback)
 	return button
+
+
+func _toggle_dev_tools() -> void:
+	if dev_tools_panel == null:
+		return
+	dev_tools_panel.visible = not dev_tools_panel.visible
+	if dev_tools_panel.visible and settings_panel != null:
+		settings_panel.visible = false
+	if status_label != null:
+		status_label.text = "Testing Lab open." if dev_tools_panel.visible else "Deal In starts the card table. Dev Tools are hidden."
+
+
+func _toggle_settings() -> void:
+	if settings_panel == null:
+		return
+	settings_panel.visible = not settings_panel.visible
+	if settings_panel.visible and dev_tools_panel != null:
+		dev_tools_panel.visible = false
+	if status_label != null:
+		status_label.text = "Settings note open." if settings_panel.visible else "Deal In starts the card table."
+
+
+func _quit_game() -> void:
+	get_tree().quit()
+
+
+func _add_section_label(parent: VBoxContainer, label_text: String) -> void:
+	var label := Label.new()
+	label.text = label_text
+	label.add_theme_font_size_override("font_size", 14)
+	label.add_theme_color_override("font_color", Color(1.0, 0.78, 0.36))
+	parent.add_child(label)
+
+
+func _apply_menu_panel_style(panel: PanelContainer, bg_color: Color, border_color: Color) -> void:
+	var style := StyleBoxFlat.new()
+	style.bg_color = bg_color
+	style.border_color = border_color
+	style.set_border_width_all(2)
+	style.set_corner_radius_all(8)
+	style.content_margin_left = 14
+	style.content_margin_top = 12
+	style.content_margin_right = 14
+	style.content_margin_bottom = 12
+	panel.add_theme_stylebox_override("panel", style)
 
 
 func _build_map_preview() -> GridContainer:

@@ -22,14 +22,21 @@ func _verify_menu_scene() -> void:
 	var menu := packed_scene.instantiate()
 	add_child(menu)
 	await get_tree().process_frame
-	if menu.find_child("FullGameButton", true, false) == null:
-		_fail("Main menu should expose Full Game Experience.")
+	if menu.find_child("DealInButton", true, false) == null:
+		_fail("Main menu should expose a player-facing Deal In button.")
+	if menu.find_child("SettingsButton", true, false) == null:
+		_fail("Main menu should expose Settings.")
+	var dev_tools := menu.find_child("DevToolsPanel", true, false)
+	if dev_tools == null:
+		_fail("Main menu should keep testing shortcuts inside DevToolsPanel.")
+	elif bool((dev_tools as Control).visible):
+		_fail("DevToolsPanel should start hidden so the title screen is not a debug menu.")
 	if menu.find_child("CardPrepButton", true, false) == null:
-		_fail("Main menu should expose Card Prep With Sample Hand.")
+		_fail("Dev tools should expose Card Prep With Sample Hand.")
 	if menu.find_child("SlottedFPSButton", true, false) == null:
-		_fail("Main menu should expose FPS With Slotted Weapon.")
+		_fail("Dev tools should expose FPS With Slotted Weapon.")
 	if menu.find_child("HoldPotTestButton", true, false) == null:
-		_fail("Main menu should expose Hold Pot Test.")
+		_fail("Dev tools should expose Hold Pot Test.")
 	if menu.find_child("ExtractTestButton", true, false) == null:
 		_fail("Main menu should expose Extract Test.")
 	if menu.find_child("DuelTestButton", true, false) == null:
@@ -45,9 +52,9 @@ func _verify_menu_scene() -> void:
 	if menu.find_child("ShooterArenaButton", true, false) == null:
 		_fail("Main menu should expose Shooter Arena.")
 	if menu.find_child("MapViewerButton", true, false) == null:
-		_fail("Main menu should expose Tactical Map Viewer.")
-	if menu.find_child("CrossfireMapPreview", true, false) == null:
-		_fail("Main menu should show the Crossfire map preview.")
+		_fail("Dev tools should expose Tactical Map Viewer.")
+	if menu.find_child("GameIdentityPanel", true, false) == null:
+		_fail("Main menu should explain the game identity instead of showing a tactical map preview.")
 	var phase_buttons := menu.find_children("*", "Button", true, false)
 	var has_payout_check := false
 	for button in phase_buttons:

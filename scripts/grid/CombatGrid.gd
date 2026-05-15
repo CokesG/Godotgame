@@ -85,7 +85,7 @@ func reset_grid(enemy_spawns: Array = []) -> void:
 			String(spawn.get("label", "Enemy"))
 		)
 	_refresh_cells()
-	_update_status("%s This table is the FPS route map: pick a Target or MOVE callout, then cards become the weapon, armor, utility, or objective plan." % TACTICAL_MAP_SCRIPT.get_feature_summary(map_data))
+	_update_status("%s Debug grid only: the player-facing table now builds an FPS card kit instead of asking for cell picks." % TACTICAL_MAP_SCRIPT.get_feature_summary(map_data))
 	log_requested.emit("Grid reset on %s: player at %s, enemies staged across the threat row." % [get_map_name(), format_cell(get_unit_position(PLAYER_ID))])
 
 
@@ -639,7 +639,7 @@ func _select_unit(unit_id: StringName) -> void:
 	selected_unit_id = unit_id
 	valid_move_cells = get_valid_moves_for(unit_id)
 	_refresh_cells()
-	_update_status("%s selected. Green MOVE callouts are the next FPS route choices." % get_unit_label(unit_id))
+	_update_status("%s selected in the debug grid. Main play uses enemy cards and the FPS kit table." % get_unit_label(unit_id))
 	log_requested.emit("%s selected at %s." % [get_unit_label(unit_id), format_cell(get_unit_position(unit_id))])
 
 
@@ -647,7 +647,7 @@ func _clear_selection() -> void:
 	selected_unit_id = &""
 	valid_move_cells.clear()
 	_refresh_cells()
-	_update_status("Click an enemy card or pawn to target, or pick a green MOVE callout for route/utility cards.")
+	_update_status("Debug grid idle. Normal play hides this board and uses the hand/loadout table.")
 
 
 func _refresh_cells() -> void:
@@ -715,11 +715,11 @@ func _on_cell_pressed(cell: Vector2i) -> void:
 
 
 func _get_board_title_text() -> String:
-	return "Crossfire Command Table - %s" % get_map_name()
+	return "Debug Tactical Grid - %s" % get_map_name()
 
 
 func _get_board_summary_text() -> String:
-	return "Cards choose the FPS kit here: attacks become weapons, guard becomes armor, movement picks routes, reads/traps shape duels, and ritual/bluff cards push the wager objective."
+	return "Debug support for legacy card-combat positioning. Normal play builds an FPS kit from cards and keeps this grid hidden."
 
 
 func _get_lane_legend_text() -> String:
