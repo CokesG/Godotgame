@@ -47,9 +47,19 @@ The map is data-first. `CombatGrid` shows the labels and exposes `get_map_contex
 
 The FPS branch reads the same map data through `FPSPrototype.get_map_summary()` and `get_map_regions()`. It renders region markers and wall labels in the live arena so the shooter blockout says the same thing as the card board: Smoke Lane, Ante Mid, Long Rail, Center Pot, cover, flank, and angle.
 
+The FPS branch now has five objective modes layered onto the same map:
+
+- `Hold Pot`: hold the Center Pot long enough to bank objective score.
+- `Extract`: touch the Center Pot, then reach the player-side extract lane alive.
+- `Duel`: kill the marked target, currently `Needle Eye`, before the wave ends.
+- `Defend`: keep enemies off the Center Pot and preserve the table core.
+- `Boss Gate`: break the `Gate Champion` while surviving Crossfire pressure.
+
+The objective mode is carried in the arena bridge payload as `objective_mode`, and the FPS arena returns `objective_label`, `objective_completed`, `objective_failed`, `objective_events`, and `objective_score` with the payout result.
+
 The dev hub and map viewer make the shared map easy to test without playing the whole loop:
 
-- `res://scenes/ui/MainMenu.tscn` opens to Full Game Experience, Card / Loadout Table, Shooter Arena, Tactical Map Viewer, and debug checks.
+- `res://scenes/ui/MainMenu.tscn` opens to Full Game Experience, Card / Loadout Table, the five FPS objective shortcuts, Shooter Arena, Tactical Map Viewer, and debug checks.
 - `res://scenes/ui/TacticalMapViewer.tscn` shows all nine Crossfire cells and their rule details.
 - FPS arena reward selection now returns to the card table with a result payload, so Crossfire stats can pay out into the next hand.
 

@@ -290,6 +290,8 @@ Board sends:
 ```gdscript
 {
 	"weapon_card": "cursed_revolver",
+	"hero_class": "gambler_knight",
+	"objective_mode": "extract",
 	"ability_cards": ["smoke_veil", "guard_wall"],
 	"passive_cards": ["loaded_dice"],
 	"wager_cards": ["blood_ritual"],
@@ -304,6 +306,9 @@ Combat returns:
 {
 	"source": "fps_arena",
 	"map_name": "Crossfire Table",
+	"objective_mode": "extract",
+	"objective_label": "Extract",
+	"objective_completed": true,
 	"cleared": true,
 	"wave": 1,
 	"kills": 4,
@@ -314,6 +319,7 @@ Combat returns:
 	"critical_hits": 2,
 	"damage_dealt": 116,
 	"damage_taken": 12,
+	"objective_score": 92,
 	"remaining_health": 28,
 	"remaining_armor": 5,
 	"loadout": {"weapon": "Ace Cutter Revolver", "abilities": 1, "armor": 5, "ammo": 24, "chips": 2},
@@ -336,13 +342,15 @@ Done in the prototype:
 7. Persist exact run/deck/loadout state across the FPS scene swap.
 8. Apply non-chip payout effects to the next arena payload: weapon damage, carryover armor, and carryover ammo.
 9. Return FPS win/loss/objective fields so defeat can end the run and strong objective play can pay a bonus.
+10. Add live FPS objective modes for `Hold Pot`, `Extract`, `Duel`, `Defend`, and `Boss Gate`, with dev hub shortcuts for each.
+11. Let slotted card style recommend an FPS objective: movement pushes Extract, guard pushes Defend, read/trap pushes Duel, ritual pushes Boss Gate, and default loadouts hold the pot.
 
 Next implementation steps:
 
 1. Turn payout bonuses into authored reward cards/mods with art, names, and rarity.
 2. Add wound, card XP, card mutation, and upgrade events to the run history.
 3. Collapse or mirror the board into an in-FPS combat HUD with card ability icons and cooldowns.
-4. Add objective types beyond wave clear: hold pot, extract, duel, defend, escort, and boss phase.
+4. Add escort and multi-stage boss variants after the five first objective modes feel good.
 
 ## Design Rule
 
