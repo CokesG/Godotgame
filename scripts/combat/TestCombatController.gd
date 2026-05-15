@@ -205,12 +205,16 @@ var recipe_progress: Dictionary = {}
 var pending_card_context: Dictionary = {}
 var committed_card_context: Dictionary = {}
 var shooter_chips: int = 7
+var arena_carryover_armor: int = 0
+var arena_carryover_ammo: int = 0
+var arena_weapon_damage_bonus: int = 0
 var held_hand_indices: Dictionary = {}
 var loadout_slots: Dictionary = {}
 var selected_hand_index: int = -1
 var arena_bridge_payload: Dictionary = {}
 var arena_round_armed := false
 var pending_arena_result: Dictionary = {}
+var pending_arena_effect_lines: Array[String] = []
 var arena_payout_pending := false
 var feedback_history: Array[String] = []
 var run_ceremony_history: Array[String] = []
@@ -2145,9 +2149,13 @@ func _on_enter_arena_pressed() -> void:
 	if arena_view != null and arena_view.has_method("focus_unit"):
 		arena_view.call("focus_unit", &"player")
 	_refresh_loadout_ui()
+	var spent_bonuses := _get_arena_bonus_snapshot()
+	_clear_arena_bonuses()
+	var return_state := _build_arena_return_state()
+	return_state["spent_arena_bonuses"] = spent_bonuses
 	var bridge := get_node_or_null("/root/ArenaBridge")
 	if bridge != null and bridge.has_method("set_payload"):
-		bridge.call("set_payload", payload, "res://scenes/combat/TestCombat.tscn")
+		bridge.call("set_payload", payload, "res://scenes/combat/TestCombat.tscn", return_state)
 	var tree := get_tree()
 	if tree != null:
 		tree.change_scene_to_file("res://scenes/fps/FPSPrototype.tscn")
@@ -2162,13 +2170,18 @@ func _consume_pending_arena_result() -> void:
 	if not bridge.has_method("take_result"):
 		return
 	var result: Dictionary = bridge.call("take_result")
+	if bridge.has_method("has_pending_return_state") and bool(bridge.call("has_pending_return_state")) and bridge.has_method("take_return_state"):
+		var return_state: Dictionary = bridge.call("take_return_state")
+		_restore_arena_return_state(return_state)
 	_apply_arena_result(result)
 
 
 func _apply_arena_result(result: Dictionary) -> void:
 	if result.is_empty():
 		return
+	var cleared := bool(result.get("cleared", String(result.get("outcome", "win")) != "defeat"))
 	pending_arena_result = result.duplicate(true)
+	pending_arena_effect_lines = _apply_arena_payout_effects(result) if cleared else ["Run lost: FPS defeat ended this table."]
 	arena_payout_pending = true
 	shooter_chips += int(result.get("chips_awarded", 0))
 	loadout_slots.clear()
@@ -2180,8 +2193,13 @@ func _apply_arena_result(result: Dictionary) -> void:
 		if bool(deck_manager.call("has_committed_card")):
 			deck_manager.call("resolve_committed_card")
 		deck_manager.call("discard_hand")
-		var next_draw := int(result.get("cards_to_draw", combat_session.get("hand_target")))
-		deck_manager.call("draw_cards", maxi(0, next_draw))
+		if deck_manager.has_method("resolve_loadout_pile"):
+			deck_manager.call("resolve_loadout_pile")
+		if cleared:
+			var next_draw := int(result.get("cards_to_draw", combat_session.get("hand_target")))
+			deck_manager.call("draw_cards", maxi(0, next_draw))
+	if not cleared and run_manager != null and run_manager.has_method("apply_arena_defeat"):
+		run_manager.call("apply_arena_defeat", result)
 	_set_run_flow_state(RUN_FLOW_COMBAT)
 	_append_log("ARENA PAYOUT: %s" % JSON.stringify(result))
 	_refresh_arena_payout_panel()
@@ -2200,14 +2218,16 @@ func _refresh_arena_payout_panel() -> void:
 		arena_payout_label.text = _get_arena_payout_text(pending_arena_result)
 	if arena_payout_continue_button != null:
 		arena_payout_continue_button.disabled = not arena_payout_pending
+		arena_payout_continue_button.text = "View Run Results" if _arena_result_ends_run() else "Start Next Hand"
 		_style_compact_button(arena_payout_continue_button, arena_payout_pending, FEEDBACK_CARD_COLOR, "Collect the FPS arena payout and unlock the next prep hand.")
 
 
 func _get_arena_payout_text(result: Dictionary) -> String:
 	if result.is_empty():
 		return ""
+	var cleared := bool(result.get("cleared", String(result.get("outcome", "win")) != "defeat"))
 	var reward: Dictionary = result.get("selected_reward", {})
-	var reward_label := String(reward.get("label", "Arena Payout"))
+	var reward_label := String(reward.get("label", "Arena Payout")) if cleared else "Arena Lost"
 	var reward_amount := int(reward.get("amount", 0))
 	var reward_kind := String(reward.get("kind", "reward")).capitalize()
 	var reward_line := "%s +%d" % [reward_kind, reward_amount] if reward_amount > 0 else reward_kind
@@ -2215,29 +2235,159 @@ func _get_arena_payout_text(result: Dictionary) -> String:
 	var clear_time := float(result.get("clear_time", 0.0))
 	var chips := int(result.get("chips_awarded", 0))
 	var cards_to_draw := int(result.get("cards_to_draw", combat_session.get("hand_target")))
-	return "[b]%s[/b]\n+%d Chips | %s | Draw %d next-hand cards\n%s Wave %d: %d kills, %.0f%% hit rate, %.1fs, %d damage taken." % [
-		reward_label,
-		chips,
-		reward_line,
-		cards_to_draw,
+	var headline := "[b]%s[/b]" % reward_label
+	var economy_line := "+%d Chips | %s | Draw %d next-hand cards" % [chips, reward_line, cards_to_draw] if cleared else "Defeat | %d kills | %d damage taken" % [int(result.get("kills", 0)), int(result.get("damage_taken", 0))]
+	var effects_line := "Effects: %s" % _join_string_array(pending_arena_effect_lines, " | ") if not pending_arena_effect_lines.is_empty() else "Effects: none"
+	return "%s\n%s\n%s\n%s Wave %d: %d kills, %.0f%% hit rate, %.1fs, objective %d." % [
+		headline,
+		economy_line,
+		effects_line,
 		String(result.get("map_name", "Arena")),
 		int(result.get("wave", 1)),
 		int(result.get("kills", 0)),
 		hit_rate,
 		clear_time,
-		int(result.get("damage_taken", 0))
+		int(result.get("objective_score", 0))
 	]
 
 
 func _on_arena_payout_continue_pressed() -> void:
 	if not arena_payout_pending:
 		return
+	var ends_run := _arena_result_ends_run()
 	arena_payout_pending = false
 	pending_arena_result.clear()
+	pending_arena_effect_lines.clear()
 	_refresh_arena_payout_panel()
 	_refresh_loadout_ui()
 	_refresh_action_controls()
-	_push_feedback("Payout collected. Build this hand into the next arena loadout.", FEEDBACK_CARD_COLOR, shooter_economy_label)
+	if ends_run:
+		_set_run_flow_state(RUN_FLOW_RESULTS)
+		_push_feedback("Arena defeat recorded. Review the run results.", FEEDBACK_DAMAGE_COLOR, run_finale_panel)
+	else:
+		_push_feedback("Payout collected. Build this hand into the next arena loadout.", FEEDBACK_CARD_COLOR, shooter_economy_label)
+
+
+func _arena_result_ends_run() -> bool:
+	if pending_arena_result.is_empty():
+		return false
+	if not bool(pending_arena_result.get("cleared", String(pending_arena_result.get("outcome", "win")) != "defeat")):
+		return true
+	if run_manager != null:
+		var state: Dictionary = run_manager.call("get_state")
+		return String(state.get("run_outcome", "running")) != "running"
+	return false
+
+
+func _apply_arena_payout_effects(result: Dictionary) -> Array[String]:
+	var effects: Array[String] = []
+	var reward: Dictionary = result.get("selected_reward", {})
+	var kind := String(reward.get("kind", "chips"))
+	var amount := int(reward.get("amount", 0))
+	match kind:
+		"damage":
+			arena_weapon_damage_bonus += amount
+			effects.append("Next arena weapon +%d damage" % amount)
+		"armor":
+			arena_carryover_armor += amount
+			effects.append("+%d armor carried into next arena" % amount)
+		"ammo":
+			arena_carryover_ammo += amount
+			effects.append("+%d ammo reserve carried into next arena" % amount)
+		_:
+			effects.append("Chip payout banked")
+	var objective_score := int(result.get("objective_score", 0))
+	if objective_score >= 90:
+		shooter_chips += 2
+		effects.append("Objective bonus +2 Chips")
+	return effects
+
+
+func _build_arena_return_state() -> Dictionary:
+	return {
+		"schema": 1,
+		"run_flow_state": run_flow_state,
+		"run_manager": run_manager.call("get_snapshot") if run_manager != null and run_manager.has_method("get_snapshot") else {},
+		"deck_manager": deck_manager.call("get_snapshot") if deck_manager != null and deck_manager.has_method("get_snapshot") else {},
+		"shooter_chips": shooter_chips,
+		"arena_carryover_armor": arena_carryover_armor,
+		"arena_carryover_ammo": arena_carryover_ammo,
+		"arena_weapon_damage_bonus": arena_weapon_damage_bonus,
+		"held_hand_indices": held_hand_indices.duplicate(true),
+		"selected_hand_index": selected_hand_index,
+		"arena_bridge_payload": arena_bridge_payload.duplicate(true),
+		"arena_round_armed": arena_round_armed,
+		"loadout_slot_paths": _serialize_loadout_slots()
+	}
+
+
+func _restore_arena_return_state(return_state: Dictionary) -> void:
+	if return_state.is_empty():
+		return
+	if run_manager != null and run_manager.has_method("restore_snapshot"):
+		var run_snapshot: Dictionary = return_state.get("run_manager", {})
+		run_manager.call("restore_snapshot", run_snapshot)
+	if deck_manager != null and deck_manager.has_method("restore_snapshot"):
+		var deck_snapshot: Dictionary = return_state.get("deck_manager", {})
+		deck_manager.call("restore_snapshot", deck_snapshot)
+	shooter_chips = int(return_state.get("shooter_chips", shooter_chips))
+	arena_carryover_armor = int(return_state.get("arena_carryover_armor", arena_carryover_armor))
+	arena_carryover_ammo = int(return_state.get("arena_carryover_ammo", arena_carryover_ammo))
+	arena_weapon_damage_bonus = int(return_state.get("arena_weapon_damage_bonus", arena_weapon_damage_bonus))
+	held_hand_indices = Dictionary(return_state.get("held_hand_indices", {})).duplicate(true)
+	selected_hand_index = int(return_state.get("selected_hand_index", selected_hand_index))
+	arena_bridge_payload = Dictionary(return_state.get("arena_bridge_payload", {})).duplicate(true)
+	arena_round_armed = bool(return_state.get("arena_round_armed", arena_round_armed))
+	loadout_slots = _deserialize_loadout_slots(return_state.get("loadout_slot_paths", {}))
+	_apply_current_tactical_map()
+	if combat_grid != null and run_manager != null:
+		combat_grid.call("reset_grid", run_manager.call("get_current_enemy_spawns"))
+	_reset_combat_state()
+	_reset_enemy_intents()
+	_refresh_loadout_ui()
+	_refresh_action_controls()
+
+
+func _serialize_loadout_slots() -> Dictionary:
+	var serialized := {}
+	for slot_id in loadout_slots.keys():
+		var card: Resource = loadout_slots[slot_id]
+		if card != null and not String(card.resource_path).is_empty():
+			serialized[String(slot_id)] = String(card.resource_path)
+	return serialized
+
+
+func _deserialize_loadout_slots(serialized: Variant) -> Dictionary:
+	var restored := {}
+	if typeof(serialized) != TYPE_DICTIONARY:
+		return restored
+	var paths: Dictionary = serialized
+	for slot_id in paths.keys():
+		var card := load(String(paths[slot_id]))
+		if card is Resource:
+			restored[String(slot_id)] = card
+	return restored
+
+
+func _get_arena_bonus_snapshot() -> Dictionary:
+	return {
+		"armor": arena_carryover_armor,
+		"ammo": arena_carryover_ammo,
+		"weapon_damage": arena_weapon_damage_bonus
+	}
+
+
+func _clear_arena_bonuses() -> void:
+	arena_carryover_armor = 0
+	arena_carryover_ammo = 0
+	arena_weapon_damage_bonus = 0
+
+
+func _join_string_array(values: Array[String], separator: String) -> String:
+	var packed := PackedStringArray()
+	for value in values:
+		packed.append(value)
+	return separator.join(packed)
 
 
 func _on_loadout_slot_pressed(slot_id: String) -> void:
@@ -2533,7 +2683,7 @@ func _get_selected_card_label() -> String:
 
 
 func _get_bridge_armor_value() -> int:
-	var armor := 0
+	var armor := arena_carryover_armor
 	for card in loadout_slots.values():
 		if not (card is Resource):
 			continue
@@ -2544,7 +2694,7 @@ func _get_bridge_armor_value() -> int:
 
 
 func _get_bridge_ammo_value() -> int:
-	var ammo := 12
+	var ammo := 12 + arena_carryover_ammo
 	for card in loadout_slots.values():
 		if not (card is Resource):
 			continue
@@ -2583,6 +2733,7 @@ func _build_combat_bridge_payload() -> Dictionary:
 		"wager_cards": wager_cards,
 		"loadout": loadout,
 		"economy": economy,
+		"payout_bonuses": _get_arena_bonus_snapshot(),
 		"reads": {
 			"target_enemy": _get_selected_enemy_target_id(),
 			"threat": _get_enemy_intent_line(_get_selected_enemy_target_id())
@@ -2630,17 +2781,22 @@ func _get_shooter_card_payload(card: Resource, slot_id: String) -> Dictionary:
 
 
 func _get_weapon_profile_for_card(card_id: String) -> Dictionary:
+	var profile: Dictionary
 	match card_id:
 		"quick_slash":
-			return {"name": "Ace Cutter Revolver", "damage": 28, "magazine": 6, "fire_rate": 3.2, "range": "mid"}
+			profile = {"name": "Ace Cutter Revolver", "damage": 28, "magazine": 6, "fire_rate": 3.2, "range": "mid"}
 		"low_stab":
-			return {"name": "Low Stab Sidearm", "damage": 18, "magazine": 12, "fire_rate": 5.8, "range": "close"}
+			profile = {"name": "Low Stab Sidearm", "damage": 18, "magazine": 12, "fire_rate": 5.8, "range": "close"}
 		"all_in_cut":
-			return {"name": "All-In Rail Pistol", "damage": 44, "magazine": 3, "fire_rate": 1.4, "range": "long"}
+			profile = {"name": "All-In Rail Pistol", "damage": 44, "magazine": 3, "fire_rate": 1.4, "range": "long"}
 		"center_cut":
-			return {"name": "Center Cut Carbine", "damage": 24, "magazine": 18, "fire_rate": 6.0, "range": "mid"}
+			profile = {"name": "Center Cut Carbine", "damage": 24, "magazine": 18, "fire_rate": 6.0, "range": "mid"}
 		_:
-			return {"name": "House Sidearm", "damage": 20, "magazine": 10, "fire_rate": 4.0, "range": "mid"}
+			profile = {"name": "House Sidearm", "damage": 20, "magazine": 10, "fire_rate": 4.0, "range": "mid"}
+	if arena_weapon_damage_bonus > 0:
+		profile["damage"] = int(profile.get("damage", 0)) + arena_weapon_damage_bonus
+		profile["payout_bonus_damage"] = arena_weapon_damage_bonus
+	return profile
 
 
 func _on_commit_first_card_pressed() -> void:
@@ -2760,7 +2916,9 @@ func _reset_run_slice() -> void:
 	_set_run_flow_state(RUN_FLOW_START)
 	_reset_first_play_coach()
 	pending_arena_result.clear()
+	pending_arena_effect_lines.clear()
 	arena_payout_pending = false
+	_clear_arena_bonuses()
 	run_ceremony_history.clear()
 	selected_run_path_index = -1
 	last_run_path_current_index = -1
@@ -2786,6 +2944,7 @@ func _reset_playable_combat() -> void:
 	pending_card_context.clear()
 	committed_card_context.clear()
 	shooter_chips = 7
+	_clear_arena_bonuses()
 	loadout_slots.clear()
 	held_hand_indices.clear()
 	arena_bridge_payload.clear()

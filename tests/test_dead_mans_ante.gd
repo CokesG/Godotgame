@@ -147,6 +147,11 @@ func test_fps_player_mouse_look_changes_yaw_and_pitch() -> void:
 	var hip_delta := absf(player.rotation.y - hip_yaw)
 	assert_true(ads_delta < hip_delta, "ADS sensitivity should scale mouse look down from hip-fire.")
 	assert_true(is_equal_approx(float(player.call("_get_target_fov", false, 0.0, true)), 52.0), "ADS FOV should be a functional camera target.")
+	var pre_pad_yaw := player.rotation.y
+	player.call("apply_aim_settings", {"gamepad_look_sensitivity": 3.0, "gamepad_deadzone": 0.10, "gamepad_response_curve": 1.0})
+	player.call("_apply_gamepad_look_vector", Vector2(0.60, -0.30), 0.20)
+	assert_ne(player.rotation.y, pre_pad_yaw, "Right-stick look should rotate the FPS body.")
+	assert_true(float(player.call("_shape_gamepad_look", Vector2(0.05, 0.0)).length()) == 0.0, "Gamepad look should respect the configured deadzone.")
 
 
 func test_fps_settings_crosshair_and_ability_contracts() -> void:
@@ -158,6 +163,8 @@ func test_fps_settings_crosshair_and_ability_contracts() -> void:
 	assert_true(prototype.has_method("_get_action_binding_text"), "FPSPrototype settings should show readable binding text.")
 	assert_true(prototype.has_method("_reset_action_binding"), "FPSPrototype settings should allow per-action default resets.")
 	assert_true(prototype.has_method("_find_binding_conflict"), "FPSPrototype settings should detect duplicate keybinds.")
+	assert_true(prototype.has_method("_apply_settings_preset"), "FPSPrototype settings should expose input preset application.")
+	assert_true(prototype.has_method("_refresh_card_combat_hud"), "FPSPrototype should expose card-powered HUD refresh.")
 	prototype.call("toggle_settings_menu")
 	assert_true(bool(prototype.call("is_gameplay_paused")), "Escape settings overlay should pause FPS gameplay input.")
 	prototype.call("toggle_settings_menu")
@@ -171,6 +178,9 @@ func test_fps_settings_crosshair_and_ability_contracts() -> void:
 	assert_true(String(prototype.call("_get_action_binding_text", &"fps_ability_4")).contains("Pad Y"), "Ability keybinds should support gamepad button bindings.")
 	prototype.call("_reset_action_binding", &"fps_ability_4")
 	assert_true(String(prototype.call("_get_action_binding_text", &"fps_ability_4")).contains("V"), "Ability keybind reset should restore keyboard defaults.")
+	prototype.call("_apply_settings_preset", "left_handed")
+	assert_true(String(prototype.call("_get_action_binding_text", &"fps_move_forward")).contains("Up"), "Left-handed preset should move movement onto arrow keys.")
+	prototype.call("_apply_settings_preset", "default_fps")
 	prototype.set("crosshair_settings", {
 		"color": Color(1.0, 0.25, 0.78, 0.5),
 		"gap": 4.0,
@@ -290,6 +300,30 @@ func test_deck_manager_can_slot_cards_into_loadout_flow() -> void:
 	assert_eq(int(counts.get("hand", -1)), 0, "Slotted card should leave hand.")
 	assert_eq(int(counts.get("loadout", -1)), 1, "Slotted card should enter the loadout pile.")
 	assert_eq(int(counts.get("discard", -1)), 0, "Slotted card should not look like a normal discard.")
+	var snapshot: Dictionary = deck.call("get_snapshot")
+	assert_eq((snapshot.get("loadout_pile_paths", []) as Array).size(), 1, "Deck snapshots should preserve slotted loadout cards.")
+	var resolved: Array = deck.call("resolve_loadout_pile")
+	assert_eq(resolved.size(), 1, "Resolving loadout should return the slotted cards.")
+	counts = deck.call("get_counts")
+	assert_eq(int(counts.get("loadout", -1)), 0, "Resolved loadout cards should leave the loadout pile.")
+	var restored_deck: Node = deck_script.new()
+	restored_deck.call("restore_snapshot", snapshot)
+	var restored_counts: Dictionary = restored_deck.call("get_counts")
+	assert_eq(int(restored_counts.get("loadout", -1)), 1, "Deck restore should recover the loadout pile.")
+
+
+func test_run_manager_can_snapshot_restore_and_mark_arena_defeat() -> void:
+	var run_script: GDScript = ResourceLoader.load("res://scripts/run/RunManager.gd", "", ResourceLoader.CACHE_MODE_IGNORE)
+	var run_manager: Node = run_script.new()
+	run_manager.call("reset_run")
+	var snapshot: Dictionary = run_manager.call("get_snapshot")
+	run_manager.call("apply_arena_defeat", {"damage_taken": 99})
+	var defeat_state: Dictionary = run_manager.call("get_state")
+	assert_eq(String(defeat_state.get("run_outcome", "")), "defeat", "Arena defeat should mark the run as lost.")
+	run_manager.call("restore_snapshot", snapshot)
+	var restored_state: Dictionary = run_manager.call("get_state")
+	assert_eq(String(restored_state.get("run_outcome", "")), "running", "Run restore should recover the pre-arena outcome.")
+	assert_eq(int(restored_state.get("blood", -1)), 30, "Run restore should recover player Blood.")
 
 
 func test_combat_controller_exports_shooter_loadout_payload() -> void:
@@ -298,6 +332,9 @@ func test_combat_controller_exports_shooter_loadout_payload() -> void:
 	var quick_slash: Resource = load("res://resources/cards/quick_slash.tres")
 	var sidestep: Resource = load("res://resources/cards/sidestep.tres")
 	controller.set("shooter_chips", 4)
+	controller.set("arena_carryover_armor", 6)
+	controller.set("arena_carryover_ammo", 9)
+	controller.set("arena_weapon_damage_bonus", 2)
 	controller.set("loadout_slots", {"weapon": quick_slash, "ability_1": sidestep})
 	var payload: Dictionary = controller.call("_build_combat_bridge_payload")
 	assert_eq(String(payload.get("weapon_card", "")), "quick_slash", "Weapon slot should become the shooter weapon card.")
@@ -306,7 +343,10 @@ func test_combat_controller_exports_shooter_loadout_payload() -> void:
 	var weapon: Dictionary = loadout[0]
 	assert_true(weapon.has("weapon") or (loadout[1] as Dictionary).has("weapon"), "Attack cards should export a weapon profile.")
 	var economy: Dictionary = payload.get("economy", {})
-	assert_true(int(economy.get("ammo", 0)) > 12, "Attack cards should increase arena ammo.")
+	assert_true(int(economy.get("ammo", 0)) > 20, "Attack cards and carryover should increase arena ammo.")
+	assert_true(int(economy.get("armor", 0)) >= 6, "Arena carryover armor should feed the next payload.")
+	var bonuses: Dictionary = payload.get("payout_bonuses", {})
+	assert_eq(int(bonuses.get("weapon_damage", 0)), 2, "Arena damage payout should be visible in the payload.")
 
 
 func test_arena_bridge_stores_and_hands_payload_to_fps() -> void:
@@ -319,11 +359,15 @@ func test_arena_bridge_stores_and_hands_payload_to_fps() -> void:
 		"economy": {"chips": 3, "armor": 4, "ammo": 30},
 		"reads": {"target_enemy": &"skulker", "threat": "Cut Purse 45%"}
 	}
-	bridge.call("set_payload", payload)
+	bridge.call("set_payload", payload, "res://scenes/combat/TestCombat.tscn", {"shooter_chips": 9})
 	assert_true(bool(bridge.call("has_pending_payload")), "Bridge should report a pending arena payload.")
+	assert_true(bool(bridge.call("has_pending_return_state")), "Bridge should carry card-table return state with the payload.")
 	var taken: Dictionary = bridge.call("take_payload")
 	assert_eq(String(taken.get("weapon_card", "")), "quick_slash", "Bridge should hand the same weapon card to FPS.")
 	assert_false(bool(bridge.call("has_pending_payload")), "Taking the payload should clear the pending handoff.")
+	var return_state: Dictionary = bridge.call("take_return_state")
+	assert_eq(int(return_state.get("shooter_chips", 0)), 9, "Bridge should hand return state back to the card table.")
+	assert_false(bool(bridge.call("has_pending_return_state")), "Taking return state should clear the pending return state.")
 	bridge.call("set_result", {"source": "fps_arena", "chips_awarded": 7, "cards_to_draw": 5})
 	assert_true(bool(bridge.call("has_pending_result")), "Bridge should report a pending arena result.")
 	var result: Dictionary = bridge.call("take_result")

@@ -19,6 +19,9 @@ const DEFAULT_BRIDGE_PAYLOAD := {
 const SETTINGS_PATH := "user://fps_settings.cfg"
 const DEFAULT_AIM_SETTINGS := {
 	"mouse_sensitivity": 0.00155,
+	"gamepad_look_sensitivity": 2.4,
+	"gamepad_deadzone": 0.18,
+	"gamepad_response_curve": 1.55,
 	"fov": 74.0,
 	"sprint_fov_add": 5.0,
 	"ads_fov": 56.0,
@@ -53,10 +56,17 @@ var kill_label: Label
 var status_label: Label
 var loadout_label: Label
 var ability_label: Label
+var card_hud_panel: PanelContainer
+var card_hud_weapon_label: Label
+var card_hud_economy_label: Label
+var card_hud_ability_row: HBoxContainer
+var card_hud_summary_label: Label
 var telemetry_label: Label
 var reward_panel: PanelContainer
 var reward_label: RichTextLabel
 var settings_panel: PanelContainer
+var settings_backdrop: ColorRect
+var settings_footer_label: Label
 var crosshair: Control
 var hit_marker: Control
 var damage_flash: ColorRect
@@ -562,6 +572,15 @@ func restart_encounter() -> void:
 	_spawn_wave()
 
 
+func _on_player_restart_requested() -> void:
+	if player != null and bool(player.get("dead")):
+		wave_active = false
+		rewards_pending = false
+		_return_to_card_table(_build_arena_result({}, false))
+		return
+	restart_encounter()
+
+
 func _build_world() -> void:
 	var environment := WorldEnvironment.new()
 	environment.name = "WorldEnvironment"
@@ -749,7 +768,7 @@ func _build_player() -> void:
 	player.health_changed.connect(_on_player_health_changed)
 	player.damage_taken.connect(_on_player_damage_taken)
 	player.weapon_state_changed.connect(_on_weapon_state_changed)
-	player.request_restart.connect(restart_encounter)
+	player.request_restart.connect(_on_player_restart_requested)
 	if player.has_method("apply_aim_settings"):
 		player.call("apply_aim_settings", aim_settings)
 	if player.weapon != null:
@@ -838,6 +857,8 @@ func _build_ui() -> void:
 	ability_label.add_theme_color_override("font_color", Color(0.74, 0.96, 1.0))
 	hud_root.add_child(ability_label)
 
+	_build_card_combat_hud(hud_root)
+
 	telemetry_label = Label.new()
 	telemetry_label.name = "TelemetryLabel"
 	telemetry_label.anchor_left = 0.035
@@ -852,6 +873,57 @@ func _build_ui() -> void:
 	_build_hit_marker(hud_root)
 	_build_reward_panel(hud_root)
 	_build_settings_panel(hud_root)
+
+
+func _build_card_combat_hud(root: Control) -> void:
+	card_hud_panel = PanelContainer.new()
+	card_hud_panel.name = "CardCombatHud"
+	card_hud_panel.anchor_left = 0.035
+	card_hud_panel.anchor_top = 0.72
+	card_hud_panel.anchor_right = 0.965
+	card_hud_panel.anchor_bottom = 0.885
+	card_hud_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(card_hud_panel)
+
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 12)
+	margin.add_theme_constant_override("margin_top", 10)
+	margin.add_theme_constant_override("margin_right", 12)
+	margin.add_theme_constant_override("margin_bottom", 10)
+	card_hud_panel.add_child(margin)
+
+	var layout := VBoxContainer.new()
+	layout.add_theme_constant_override("separation", 6)
+	margin.add_child(layout)
+
+	var top_row := HBoxContainer.new()
+	top_row.add_theme_constant_override("separation", 12)
+	layout.add_child(top_row)
+
+	card_hud_weapon_label = Label.new()
+	card_hud_weapon_label.name = "CardHudWeaponLabel"
+	card_hud_weapon_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	card_hud_weapon_label.add_theme_font_size_override("font_size", 16)
+	card_hud_weapon_label.add_theme_color_override("font_color", Color(1.0, 0.82, 0.34))
+	top_row.add_child(card_hud_weapon_label)
+
+	card_hud_economy_label = Label.new()
+	card_hud_economy_label.name = "CardHudEconomyLabel"
+	card_hud_economy_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	card_hud_economy_label.add_theme_font_size_override("font_size", 14)
+	card_hud_economy_label.add_theme_color_override("font_color", Color(0.78, 0.96, 1.0))
+	top_row.add_child(card_hud_economy_label)
+
+	card_hud_ability_row = HBoxContainer.new()
+	card_hud_ability_row.name = "CardHudAbilityRow"
+	card_hud_ability_row.add_theme_constant_override("separation", 8)
+	layout.add_child(card_hud_ability_row)
+
+	card_hud_summary_label = Label.new()
+	card_hud_summary_label.name = "CardHudSummaryLabel"
+	card_hud_summary_label.add_theme_font_size_override("font_size", 12)
+	card_hud_summary_label.add_theme_color_override("font_color", Color(0.74, 0.78, 0.84))
+	layout.add_child(card_hud_summary_label)
 
 
 func _build_crosshair(root: Control) -> void:
@@ -900,6 +972,8 @@ func toggle_settings_menu() -> void:
 
 func _set_settings_open(open: bool) -> void:
 	settings_open = open
+	if settings_backdrop != null:
+		settings_backdrop.visible = settings_open
 	if settings_panel != null:
 		settings_panel.visible = settings_open
 	if player != null and player.has_method("set_gameplay_input_enabled"):
@@ -907,12 +981,20 @@ func _set_settings_open(open: bool) -> void:
 
 
 func _build_settings_panel(root: Control) -> void:
+	settings_backdrop = ColorRect.new()
+	settings_backdrop.name = "FPSSettingsBackdrop"
+	settings_backdrop.set_anchors_preset(Control.PRESET_FULL_RECT)
+	settings_backdrop.color = Color(0.012, 0.014, 0.018, 0.68)
+	settings_backdrop.visible = false
+	settings_backdrop.mouse_filter = Control.MOUSE_FILTER_STOP
+	root.add_child(settings_backdrop)
+
 	settings_panel = PanelContainer.new()
 	settings_panel.name = "FPSSettingsPanel"
-	settings_panel.anchor_left = 0.18
-	settings_panel.anchor_top = 0.08
-	settings_panel.anchor_right = 0.82
-	settings_panel.anchor_bottom = 0.92
+	settings_panel.anchor_left = 0.13
+	settings_panel.anchor_top = 0.07
+	settings_panel.anchor_right = 0.87
+	settings_panel.anchor_bottom = 0.93
 	settings_panel.visible = false
 	settings_panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	root.add_child(settings_panel)
@@ -941,8 +1023,14 @@ func _build_settings_panel(root: Control) -> void:
 		_reset_all_keybinds()
 	)
 	header.add_child(reset_controls_button)
+	var reset_all_button := Button.new()
+	reset_all_button.text = "Reset All"
+	reset_all_button.pressed.connect(func() -> void:
+		_reset_all_settings()
+	)
+	header.add_child(reset_all_button)
 	var close_button := Button.new()
-	close_button.text = "Close"
+	close_button.text = "Back"
 	close_button.pressed.connect(func() -> void:
 		_set_settings_open(false)
 	)
@@ -962,6 +1050,12 @@ func _build_settings_panel(root: Control) -> void:
 	aim_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	aim_hint.add_theme_font_size_override("font_size", 13)
 	aim_tab.add_child(aim_hint)
+	_add_preset_row(aim_tab, "Aim Presets", [
+		{"id": "default_fps", "label": "Default FPS"},
+		{"id": "tactical", "label": "Tactical"},
+		{"id": "controller", "label": "Controller"},
+		{"id": "left_handed", "label": "Left-Handed"}
+	])
 	_add_setting_section(aim_tab, "Mouse")
 	_add_slider_row(aim_tab, "Look Sensitivity", 0.00045, 0.0045, 0.00005, float(aim_settings.get("mouse_sensitivity", 0.00155)), func(value: float) -> void:
 		aim_settings["mouse_sensitivity"] = value
@@ -983,6 +1077,22 @@ func _build_settings_panel(root: Control) -> void:
 		_apply_player_settings()
 		_save_player_settings()
 	)
+	_add_setting_section(aim_tab, "Controller Look")
+	var gamepad_sens_changed := func(value: float) -> void:
+		aim_settings["gamepad_look_sensitivity"] = value
+		_apply_player_settings()
+		_save_player_settings()
+	_add_slider_row(aim_tab, "Stick Sensitivity", 0.4, 6.0, 0.05, float(aim_settings.get("gamepad_look_sensitivity", 2.4)), gamepad_sens_changed)
+	var deadzone_changed := func(value: float) -> void:
+		aim_settings["gamepad_deadzone"] = value
+		_apply_player_settings()
+		_save_player_settings()
+	_add_slider_row(aim_tab, "Stick Deadzone", 0.04, 0.45, 0.01, float(aim_settings.get("gamepad_deadzone", 0.18)), deadzone_changed, "%")
+	var curve_changed := func(value: float) -> void:
+		aim_settings["gamepad_response_curve"] = value
+		_apply_player_settings()
+		_save_player_settings()
+	_add_slider_row(aim_tab, "Response Curve", 0.75, 3.0, 0.05, float(aim_settings.get("gamepad_response_curve", 1.55)), curve_changed)
 	_add_setting_section(aim_tab, "Field of View")
 	var hip_fov_changed := func(value: float) -> void:
 		aim_settings["fov"] = value
@@ -1100,6 +1210,12 @@ func _build_settings_panel(root: Control) -> void:
 	rebind_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	rebind_status_label.add_theme_font_size_override("font_size", 13)
 	controls_tab.add_child(rebind_status_label)
+	_add_preset_row(controls_tab, "Control Presets", [
+		{"id": "default_fps", "label": "Default FPS"},
+		{"id": "tactical", "label": "Tactical"},
+		{"id": "controller", "label": "Controller"},
+		{"id": "left_handed", "label": "Left-Handed"}
+	])
 
 	keybind_buttons.clear()
 	_add_keybind_group(controls_tab, "Movement", "movement")
@@ -1109,6 +1225,14 @@ func _build_settings_panel(root: Control) -> void:
 	_refresh_keybind_rows()
 
 	_rebuild_preview_crosshair(preview_crosshair)
+
+	settings_footer_label = Label.new()
+	settings_footer_label.name = "SettingsFooter"
+	settings_footer_label.text = "Esc / Back closes settings. Changes save instantly."
+	settings_footer_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	settings_footer_label.add_theme_font_size_override("font_size", 12)
+	settings_footer_label.add_theme_color_override("font_color", Color(0.72, 0.78, 0.84))
+	layout.add_child(settings_footer_label)
 
 
 func _add_settings_tab(tabs: TabContainer, tab_name: String) -> VBoxContainer:
@@ -1211,6 +1335,26 @@ func _add_checkbox_row(parent: VBoxContainer, label_text: String, enabled: bool,
 	parent.add_child(checkbox)
 
 
+func _add_preset_row(parent: VBoxContainer, title_text: String, presets: Array[Dictionary]) -> void:
+	var title := Label.new()
+	title.text = title_text
+	title.add_theme_font_size_override("font_size", 16)
+	title.add_theme_color_override("font_color", Color(1.0, 0.82, 0.34))
+	parent.add_child(title)
+
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	parent.add_child(row)
+	for preset in presets:
+		var button := Button.new()
+		button.text = String(preset.get("label", "Preset"))
+		var preset_id := String(preset.get("id", "default_fps"))
+		button.pressed.connect(func() -> void:
+			_apply_settings_preset(preset_id)
+		)
+		row.add_child(button)
+
+
 func _add_setting_section(parent: VBoxContainer, title_text: String) -> void:
 	var title := Label.new()
 	title.text = title_text
@@ -1274,6 +1418,100 @@ func _format_setting_value(value: float, suffix: String = "") -> String:
 	if value < 0.01:
 		return "%.4f" % value
 	return "%.1f" % value
+
+
+func _apply_settings_preset(preset_id: String) -> void:
+	match preset_id:
+		"tactical":
+			aim_settings.merge({
+				"mouse_sensitivity": 0.00115,
+				"gamepad_look_sensitivity": 1.9,
+				"gamepad_deadzone": 0.16,
+				"gamepad_response_curve": 1.85,
+				"fov": 80.0,
+				"ads_fov": 52.0,
+				"ads_sensitivity_scale": 0.48,
+				"ads_toggle": false
+			}, true)
+			crosshair_settings.merge({"gap": 5.0, "length": 7.0, "thickness": 2.0, "dot_size": 1.0, "dynamic_gap": false}, true)
+			_apply_default_keybinds()
+		"controller":
+			aim_settings.merge({
+				"mouse_sensitivity": 0.00155,
+				"gamepad_look_sensitivity": 3.0,
+				"gamepad_deadzone": 0.20,
+				"gamepad_response_curve": 1.35,
+				"fov": 76.0,
+				"ads_fov": 56.0,
+				"ads_sensitivity_scale": 0.66,
+				"ads_toggle": true
+			}, true)
+			crosshair_settings.merge({"gap": 8.0, "length": 9.0, "thickness": 3.0, "dot_size": 3.0, "dynamic_gap": true}, true)
+			_apply_default_keybinds()
+		"left_handed":
+			aim_settings.merge({
+				"mouse_sensitivity": 0.00155,
+				"gamepad_look_sensitivity": 2.4,
+				"gamepad_deadzone": 0.18,
+				"gamepad_response_curve": 1.55,
+				"fov": 74.0,
+				"ads_fov": 56.0,
+				"ads_sensitivity_scale": 0.62,
+				"ads_toggle": false
+			}, true)
+			crosshair_settings.merge(DEFAULT_CROSSHAIR_SETTINGS.duplicate(true), true)
+			_apply_left_handed_keybinds()
+		_:
+			_reset_all_settings()
+			return
+	_apply_player_settings()
+	_update_crosshair()
+	_refresh_keybind_rows()
+	_save_player_settings()
+	if rebind_status_label != null:
+		rebind_status_label.text = "%s preset applied." % preset_id.capitalize()
+	if settings_footer_label != null:
+		settings_footer_label.text = "Preset applied. Changes save instantly."
+
+
+func _reset_all_settings() -> void:
+	aim_settings = DEFAULT_AIM_SETTINGS.duplicate(true)
+	crosshair_settings = DEFAULT_CROSSHAIR_SETTINGS.duplicate(true)
+	_apply_default_keybinds()
+	_apply_player_settings()
+	_update_crosshair()
+	_refresh_keybind_rows()
+	_save_player_settings()
+	if rebind_status_label != null:
+		rebind_status_label.text = "All aim, reticle, and controls reset to defaults."
+	if settings_footer_label != null:
+		settings_footer_label.text = "Defaults restored. Close and reopen to refresh slider positions."
+
+
+func _apply_default_keybinds() -> void:
+	for binding in _get_rebindable_actions():
+		_apply_binding_events(StringName(binding.get("action", &"")), _get_default_input_events(binding))
+
+
+func _apply_left_handed_keybinds() -> void:
+	_apply_default_keybinds()
+	_apply_encoded_binding(&"fps_move_forward", "key:%d|joy_button:%d" % [KEY_UP, JOY_BUTTON_DPAD_UP])
+	_apply_encoded_binding(&"fps_move_back", "key:%d|joy_button:%d" % [KEY_DOWN, JOY_BUTTON_DPAD_DOWN])
+	_apply_encoded_binding(&"fps_move_left", "key:%d|joy_button:%d" % [KEY_LEFT, JOY_BUTTON_DPAD_LEFT])
+	_apply_encoded_binding(&"fps_move_right", "key:%d|joy_button:%d" % [KEY_RIGHT, JOY_BUTTON_DPAD_RIGHT])
+	_apply_encoded_binding(&"fps_reload", "key:%d|joy_button:%d" % [KEY_ENTER, JOY_BUTTON_X])
+	_apply_encoded_binding(&"fps_ability_1", "key:%d|joy_button:%d" % [KEY_U, JOY_BUTTON_LEFT_SHOULDER])
+	_apply_encoded_binding(&"fps_ability_2", "key:%d|joy_button:%d" % [KEY_I, JOY_BUTTON_RIGHT_SHOULDER])
+	_apply_encoded_binding(&"fps_ability_3", "key:%d|joy_button:%d" % [KEY_O, JOY_BUTTON_Y])
+	_apply_encoded_binding(&"fps_ability_4", "key:%d|joy_button:%d" % [KEY_P, JOY_BUTTON_B])
+
+
+func _apply_binding_events(action: StringName, events: Array[InputEvent]) -> void:
+	if not InputMap.has_action(action):
+		InputMap.add_action(action)
+	InputMap.action_erase_events(action)
+	for event in events:
+		InputMap.action_add_event(action, event)
 
 
 func _get_rebindable_actions() -> Array[Dictionary]:
@@ -1725,6 +1963,9 @@ func _load_player_settings() -> void:
 	if config.load(SETTINGS_PATH) != OK:
 		return
 	aim_settings["mouse_sensitivity"] = float(config.get_value("aim", "mouse_sensitivity", aim_settings.get("mouse_sensitivity", 0.00155)))
+	aim_settings["gamepad_look_sensitivity"] = float(config.get_value("aim", "gamepad_look_sensitivity", aim_settings.get("gamepad_look_sensitivity", 2.4)))
+	aim_settings["gamepad_deadzone"] = float(config.get_value("aim", "gamepad_deadzone", aim_settings.get("gamepad_deadzone", 0.18)))
+	aim_settings["gamepad_response_curve"] = float(config.get_value("aim", "gamepad_response_curve", aim_settings.get("gamepad_response_curve", 1.55)))
 	aim_settings["fov"] = float(config.get_value("aim", "fov", aim_settings.get("fov", 74.0)))
 	aim_settings["sprint_fov_add"] = float(config.get_value("aim", "sprint_fov_add", aim_settings.get("sprint_fov_add", 5.0)))
 	aim_settings["ads_fov"] = float(config.get_value("aim", "ads_fov", aim_settings.get("ads_fov", 56.0)))
@@ -1751,6 +1992,9 @@ func _load_player_settings() -> void:
 func _save_player_settings() -> void:
 	var config := ConfigFile.new()
 	config.set_value("aim", "mouse_sensitivity", aim_settings.get("mouse_sensitivity", 0.00155))
+	config.set_value("aim", "gamepad_look_sensitivity", aim_settings.get("gamepad_look_sensitivity", 2.4))
+	config.set_value("aim", "gamepad_deadzone", aim_settings.get("gamepad_deadzone", 0.18))
+	config.set_value("aim", "gamepad_response_curve", aim_settings.get("gamepad_response_curve", 1.55))
 	config.set_value("aim", "fov", aim_settings.get("fov", 74.0))
 	config.set_value("aim", "sprint_fov_add", aim_settings.get("sprint_fov_add", 5.0))
 	config.set_value("aim", "ads_fov", aim_settings.get("ads_fov", 56.0))
@@ -1842,17 +2086,19 @@ func get_arena_result_preview(reward_index: int = 0) -> Dictionary:
 	var options := _build_reward_options()
 	var safe_index := clampi(reward_index, 0, maxi(0, options.size() - 1))
 	var reward: Dictionary = options[safe_index] if not options.is_empty() else {}
-	return _build_arena_result(reward)
+	return _build_arena_result(reward, true)
 
 
-func _build_arena_result(reward: Dictionary) -> Dictionary:
+func _build_arena_result(reward: Dictionary, cleared: bool = true) -> Dictionary:
 	var clear_time := float(Time.get_ticks_msec() - wave_started_msec) / 1000.0 if wave_started_msec > 0 else 0.0
 	var remaining_health := int(player.get("health")) if player != null else 0
 	var remaining_armor := int(player.get("armor")) if player != null else 0
+	var objective_score := _calculate_objective_score(cleared, clear_time)
 	return {
 		"source": "fps_arena",
 		"map_name": String(tactical_map.get("name", "Crossfire Table")),
-		"cleared": true,
+		"outcome": "win" if cleared else "defeat",
+		"cleared": cleared,
 		"wave": wave_index,
 		"kills": kills,
 		"clear_time": clear_time,
@@ -1862,23 +2108,49 @@ func _build_arena_result(reward: Dictionary) -> Dictionary:
 		"critical_hits": critical_hits,
 		"damage_dealt": damage_dealt,
 		"damage_taken": damage_taken,
+		"objective_score": objective_score,
+		"wounds_taken": _calculate_wounds_taken(cleared, remaining_health),
 		"remaining_health": remaining_health,
 		"remaining_armor": remaining_armor,
 		"loadout": get_active_loadout_summary(),
 		"selected_reward": reward.duplicate(true),
-		"chips_awarded": _calculate_arena_chips(reward),
-		"cards_to_draw": 5
+		"chips_awarded": _calculate_arena_chips(reward, cleared, objective_score),
+		"cards_to_draw": 5 if cleared else 0
 	}
 
 
-func _calculate_arena_chips(reward: Dictionary) -> int:
+func _calculate_arena_chips(reward: Dictionary, cleared: bool = true, objective_score: int = 0) -> int:
+	if not cleared:
+		return mini(2, max(0, kills))
 	var chips := 4 + kills
 	if _get_hit_rate() >= 0.50:
 		chips += 2
 	if damage_taken <= 20:
 		chips += 1
+	if objective_score >= 90:
+		chips += 1
 	chips += int(reward.get("chip_bonus", 0))
 	return maxi(1, chips)
+
+
+func _calculate_objective_score(cleared: bool, clear_time: float) -> int:
+	if not cleared:
+		return clampi(kills * 12 + int(_get_hit_rate() * 20.0), 0, 55)
+	var score := 70 + kills * 4 + int(_get_hit_rate() * 18.0)
+	if clear_time > 0.0 and clear_time <= 30.0:
+		score += 8
+	if damage_taken <= 20:
+		score += 6
+	return clampi(score, 0, 100)
+
+
+func _calculate_wounds_taken(cleared: bool, remaining_health: int) -> int:
+	var wounds := int(floor(float(max(0, damage_taken)) / 35.0))
+	if not cleared:
+		wounds += 2
+	if remaining_health <= 0:
+		wounds += 1
+	return wounds
 
 
 func _return_to_card_table(result: Dictionary) -> void:
@@ -1962,6 +2234,7 @@ func _refresh_ui() -> void:
 		]
 	if ability_label != null:
 		ability_label.text = _get_ability_hud_text()
+	_refresh_card_combat_hud(ammo_state)
 	if telemetry_label != null:
 		var run_time := float(Time.get_ticks_msec() - run_started_msec) / 1000.0 if run_started_msec > 0 else 0.0
 		telemetry_label.text = "Time %.1fs | Waves %d | Hits %.0f%% | Crits %d | Damage %d | Taken %d" % [
@@ -1972,6 +2245,66 @@ func _refresh_ui() -> void:
 			damage_dealt,
 			damage_taken
 		]
+
+
+func _refresh_card_combat_hud(ammo_state: Dictionary) -> void:
+	if card_hud_panel == null:
+		return
+	var summary := get_active_loadout_summary()
+	if card_hud_weapon_label != null:
+		card_hud_weapon_label.text = "WEAPON CARD: %s" % String(summary.get("weapon", "House Sidearm"))
+	if card_hud_economy_label != null:
+		card_hud_economy_label.text = "Chips %d  Armor %d  Ammo %d/%d" % [
+			int(summary.get("chips", 0)),
+			int(summary.get("armor", 0)),
+			int(ammo_state.get("ammo", 0)),
+			int(ammo_state.get("reserve", 0))
+		]
+	if card_hud_ability_row != null:
+		_clear_children(card_hud_ability_row)
+		var max_slots := maxi(4, active_abilities.size())
+		for index in range(max_slots):
+			card_hud_ability_row.add_child(_build_ability_card_panel(index))
+	if card_hud_summary_label != null:
+		var target_text := String(summary.get("target_enemy", ""))
+		card_hud_summary_label.text = "Loadout powers are your card hand made live. %s" % ("Read target: %s." % target_text if not target_text.is_empty() else "Slot cards before arena entry to add powers.")
+
+
+func _build_ability_card_panel(index: int) -> PanelContainer:
+	var panel := PanelContainer.new()
+	panel.name = "AbilityCardSlot%d" % (index + 1)
+	panel.custom_minimum_size = Vector2(148, 58)
+	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 8)
+	margin.add_theme_constant_override("margin_top", 6)
+	margin.add_theme_constant_override("margin_right", 8)
+	margin.add_theme_constant_override("margin_bottom", 6)
+	panel.add_child(margin)
+
+	var label := Label.new()
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.add_theme_font_size_override("font_size", 12)
+	if index < active_abilities.size():
+		label.text = _get_card_hud_ability_text(index)
+		label.add_theme_color_override("font_color", Color(0.88, 0.98, 1.0) if _is_ability_ready(index) else Color(0.58, 0.66, 0.70))
+	else:
+		label.text = "SLOT %d\nNo card equipped" % (index + 1)
+		label.add_theme_color_override("font_color", Color(0.45, 0.49, 0.52))
+	margin.add_child(label)
+	return panel
+
+
+func _get_card_hud_ability_text(index: int) -> String:
+	var entry: Dictionary = active_abilities[index]
+	var ability: Dictionary = entry.get("ability", {})
+	var key := _get_primary_action_binding_text(StringName("fps_ability_%d" % (index + 1)))
+	var display := _get_ability_display_name(String(entry.get("id", "")), String(ability.get("kind", "")))
+	var source := String(entry.get("card_name", entry.get("id", "Card")))
+	var cooldown := ability_cooldowns[index] if index < ability_cooldowns.size() else 0.0
+	var state := "READY" if cooldown <= 0.0 else "%.1fs" % cooldown
+	return "%s  %s\n%s\n%s" % [key, state, display, source]
 
 
 func _consume_pending_arena_bridge_payload() -> void:

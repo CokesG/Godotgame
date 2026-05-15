@@ -784,6 +784,64 @@ func get_state() -> Dictionary:
 	}
 
 
+func get_snapshot() -> Dictionary:
+	return {
+		"current_node_index": current_node_index,
+		"player_current_hp": player_current_hp,
+		"deck_paths": deck_paths.duplicate(),
+		"relic_paths": relic_paths.duplicate(),
+		"pending_card_reward_paths": pending_card_reward_paths.duplicate(),
+		"pending_relic_reward_paths": pending_relic_reward_paths.duplicate(),
+		"run_outcome": run_outcome,
+		"last_completed_node_name": last_completed_node_name,
+		"combats_won": combats_won,
+		"cards_claimed": cards_claimed,
+		"relics_claimed": relics_claimed,
+		"damage_taken_total": damage_taken_total,
+		"lowest_blood": lowest_blood,
+		"reward_history": reward_history.duplicate(true),
+		"last_reward_decision": last_reward_decision.duplicate(true)
+	}
+
+
+func restore_snapshot(snapshot: Dictionary) -> void:
+	if snapshot.is_empty():
+		return
+
+	current_node_index = clampi(int(snapshot.get("current_node_index", current_node_index)), 0, RUN_NODES.size() - 1)
+	player_current_hp = clampi(int(snapshot.get("player_current_hp", player_current_hp)), 0, PLAYER_MAX_HP)
+	deck_paths = _string_array(snapshot.get("deck_paths", deck_paths))
+	relic_paths = _string_array(snapshot.get("relic_paths", relic_paths))
+	pending_card_reward_paths = _string_array(snapshot.get("pending_card_reward_paths", pending_card_reward_paths))
+	pending_relic_reward_paths = _string_array(snapshot.get("pending_relic_reward_paths", pending_relic_reward_paths))
+	run_outcome = String(snapshot.get("run_outcome", run_outcome))
+	last_completed_node_name = String(snapshot.get("last_completed_node_name", last_completed_node_name))
+	combats_won = int(snapshot.get("combats_won", combats_won))
+	cards_claimed = int(snapshot.get("cards_claimed", cards_claimed))
+	relics_claimed = int(snapshot.get("relics_claimed", relics_claimed))
+	damage_taken_total = int(snapshot.get("damage_taken_total", damage_taken_total))
+	lowest_blood = clampi(int(snapshot.get("lowest_blood", lowest_blood)), 0, PLAYER_MAX_HP)
+	reward_history = _dictionary_array(snapshot.get("reward_history", reward_history))
+	last_reward_decision = Dictionary(snapshot.get("last_reward_decision", last_reward_decision)).duplicate(true)
+	log_requested.emit("Run restored from arena return state.")
+	_emit_state()
+
+
+func apply_arena_defeat(result: Dictionary) -> void:
+	if run_outcome != "running":
+		return
+
+	run_outcome = "defeat"
+	damage_taken_total += max(0, int(result.get("damage_taken", 0)))
+	lowest_blood = 0
+	player_current_hp = 0
+	pending_card_reward_paths.clear()
+	pending_relic_reward_paths.clear()
+	last_completed_node_name = String(get_current_node().get("name", "Arena"))
+	log_requested.emit("Arena defeat: the House takes the table.")
+	_emit_state()
+
+
 func _build_card_rewards(node: Dictionary) -> Array[String]:
 	var reward_tags: Array = node.get("reward_tags", [])
 	var simulator = BALANCE_SIMULATOR_SCRIPT.new()
@@ -1653,6 +1711,21 @@ func _format_signed_float(value: float) -> String:
 	if value > 0.0:
 		return "+%.2f" % value
 	return "%.2f" % value
+
+
+func _string_array(values: Variant) -> Array[String]:
+	var strings: Array[String] = []
+	for value in values:
+		strings.append(String(value))
+	return strings
+
+
+func _dictionary_array(values: Variant) -> Array[Dictionary]:
+	var dictionaries: Array[Dictionary] = []
+	for value in values:
+		if typeof(value) == TYPE_DICTIONARY:
+			dictionaries.append(Dictionary(value).duplicate(true))
+	return dictionaries
 
 
 func _get_resource_name(resource: Resource) -> String:

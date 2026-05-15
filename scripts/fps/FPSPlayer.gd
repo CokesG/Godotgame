@@ -18,6 +18,9 @@ const FPS_WEAPON_SCRIPT := preload("res://scripts/fps/FPSWeapon.gd")
 @export var jump_velocity := 5.4
 @export var gravity := 17.5
 @export var mouse_sensitivity := 0.00155
+@export var gamepad_look_sensitivity := 2.4
+@export var gamepad_deadzone := 0.18
+@export var gamepad_response_curve := 1.55
 @export var base_fov := 74.0
 @export var sprint_fov_add := 5.0
 @export var ads_fov := 56.0
@@ -130,6 +133,7 @@ func _physics_process(delta: float) -> void:
 		_update_camera(delta, Vector2.ZERO, false, false, false)
 		return
 
+	_apply_gamepad_look(delta)
 	var input_vec := Input.get_vector("fps_move_left", "fps_move_right", "fps_move_forward", "fps_move_back")
 	var wants_crouch := Input.is_action_pressed("fps_crouch")
 	var wants_ads := is_ads_active()
@@ -244,6 +248,9 @@ func dash_forward(strength: float = 11.0) -> void:
 
 func apply_aim_settings(settings: Dictionary) -> void:
 	mouse_sensitivity = float(settings.get("mouse_sensitivity", mouse_sensitivity))
+	gamepad_look_sensitivity = clampf(float(settings.get("gamepad_look_sensitivity", gamepad_look_sensitivity)), 0.4, 6.0)
+	gamepad_deadzone = clampf(float(settings.get("gamepad_deadzone", gamepad_deadzone)), 0.04, 0.45)
+	gamepad_response_curve = clampf(float(settings.get("gamepad_response_curve", gamepad_response_curve)), 0.75, 3.0)
 	base_fov = clampf(float(settings.get("fov", base_fov)), 65.0, 105.0)
 	sprint_fov_add = clampf(float(settings.get("sprint_fov_add", sprint_fov_add)), 0.0, 12.0)
 	ads_fov = clampf(float(settings.get("ads_fov", ads_fov)), 35.0, 95.0)
@@ -417,6 +424,40 @@ func _apply_mouse_look(relative_motion: Vector2) -> void:
 	pitch = clampf(pitch + relative_motion.y * active_sensitivity * y_sign, deg_to_rad(-86.0), deg_to_rad(86.0))
 	if weapon != null:
 		weapon.add_sway(relative_motion)
+
+
+func _apply_gamepad_look(delta: float) -> void:
+	var joypads := Input.get_connected_joypads()
+	if joypads.is_empty():
+		return
+	var device := int(joypads[0])
+	var raw := Vector2(
+		Input.get_joy_axis(device, JOY_AXIS_RIGHT_X),
+		Input.get_joy_axis(device, JOY_AXIS_RIGHT_Y)
+	)
+	_apply_gamepad_look_vector(raw, delta)
+
+
+func _apply_gamepad_look_vector(raw_input: Vector2, delta: float) -> void:
+	var shaped := _shape_gamepad_look(raw_input)
+	if shaped.is_zero_approx():
+		return
+	var active_sensitivity := gamepad_look_sensitivity * (ads_sensitivity_scale if is_ads_active() else 1.0)
+	rotate_y(-shaped.x * active_sensitivity * delta)
+	var y_sign := 1.0 if invert_y else -1.0
+	pitch = clampf(pitch + shaped.y * active_sensitivity * delta * y_sign, deg_to_rad(-86.0), deg_to_rad(86.0))
+	if weapon != null:
+		weapon.add_sway(shaped * 42.0 * delta)
+
+
+func _shape_gamepad_look(raw_input: Vector2) -> Vector2:
+	var magnitude := raw_input.length()
+	if magnitude <= gamepad_deadzone:
+		return Vector2.ZERO
+	var normalized := raw_input / magnitude
+	var scaled := clampf((magnitude - gamepad_deadzone) / (1.0 - gamepad_deadzone), 0.0, 1.0)
+	scaled = pow(scaled, gamepad_response_curve)
+	return normalized * scaled
 
 
 func _die() -> void:

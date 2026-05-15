@@ -4,13 +4,17 @@ var pending_payload: Dictionary = {}
 var last_payload: Dictionary = {}
 var pending_result: Dictionary = {}
 var last_result: Dictionary = {}
+var pending_return_state: Dictionary = {}
+var last_return_state: Dictionary = {}
 var return_scene_path := "res://scenes/combat/TestCombat.tscn"
 
 
-func set_payload(payload: Dictionary, return_scene: String = "res://scenes/combat/TestCombat.tscn") -> void:
+func set_payload(payload: Dictionary, return_scene: String = "res://scenes/combat/TestCombat.tscn", return_state: Dictionary = {}) -> void:
 	pending_payload = payload.duplicate(true)
 	last_payload = payload.duplicate(true)
 	return_scene_path = return_scene
+	if not return_state.is_empty():
+		set_return_state(return_state)
 
 
 func has_pending_payload() -> bool:
@@ -29,6 +33,29 @@ func peek_payload() -> Dictionary:
 
 func get_last_payload() -> Dictionary:
 	return last_payload.duplicate(true)
+
+
+func set_return_state(return_state: Dictionary) -> void:
+	pending_return_state = return_state.duplicate(true)
+	last_return_state = return_state.duplicate(true)
+
+
+func has_pending_return_state() -> bool:
+	return not pending_return_state.is_empty()
+
+
+func take_return_state() -> Dictionary:
+	var return_state := pending_return_state.duplicate(true)
+	pending_return_state.clear()
+	return return_state
+
+
+func peek_return_state() -> Dictionary:
+	return pending_return_state.duplicate(true)
+
+
+func get_last_return_state() -> Dictionary:
+	return last_return_state.duplicate(true)
 
 
 func set_result(result: Dictionary) -> void:

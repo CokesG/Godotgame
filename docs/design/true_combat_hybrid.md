@@ -57,8 +57,12 @@ Current FPS ability contract:
 - Movement, combat, system, and ability controls have per-action reset buttons plus a reset-all-controls button.
 - Duplicate inputs are rejected during rebinding with an inline conflict warning. Escape remains fixed so the player can always reopen settings or cancel a rebind.
 - Aim down sights defaults to right mouse / left trigger and has separate ADS FOV, ADS sensitivity scale, and toggle/hold settings.
+- Right-stick look now has sensitivity, deadzone, and response-curve settings.
+- Settings include one-click `Default FPS`, `Tactical`, `Controller`, and `Left-Handed` presets.
+- The FPS HUD includes a lower card-power rail so weapon, chip/armor/ammo economy, and the first four slotted ability cards stay visible during live combat.
 - FPS reward selection now builds an arena result with map name, wave, kills, hit rate, damage, selected reward, chips awarded, and next-hand draw count, then returns to `TestCombat` through `ArenaBridge`.
 - `TestCombat` consumes pending arena results on load, shows `ArenaPayoutPanel`, applies the chip award, blocks normal card actions until `Start Next Hand`, and leaves the player on a fresh prep hand.
+- `ArenaBridge`, `DeckManager`, and `RunManager` expose snapshot/restore hooks so the table can preserve exact deck piles, loadout piles, run node, rewards, relics, Blood, carryover payouts, and defeat state across the arena scene swap.
 
 For the board-flow/UI contract, see `docs/design/board_flow_shooter_fusion.md`. That document is the source of truth for how the existing card-board interface should evolve around the movement/combat work happening in the other implementation thread.
 

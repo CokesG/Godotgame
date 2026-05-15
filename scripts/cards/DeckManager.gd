@@ -184,6 +184,27 @@ func discard_hand() -> void:
 	_emit_state()
 
 
+func resolve_loadout_pile() -> Array[Resource]:
+	var resolved: Array[Resource] = []
+	if loadout_pile.is_empty():
+		log_requested.emit("No loadout cards to resolve.")
+		return resolved
+
+	for card in loadout_pile:
+		if card == null:
+			continue
+		resolved.append(card)
+		if _card_should_exhaust(card):
+			exhaust_pile.append(card)
+		else:
+			discard_pile.append(card)
+	var count := resolved.size()
+	loadout_pile.clear()
+	log_requested.emit("Resolved %d loadout card%s after arena combat." % [count, "" if count == 1 else "s"])
+	_emit_state()
+	return resolved
+
+
 func get_counts() -> Dictionary:
 	return {
 		"draw": draw_pile.size(),
@@ -197,6 +218,37 @@ func get_counts() -> Dictionary:
 
 func get_hand_snapshot() -> Array[Resource]:
 	return hand.duplicate()
+
+
+func get_snapshot() -> Dictionary:
+	return {
+		"starting_card_paths": starting_card_paths.duplicate(),
+		"shuffle_on_reset": shuffle_on_reset,
+		"starting_deck_paths": _cards_to_paths(starting_deck),
+		"draw_pile_paths": _cards_to_paths(draw_pile),
+		"hand_paths": _cards_to_paths(hand),
+		"discard_pile_paths": _cards_to_paths(discard_pile),
+		"exhaust_pile_paths": _cards_to_paths(exhaust_pile),
+		"loadout_pile_paths": _cards_to_paths(loadout_pile),
+		"committed_card_path": _card_to_path(committed_card)
+	}
+
+
+func restore_snapshot(snapshot: Dictionary) -> void:
+	if snapshot.is_empty():
+		return
+
+	starting_card_paths = _string_array(snapshot.get("starting_card_paths", []))
+	shuffle_on_reset = bool(snapshot.get("shuffle_on_reset", shuffle_on_reset))
+	starting_deck = _load_cards_from_paths(snapshot.get("starting_deck_paths", starting_card_paths))
+	draw_pile = _load_cards_from_paths(snapshot.get("draw_pile_paths", []))
+	hand = _load_cards_from_paths(snapshot.get("hand_paths", []))
+	discard_pile = _load_cards_from_paths(snapshot.get("discard_pile_paths", []))
+	exhaust_pile = _load_cards_from_paths(snapshot.get("exhaust_pile_paths", []))
+	loadout_pile = _load_cards_from_paths(snapshot.get("loadout_pile_paths", []))
+	committed_card = _load_card_from_path(String(snapshot.get("committed_card_path", "")))
+	log_requested.emit("Deck restored from arena return state.")
+	_emit_state()
 
 
 func get_hand_count() -> int:
@@ -236,6 +288,46 @@ func _get_card_name(card: Resource) -> String:
 	if card.has_method("get_display_name"):
 		return String(card.call("get_display_name"))
 	return String(card.get("display_name"))
+
+
+func _cards_to_paths(cards: Array[Resource]) -> Array[String]:
+	var paths: Array[String] = []
+	for card in cards:
+		var path := _card_to_path(card)
+		if not path.is_empty():
+			paths.append(path)
+	return paths
+
+
+func _card_to_path(card: Resource) -> String:
+	if card == null:
+		return ""
+	return String(card.resource_path)
+
+
+func _load_cards_from_paths(paths_value: Variant) -> Array[Resource]:
+	var cards: Array[Resource] = []
+	for path in paths_value:
+		var card := _load_card_from_path(String(path))
+		if card != null:
+			cards.append(card)
+	return cards
+
+
+func _load_card_from_path(path: String) -> Resource:
+	if path.is_empty():
+		return null
+	var card := load(path)
+	if card == null:
+		log_requested.emit("Failed to restore card resource: %s" % path)
+	return card
+
+
+func _string_array(values: Variant) -> Array[String]:
+	var strings: Array[String] = []
+	for value in values:
+		strings.append(String(value))
+	return strings
 
 
 func _emit_state() -> void:
