@@ -15,6 +15,7 @@ var draw_pile: Array[Resource] = []
 var hand: Array[Resource] = []
 var discard_pile: Array[Resource] = []
 var exhaust_pile: Array[Resource] = []
+var loadout_pile: Array[Resource] = []
 var committed_card: Resource
 
 
@@ -47,6 +48,7 @@ func reset_deck() -> void:
 	hand.clear()
 	discard_pile.clear()
 	exhaust_pile.clear()
+	loadout_pile.clear()
 	committed_card = null
 
 	if shuffle_on_reset:
@@ -105,6 +107,19 @@ func burn_card_at(hand_index: int) -> Resource:
 	hand.remove_at(hand_index)
 	exhaust_pile.append(card)
 	log_requested.emit("Burned %s." % _get_card_name(card))
+	_emit_state()
+	return card
+
+
+func slot_card_at(hand_index: int) -> Resource:
+	if hand_index < 0 or hand_index >= hand.size():
+		log_requested.emit("Cannot slot card at hand index %d." % hand_index)
+		return null
+
+	var card: Resource = hand[hand_index]
+	hand.remove_at(hand_index)
+	loadout_pile.append(card)
+	log_requested.emit("Slotted %s into loadout." % _get_card_name(card))
 	_emit_state()
 	return card
 
@@ -175,6 +190,7 @@ func get_counts() -> Dictionary:
 		"hand": hand.size(),
 		"discard": discard_pile.size(),
 		"exhaust": exhaust_pile.size(),
+		"loadout": loadout_pile.size(),
 		"committed": 1 if committed_card != null else 0
 	}
 

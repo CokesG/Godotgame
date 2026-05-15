@@ -126,15 +126,15 @@ func get_map_regions() -> Array[Dictionary]:
 	return regions
 
 
-func spawn_tracer(from: Vector3, to: Vector3, critical: bool = false) -> void:
+func spawn_tracer(start_position: Vector3, end_position: Vector3, critical: bool = false) -> void:
 	if effects_root == null:
 		return
 	var line := MeshInstance3D.new()
 	line.name = "Tracer"
 	var mesh := ImmediateMesh.new()
 	mesh.surface_begin(Mesh.PRIMITIVE_LINES)
-	mesh.surface_add_vertex(from)
-	mesh.surface_add_vertex(to)
+	mesh.surface_add_vertex(start_position)
+	mesh.surface_add_vertex(end_position)
 	mesh.surface_end()
 	line.mesh = mesh
 	line.material_override = _make_tracer_material(Color(1.0, 0.82, 0.38) if critical else Color(0.44, 0.90, 1.0))

@@ -81,6 +81,7 @@ var slot_selected_button: Button
 var burn_selected_button: Button
 var hold_selected_button: Button
 var bridge_payload_button: Button
+var enter_arena_button: Button
 var run_header_label: RichTextLabel
 var run_path_label: RichTextLabel
 var run_path_buttons_row: HBoxContainer
@@ -204,6 +205,8 @@ var shooter_chips: int = 7
 var held_hand_indices: Dictionary = {}
 var loadout_slots: Dictionary = {}
 var selected_hand_index: int = -1
+var arena_bridge_payload: Dictionary = {}
+var arena_round_armed := false
 var feedback_history: Array[String] = []
 var run_ceremony_history: Array[String] = []
 var table_rule_effect_history: Array[String] = []
@@ -1490,9 +1493,15 @@ func _build_ui() -> void:
 
 	bridge_payload_button = Button.new()
 	bridge_payload_button.name = "CombatBridgePayloadButton"
-	bridge_payload_button.text = "Bridge Payload"
+	bridge_payload_button.text = "Preview Payload"
 	bridge_payload_button.pressed.connect(_on_bridge_payload_pressed)
 	hand_action_button_row.add_child(bridge_payload_button)
+
+	enter_arena_button = Button.new()
+	enter_arena_button.name = "EnterArenaButton"
+	enter_arena_button.text = "Enter Arena"
+	enter_arena_button.pressed.connect(_on_enter_arena_pressed)
+	hand_action_button_row.add_child(enter_arena_button)
 
 	card_action_hint_label = RichTextLabel.new()
 	card_action_hint_label.name = "CardActionHint"
@@ -2071,6 +2080,35 @@ func _on_bridge_payload_pressed() -> void:
 	], FEEDBACK_CARD_COLOR, shooter_economy_label)
 
 
+func _on_enter_arena_pressed() -> void:
+	var payload := _build_combat_bridge_payload()
+	if _get_slotted_card_count() <= 0:
+		_push_feedback("Slot at least one card before entering the arena.", FEEDBACK_DAMAGE_COLOR, shooter_economy_label)
+		return
+	arena_bridge_payload = payload
+	arena_round_armed = true
+	var weapon_label := String(payload.get("weapon_card", ""))
+	if weapon_label.is_empty():
+		weapon_label = "sidearm"
+	var ability_cards: Array = payload.get("ability_cards", [])
+	var ability_count := ability_cards.size()
+	var economy: Dictionary = payload.get("economy", {})
+	_append_log("ENTER ARENA: %s" % JSON.stringify(payload))
+	_push_feedback("Arena armed: %s, %d ability card%s, %d armor, %d ammo." % [
+		weapon_label,
+		ability_count,
+		"" if ability_count == 1 else "s",
+		int(economy.get("armor", 0)),
+		int(economy.get("ammo", 0))
+	], FEEDBACK_MOVE_COLOR, shooter_economy_label)
+	if battlefield_callout_label != null:
+		battlefield_callout_label.text = "ARENA LIVE: your slotted cards are now shooter kit. Fight, spend, survive, then collect payout."
+		_pulse_canvas_item(battlefield_callout_label, FEEDBACK_MOVE_COLOR)
+	if arena_view != null and arena_view.has_method("focus_unit"):
+		arena_view.call("focus_unit", &"player")
+	_refresh_loadout_ui()
+
+
 func _on_loadout_slot_pressed(slot_id: String) -> void:
 	if loadout_slots.has(slot_id):
 		var card: Resource = loadout_slots[slot_id]
@@ -2093,10 +2131,18 @@ func _slot_selected_card(forced_slot: String = "") -> bool:
 	if shooter_chips < slot_cost:
 		_push_feedback("Need %d Chips to slot %s; you have %d." % [slot_cost, _get_card_name(card), shooter_chips], FEEDBACK_DAMAGE_COLOR, shooter_economy_label)
 		return false
+	var slotted_card: Resource = deck_manager.call("slot_card_at", selected_hand_index)
+	if slotted_card == null:
+		_push_feedback("Could not slot that card; it may have moved already.", FEEDBACK_DAMAGE_COLOR, hand_action_status_label)
+		selected_hand_index = -1
+		return false
 	shooter_chips -= slot_cost
-	loadout_slots[slot_id] = card
+	loadout_slots[slot_id] = slotted_card
 	held_hand_indices.erase(selected_hand_index)
-	_push_feedback("Slotted %s into %s for %d Chips." % [_get_card_name(card), _get_loadout_slot_label(slot_id), slot_cost], FEEDBACK_CARD_COLOR, loadout_slot_buttons.get(slot_id, null))
+	arena_round_armed = false
+	arena_bridge_payload.clear()
+	selected_hand_index = min(selected_hand_index, int(deck_manager.call("get_hand_count")) - 1)
+	_push_feedback("Slotted %s into %s for %d Chips." % [_get_card_name(slotted_card), _get_loadout_slot_label(slot_id), slot_cost], FEEDBACK_CARD_COLOR, loadout_slot_buttons.get(slot_id, null))
 	_refresh_loadout_ui()
 	return true
 
@@ -2260,15 +2306,28 @@ func _get_loadout_slot_label(slot_id: String) -> String:
 func _get_recommended_loadout_slot(card: Resource) -> String:
 	match _get_card_vfx_style(card):
 		&"attack":
-			return "weapon"
+			if not loadout_slots.has("weapon"):
+				return "weapon"
+			return _get_first_empty_loadout_slot("passive")
 		&"move", &"guard", &"read", &"trap":
 			if not loadout_slots.has("ability_1"):
 				return "ability_1"
-			return "ability_2"
+			if not loadout_slots.has("ability_2"):
+				return "ability_2"
+			return _get_first_empty_loadout_slot("passive")
 		&"ritual", &"bluff":
-			return "wager"
+			if not loadout_slots.has("wager"):
+				return "wager"
+			return _get_first_empty_loadout_slot("passive")
 		_:
-			return "passive"
+			return _get_first_empty_loadout_slot("passive")
+
+
+func _get_first_empty_loadout_slot(fallback: String) -> String:
+	for slot_id in ["weapon", "ability_1", "ability_2", "passive", "wager"]:
+		if not loadout_slots.has(slot_id):
+			return slot_id
+	return fallback
 
 
 func _get_loadout_slot_cost(card: Resource, slot_id: String) -> int:
@@ -2294,11 +2353,13 @@ func _get_slotted_card_count() -> int:
 
 func _refresh_loadout_ui() -> void:
 	if shooter_economy_label != null:
-		shooter_economy_label.text = "CHIPS %d | ARMOR %d | AMMO %d | SLOTTED %d/5 | SELECTED %s" % [
+		var arena_state := "ARENA READY" if arena_round_armed else "PREP"
+		shooter_economy_label.text = "CHIPS %d | ARMOR %d | AMMO %d | SLOTTED %d/5 | %s | SELECTED %s" % [
 			shooter_chips,
 			_get_bridge_armor_value(),
 			_get_bridge_ammo_value(),
 			_get_slotted_card_count(),
+			arena_state,
 			_get_selected_card_label()
 		]
 	for slot_id in loadout_slot_buttons.keys():
@@ -2318,6 +2379,10 @@ func _refresh_loadout_ui() -> void:
 		burn_selected_button.disabled = selected_hand_index < 0
 	if hold_selected_button != null:
 		hold_selected_button.disabled = selected_hand_index < 0
+	if enter_arena_button != null:
+		enter_arena_button.disabled = _get_slotted_card_count() <= 0
+		enter_arena_button.tooltip_text = "Slot at least one card, then enter the shooter arena with that loadout."
+		_style_compact_button(enter_arena_button, arena_round_armed or _get_slotted_card_count() > 0, FEEDBACK_MOVE_COLOR, enter_arena_button.tooltip_text)
 
 
 func _get_selected_card_label() -> String:
@@ -2354,11 +2419,13 @@ func _build_combat_bridge_payload() -> Dictionary:
 	var ability_cards: Array[String] = []
 	var passive_cards: Array[String] = []
 	var wager_cards: Array[String] = []
+	var loadout: Array[Dictionary] = []
 	for slot_id in loadout_slots.keys():
 		var card: Resource = loadout_slots[slot_id]
 		if card == null:
 			continue
 		var card_id := String(card.get("id"))
+		loadout.append(_get_shooter_card_payload(card, String(slot_id)))
 		match String(slot_id):
 			"ability_1", "ability_2":
 				ability_cards.append(card_id)
@@ -2366,21 +2433,76 @@ func _build_combat_bridge_payload() -> Dictionary:
 				passive_cards.append(card_id)
 			"wager":
 				wager_cards.append(card_id)
+	var economy := {
+		"chips": shooter_chips,
+		"armor": _get_bridge_armor_value(),
+		"ammo": _get_bridge_ammo_value()
+	}
 	return {
 		"weapon_card": String(loadout_slots.get("weapon", null).get("id")) if loadout_slots.get("weapon", null) is Resource else "",
 		"ability_cards": ability_cards,
 		"passive_cards": passive_cards,
 		"wager_cards": wager_cards,
-		"economy": {
-			"chips": shooter_chips,
-			"armor": _get_bridge_armor_value(),
-			"ammo": _get_bridge_ammo_value()
-		},
+		"loadout": loadout,
+		"economy": economy,
 		"reads": {
 			"target_enemy": _get_selected_enemy_target_id(),
 			"threat": _get_enemy_intent_line(_get_selected_enemy_target_id())
 		}
 	}
+
+
+func _get_shooter_card_payload(card: Resource, slot_id: String) -> Dictionary:
+	var style := _get_card_vfx_style(card)
+	var card_id := String(card.get("id"))
+	var payload := {
+		"slot": slot_id,
+		"id": card_id,
+		"name": _get_card_name(card),
+		"style": String(style),
+		"cost": _get_card_cost(card),
+		"input": "instant"
+	}
+	match style:
+		&"attack":
+			payload["combat_role"] = "weapon"
+			payload["weapon"] = _get_weapon_profile_for_card(card_id)
+		&"guard":
+			payload["combat_role"] = "defense_ability"
+			payload["ability"] = {"kind": "guard_shimmer", "armor": 2 + _get_card_cost(card), "cooldown": 8.0}
+		&"move":
+			payload["combat_role"] = "movement_ability"
+			payload["ability"] = {"kind": "dash", "charges": 1, "cooldown": 6.0}
+		&"read":
+			payload["combat_role"] = "intel_ability"
+			payload["ability"] = {"kind": "reveal_target", "duration": 3.5, "cooldown": 10.0}
+		&"trap":
+			payload["combat_role"] = "area_control"
+			payload["ability"] = {"kind": "snare_field", "duration": 4.0, "cooldown": 12.0}
+		&"ritual":
+			payload["combat_role"] = "wager"
+			payload["ability"] = {"kind": "blood_overclock", "risk": 2, "reward": 4}
+		&"bluff":
+			payload["combat_role"] = "debuff"
+			payload["ability"] = {"kind": "bait_ping", "duration": 2.5, "cooldown": 9.0}
+		_:
+			payload["combat_role"] = "passive"
+			payload["ability"] = {"kind": "minor_stat_boost"}
+	return payload
+
+
+func _get_weapon_profile_for_card(card_id: String) -> Dictionary:
+	match card_id:
+		"quick_slash":
+			return {"name": "Ace Cutter Revolver", "damage": 28, "magazine": 6, "fire_rate": 3.2, "range": "mid"}
+		"low_stab":
+			return {"name": "Low Stab Sidearm", "damage": 18, "magazine": 12, "fire_rate": 5.8, "range": "close"}
+		"all_in_cut":
+			return {"name": "All-In Rail Pistol", "damage": 44, "magazine": 3, "fire_rate": 1.4, "range": "long"}
+		"center_cut":
+			return {"name": "Center Cut Carbine", "damage": 24, "magazine": 18, "fire_rate": 6.0, "range": "mid"}
+		_:
+			return {"name": "House Sidearm", "damage": 20, "magazine": 10, "fire_rate": 4.0, "range": "mid"}
 
 
 func _on_commit_first_card_pressed() -> void:

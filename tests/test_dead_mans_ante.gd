@@ -184,6 +184,37 @@ func test_deck_manager_can_burn_cards_for_economy_flow() -> void:
 	assert_eq(int(counts.get("exhaust", -1)), 1, "Burned card should enter exhaust as spent economy fuel.")
 
 
+func test_deck_manager_can_slot_cards_into_loadout_flow() -> void:
+	var deck_script: GDScript = ResourceLoader.load("res://scripts/cards/DeckManager.gd", "", ResourceLoader.CACHE_MODE_IGNORE)
+	var deck: Node = deck_script.new()
+	deck.call("configure_deck", ["res://resources/cards/quick_slash.tres"])
+	deck.call("reset_deck")
+	deck.call("draw_cards", 1)
+	var slotted: Resource = deck.call("slot_card_at", 0)
+	assert_true(slotted is Resource, "Slotting should remove and return a hand card.")
+	var counts: Dictionary = deck.call("get_counts")
+	assert_eq(int(counts.get("hand", -1)), 0, "Slotted card should leave hand.")
+	assert_eq(int(counts.get("loadout", -1)), 1, "Slotted card should enter the loadout pile.")
+	assert_eq(int(counts.get("discard", -1)), 0, "Slotted card should not look like a normal discard.")
+
+
+func test_combat_controller_exports_shooter_loadout_payload() -> void:
+	var controller_script: GDScript = ResourceLoader.load("res://scripts/combat/TestCombatController.gd", "", ResourceLoader.CACHE_MODE_IGNORE)
+	var controller: Control = controller_script.new()
+	var quick_slash: Resource = load("res://resources/cards/quick_slash.tres")
+	var sidestep: Resource = load("res://resources/cards/sidestep.tres")
+	controller.set("shooter_chips", 4)
+	controller.set("loadout_slots", {"weapon": quick_slash, "ability_1": sidestep})
+	var payload: Dictionary = controller.call("_build_combat_bridge_payload")
+	assert_eq(String(payload.get("weapon_card", "")), "quick_slash", "Weapon slot should become the shooter weapon card.")
+	var loadout: Array = payload.get("loadout", [])
+	assert_eq(loadout.size(), 2, "Bridge payload should include structured slot records.")
+	var weapon: Dictionary = loadout[0]
+	assert_true(weapon.has("weapon") or (loadout[1] as Dictionary).has("weapon"), "Attack cards should export a weapon profile.")
+	var economy: Dictionary = payload.get("economy", {})
+	assert_true(int(economy.get("ammo", 0)) > 12, "Attack cards should increase arena ammo.")
+
+
 func test_tactical_map_changes_damage_and_cover() -> void:
 	var map_script: GDScript = ResourceLoader.load("res://scripts/grid/TacticalMapDefinition.gd", "", ResourceLoader.CACHE_MODE_IGNORE)
 	var map_data: Dictionary = map_script.get_default_map()
