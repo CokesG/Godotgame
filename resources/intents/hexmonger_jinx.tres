@@ -4,6 +4,7 @@
 
 [resource]
 script = ExtResource("1")
+icon_path = "res://art/game/icons/intents/icon_intent_hex.png"
 id = &"hexmonger_jinx"
 display_name = "Jinx"
 public_text = "Raise Suspicion and make the next read shakier."

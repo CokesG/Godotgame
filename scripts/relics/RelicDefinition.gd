@@ -1,3 +1,4 @@
+@tool
 class_name RelicDefinition
 extends Resource
 
@@ -12,6 +13,7 @@ enum Rarity {
 @export var display_name: String = ""
 @export_multiline var rules_text: String = ""
 @export var rarity: Rarity = Rarity.COMMON
+@export_file("*.png") var icon_path: String = ""
 @export var tags: Array[StringName] = []
 @export var modifiers: Dictionary = {}
 @export_multiline var design_note: String = ""
@@ -33,3 +35,12 @@ func get_debug_summary() -> String:
 		Rarity.keys()[rarity].capitalize(),
 		rules_text
 	]
+
+
+func get_icon_texture() -> Texture2D:
+	if icon_path.is_empty():
+		return null
+	var texture := load(icon_path)
+	if texture is Texture2D:
+		return texture
+	return null

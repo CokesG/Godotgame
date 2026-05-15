@@ -4,6 +4,7 @@
 
 [resource]
 script = ExtResource("1")
+illustration_path = "res://art/game/cards/illustrations/card_all_in_cut.png"
 id = &"all_in_cut"
 display_name = "All-In Cut"
 rules_text = "Deal 8 damage. Expensive, reliable finisher."

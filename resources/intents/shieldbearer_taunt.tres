@@ -4,6 +4,7 @@
 
 [resource]
 script = ExtResource("1")
+icon_path = "res://art/game/icons/intents/icon_intent_hex.png"
 id = &"shieldbearer_taunt"
 display_name = "Taunting Knock"
 public_text = "Draw attention and make attacks less certain."

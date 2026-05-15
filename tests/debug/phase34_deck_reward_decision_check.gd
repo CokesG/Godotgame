@@ -29,6 +29,7 @@ func _verify_focused_first_screen(combat_scene: Node) -> void:
 	var run_path: Node = combat_scene.find_child("RunPath", true, false)
 	var run_path_buttons: Node = combat_scene.find_child("RunPathButtons", true, false)
 	var run_path_preview: Node = combat_scene.find_child("RunPathPreview", true, false)
+	var opening_steps: Node = combat_scene.find_child("OpeningStepRow", true, false)
 	var shell_detail: Node = combat_scene.find_child("RunShellDetail", true, false)
 	var inspect_button: Button = combat_scene.find_child("ShellInspectRunButton", true, false)
 	var history_button: Button = combat_scene.find_child("ShellViewHistoryButton", true, false)
@@ -37,7 +38,7 @@ func _verify_focused_first_screen(combat_scene: Node) -> void:
 	if start_button == null or run_path == null or run_path_buttons == null or run_path_preview == null:
 		_fail("Expected first-screen route controls.")
 		return
-	if shell_detail == null or inspect_button == null or history_button == null:
+	if opening_steps == null or shell_detail == null or inspect_button == null or history_button == null:
 		_fail("Expected focused first-screen shell controls.")
 		return
 	if encounter_preview == null or approach_panel == null:
@@ -45,23 +46,26 @@ func _verify_focused_first_screen(combat_scene: Node) -> void:
 		return
 
 	if not bool(start_button.get("visible")) or bool(start_button.get("disabled")):
-		_fail("Open Opening Table should be the visible first action.")
+		_fail("Deal In should be the visible first action.")
 		return
-	if String(start_button.get("text")) != "Open Opening Table":
-		_fail("Start button should use open-table language.")
+	if not String(start_button.get("text")).contains("DEAL IN"):
+		_fail("Start button should use Deal In language.")
 		return
 
 	var path_text := _get_text(run_path)
-	if not path_text.contains("Opening Table ready") or not path_text.contains("Press Open Opening Table"):
+	if not path_text.contains("Route 1/5") or not path_text.contains("Deal In now"):
 		_fail("First map copy should be short and action-focused.")
 		return
 	if path_text.contains("Selected Table") or path_text.contains("Raised Stakes"):
 		_fail("First map copy should not dump future table details.")
 		return
-	if bool(run_path_buttons.get("visible")) or bool(run_path_preview.get("visible")):
-		_fail("Interactive route details should wait until the first table opens.")
+	if not bool(run_path_buttons.get("visible")) or bool(run_path_preview.get("visible")):
+		_fail("Opening route chips should be visible while detailed selected-table preview waits.")
 		return
-	if not _get_text(shell_detail).contains("Open Opening Table"):
+	if not bool(opening_steps.get("visible")) or opening_steps.get_child_count() < 4:
+		_fail("Opening screen should teach Deal In, Target, Card, Resolve before combat starts.")
+		return
+	if not _get_text(shell_detail).contains("Deal In"):
 		_fail("Shell detail should point at the only required first action.")
 		return
 	if bool(inspect_button.get("visible")) or bool(history_button.get("visible")):
@@ -75,7 +79,7 @@ func _verify_focused_first_screen(combat_scene: Node) -> void:
 	await get_tree().process_frame
 
 	if bool(start_button.get("visible")):
-		_fail("Open Opening Table should hide after combat begins.")
+		_fail("Deal In should hide after combat begins.")
 		return
 	if not bool(run_path_buttons.get("visible")) or not bool(run_path_preview.get("visible")):
 		_fail("Detailed map controls should appear after the first table opens.")
@@ -83,8 +87,8 @@ func _verify_focused_first_screen(combat_scene: Node) -> void:
 	if not bool(inspect_button.get("visible")) or not bool(history_button.get("visible")):
 		_fail("Inspector/history tools should appear after the first table opens.")
 		return
-	if not bool(encounter_preview.get("visible")) or bool(approach_panel.get("visible")):
-		_fail("Live combat should show compact encounter context but hide approach cards.")
+	if bool(encounter_preview.get("visible")) or bool(approach_panel.get("visible")):
+		_fail("Live combat should hide report-style encounter panels from the default play surface.")
 
 
 func _verify_reward_decision_and_deck_filter(combat_scene: Node) -> void:
@@ -128,8 +132,8 @@ func _verify_reward_decision_and_deck_filter(combat_scene: Node) -> void:
 		_fail("Expected first card reward after victory.")
 		return
 	var reward_text := String(card_reward.get("text"))
-	if not reward_text.contains("#1 Recommended") or not reward_text.contains("Reasons:") or not reward_text.contains("Impact:"):
-		_fail("Reward cards should explain recommendation and before/after impact.")
+	if not reward_text.contains("#1 Recommended") or not card_reward.tooltip_text.contains("Reasons:") or not card_reward.tooltip_text.contains("Impact:"):
+		_fail("Reward cards should keep recommendation and before/after impact available without bloating the button.")
 		return
 	if not bool(reward_impact.get("visible")) or not _get_text(reward_impact).contains("Before/after deck impact"):
 		_fail("Reward impact panel should show before/after deck data before picking.")

@@ -1,3 +1,4 @@
+@tool
 class_name EnemyDefinition
 extends Resource
 
@@ -24,6 +25,7 @@ enum EnemyRole {
 @export_range(0.0, 1.0, 0.01) var aggression: float = 0.5
 @export var behavior_tags: Array[StringName] = []
 @export var intents: Array[Resource] = []
+@export_file("*.png") var sprite_path: String = ""
 @export_multiline var tell_description: String = ""
 @export_multiline var counterplay_note: String = ""
 @export_multiline var visual_identity: String = ""
@@ -47,3 +49,12 @@ func get_debug_summary() -> String:
 		EnemyRole.keys()[role].capitalize(),
 		intents.size()
 	]
+
+
+func get_sprite_texture() -> Texture2D:
+	if sprite_path.is_empty():
+		return null
+	var texture := load(sprite_path)
+	if texture is Texture2D:
+		return texture
+	return null

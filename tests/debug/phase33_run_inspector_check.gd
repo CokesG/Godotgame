@@ -34,7 +34,7 @@ func _verify_initial_inspector(combat_scene: Node) -> void:
 		_fail("Expected Inspect Run controls and inspector panel.")
 		return
 	if bool(inspect_button.get("visible")):
-		_fail("Inspect Run should stay hidden on the first open-table screen.")
+		_fail("Inspect Run should stay hidden on the first Deal In screen.")
 		return
 	if bool(inspector_panel.get("visible")):
 		_fail("Run inspector should start hidden.")

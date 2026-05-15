@@ -7,6 +7,7 @@
 
 [resource]
 script = ExtResource("1")
+sprite_path = "res://art/game/enemies/enemy_shieldbearer.png"
 id = &"shieldbearer"
 display_name = "Shieldbearer"
 role = 1

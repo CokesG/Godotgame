@@ -4,6 +4,7 @@
 
 [resource]
 script = ExtResource("1")
+icon_path = "res://art/game/icons/intents/icon_intent_guard.png"
 id = &"grave_dealer_chip_stack"
 display_name = "Chip Stack"
 public_text = "Stack chips and gain Guard."

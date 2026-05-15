@@ -1,3 +1,4 @@
+@tool
 class_name IntentDefinition
 extends Resource
 
@@ -27,6 +28,7 @@ enum TelegraphTier {
 @export var telegraph_tier: TelegraphTier = TelegraphTier.POSSIBLE
 @export var target_lane: int = -1
 @export var target_cell: Vector2i = Vector2i(-1, -1)
+@export_file("*.png") var icon_path: String = ""
 @export var payload: Dictionary = {}
 @export var tell_tags: Array[StringName] = []
 
@@ -43,3 +45,12 @@ func get_public_summary() -> String:
 	if text.is_empty():
 		text = get_display_name()
 	return "%s: %s" % [tier, text]
+
+
+func get_icon_texture() -> Texture2D:
+	if icon_path.is_empty():
+		return null
+	var texture := load(icon_path)
+	if texture is Texture2D:
+		return texture
+	return null

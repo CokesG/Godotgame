@@ -4,6 +4,7 @@
 
 [resource]
 script = ExtResource("1")
+icon_path = "res://art/game/icons/intents/icon_intent_attack.png"
 id = &"needle_eye_pin"
 display_name = "Pinning Shot"
 public_text = "A narrower shot down the right lane."

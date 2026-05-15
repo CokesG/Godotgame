@@ -4,6 +4,7 @@
 
 [resource]
 script = ExtResource("1")
+icon_path = "res://art/game/icons/intents/icon_intent_attack.png"
 id = &"skulker_cut"
 display_name = "Cut Purse"
 public_text = "Fast strike that tracks your current position."

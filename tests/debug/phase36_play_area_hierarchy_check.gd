@@ -48,13 +48,14 @@ func _verify_table_surface(combat_scene: Node) -> void:
 	if table_board_panel.get_parent() != table_row or opponent_panel.get_parent() != table_row:
 		_fail("Board and opponent panels should be peers in the table row.")
 		return
-	if combat_grid.get_parent() != table_board_panel:
-		_fail("CombatGrid should be framed by the table board panel.")
+	var grid_parent := combat_grid.get_parent()
+	if grid_parent != table_board_panel and not (grid_parent is Control and String(grid_parent.name) == "TableStage"):
+		_fail("CombatGrid should be framed by the table board panel or its arena stage.")
 		return
-	if _get_text(table_title) != "The Table":
-		_fail("Grid title should read like a game table, not a debug grid.")
+	if _get_text(table_title) != "Arena Board":
+		_fail("Grid title should read like an arena board, not debug coordinates.")
 		return
-	if combat_grid.custom_minimum_size.x < 400:
+	if combat_grid.custom_minimum_size.x < 600:
 		_fail("CombatGrid should reserve a larger table footprint.")
 		return
 
@@ -63,8 +64,8 @@ func _verify_table_surface(combat_scene: Node) -> void:
 		_fail("Expected grid cells.")
 		return
 	var first_cell: Control = cells.get_child(0)
-	if first_cell.custom_minimum_size.x < 116 or first_cell.custom_minimum_size.y < 116:
-		_fail("Grid cells should be larger for the table pass.")
+	if first_cell.custom_minimum_size.x < 96 or first_cell.custom_minimum_size.y < 96:
+		_fail("Grid cells should stay large enough to be playable.")
 
 
 func _verify_live_opponent_and_target_hierarchy(combat_scene: Node) -> void:
@@ -72,6 +73,7 @@ func _verify_live_opponent_and_target_hierarchy(combat_scene: Node) -> void:
 	var continue_button: Button = combat_scene.find_child("ContinueButton", true, false)
 	var opponent_panel: Node = combat_scene.find_child("OpponentCardsPanel", true, false)
 	var target_panel: Node = combat_scene.find_child("TargetControlsPanel", true, false)
+	var target_cards: Node = combat_scene.find_child("EnemyTargetCards", true, false)
 	var target_enemy: OptionButton = combat_scene.find_child("TargetEnemyOption", true, false)
 	var move_target: OptionButton = combat_scene.find_child("MovementCellOption", true, false)
 	var enemy_status: Node = combat_scene.find_child("EnemyStatus", true, false)
@@ -81,8 +83,8 @@ func _verify_live_opponent_and_target_hierarchy(combat_scene: Node) -> void:
 	if start_button == null or continue_button == null:
 		_fail("Expected start and smart action buttons.")
 		return
-	if opponent_panel == null or target_panel == null or target_enemy == null or move_target == null:
-		_fail("Expected opponent and target control panels.")
+	if opponent_panel == null or target_panel == null or target_cards == null or target_enemy == null or move_target == null:
+		_fail("Expected opponent, direct target cards, and target control nodes.")
 		return
 	if enemy_status == null or intent_icons == null or threat_summary == null or intent_preview == null:
 		_fail("Expected opponent readout labels.")
@@ -91,8 +93,14 @@ func _verify_live_opponent_and_target_hierarchy(combat_scene: Node) -> void:
 	start_button.emit_signal("pressed")
 	await get_tree().process_frame
 
-	if not bool(opponent_panel.get("visible")) or not bool(target_panel.get("visible")):
-		_fail("Opponent and target panels should be visible in live combat.")
+	if not bool(opponent_panel.get("visible")) or not bool(target_cards.get("visible")):
+		_fail("Opponent panel and direct target cards should be visible in compact live combat.")
+		return
+	if target_cards.get_child_count() <= 0:
+		_fail("Compact live combat should expose clickable enemy target cards.")
+		return
+	if bool(target_panel.get("visible")):
+		_fail("Detailed target dropdown controls should stay collapsed in compact live combat.")
 		return
 	if not _get_text(enemy_status).contains("Opponent Cards") or not _get_text(enemy_status).contains("[Enemy Card]"):
 		_fail("Enemy status should read as opponent cards.")
@@ -120,8 +128,9 @@ func _verify_live_opponent_and_target_hierarchy(combat_scene: Node) -> void:
 		_fail("Move dropdown should use explicit move language.")
 		return
 
-	continue_button.emit_signal("pressed")
-	await get_tree().process_frame
+	if _get_phase_key(combat_scene) != "PLAYER_COMMIT":
+		continue_button.emit_signal("pressed")
+		await get_tree().process_frame
 	var card_hint: Node = combat_scene.find_child("CardActionHint", true, false)
 	if card_hint == null or not _get_text(card_hint).contains("Cards are playable now"):
 		_fail("Card affordance should still explain live card play.")
@@ -134,13 +143,13 @@ func _verify_hand_card_readability(combat_scene: Node) -> void:
 		return
 
 	var first_card: Control = hand_view.get_child(0)
-	if first_card.custom_minimum_size.x < 168 or first_card.custom_minimum_size.y < 188:
-		_fail("Cards should reserve the larger readable card footprint.")
+	if first_card.custom_minimum_size.x < 96 or first_card.custom_minimum_size.y < 80:
+		_fail("Compact live cards should keep a readable footprint.")
 		return
 
 	var card_text := _get_text(first_card)
-	if not card_text.contains("Cost") or not card_text.contains("Target:") or not card_text.contains("Tags:"):
-		_fail("Card text should show cost, target, and tags for readable hand decisions.")
+	if not card_text.contains("Cost") or not card_text.contains("Target:"):
+		_fail("Card text should show cost and target for readable hand decisions.")
 		return
 
 	var deck_panel: Node = combat_scene.find_child("DeckPanel", true, false)
@@ -155,6 +164,13 @@ func _get_text(node: Node) -> String:
 	if node.has_method("get_parsed_text"):
 		return String(node.call("get_parsed_text"))
 	return String(node.get("text"))
+
+
+func _get_phase_key(combat_scene: Node) -> String:
+	var session: Node = combat_scene.find_child("CombatSession", true, false)
+	if session == null:
+		return ""
+	return String(session.get("current_phase_key"))
 
 
 func _fail(message: String) -> void:

@@ -4,6 +4,7 @@
 
 [resource]
 script = ExtResource("1")
+icon_path = "res://art/game/icons/intents/icon_intent_attack.png"
 id = &"champion_snap_call"
 display_name = "Snap Call"
 public_text = "A tracking strike against hesitation."

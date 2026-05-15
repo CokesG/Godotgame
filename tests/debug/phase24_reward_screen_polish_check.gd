@@ -62,8 +62,8 @@ func _verify_reward_screen_polish(combat_scene: Node) -> void:
 	if not button_text.contains("#1 Recommended") or not button_text.contains("Take "):
 		_fail("Best card button should read like a take action and highlight the recommendation.")
 		return
-	if not button_text.contains("Reasons:") or not button_text.contains("Impact: Deck"):
-		_fail("Best card button should include recommendation reasons and deck impact.")
+	if not card_reward.tooltip_text.contains("Reasons:") or not card_reward.tooltip_text.contains("Impact: Deck"):
+		_fail("Best card tooltip should preserve recommendation reasons and deck impact.")
 		return
 
 	if String(skip_button.get("text")) != "Skip Reward - keep deck lean":

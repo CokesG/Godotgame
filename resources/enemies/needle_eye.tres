@@ -7,6 +7,7 @@
 
 [resource]
 script = ExtResource("1")
+sprite_path = "res://art/game/enemies/enemy_needle_eye.png"
 id = &"needle_eye"
 display_name = "Needle-Eye"
 role = 4

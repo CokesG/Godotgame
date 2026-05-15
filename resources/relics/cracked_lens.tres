@@ -4,6 +4,7 @@
 
 [resource]
 script = ExtResource("1")
+icon_path = "res://art/game/relics/relic_cracked_lens.png"
 id = &"cracked_lens"
 display_name = "Cracked Lens"
 rules_text = "Start each combat with +1 Nerve."

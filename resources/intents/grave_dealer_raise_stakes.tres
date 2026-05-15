@@ -4,6 +4,7 @@
 
 [resource]
 script = ExtResource("1")
+icon_path = "res://art/game/icons/intents/icon_intent_attack.png"
 id = &"grave_dealer_raise_stakes"
 display_name = "Raise Stakes"
 public_text = "Heavy pressure through the center lane."

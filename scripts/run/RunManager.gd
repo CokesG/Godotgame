@@ -5,6 +5,7 @@ signal log_requested(message: String)
 signal state_changed(state: Dictionary)
 
 const BALANCE_SIMULATOR_SCRIPT := preload("res://scripts/run/RunBalanceSimulator.gd")
+const TACTICAL_MAP_SCRIPT := preload("res://scripts/grid/TacticalMapDefinition.gd")
 const PLAYER_MAX_HP := 30
 const VICTORY_HEAL := 3
 const RUN_SUMMARY_PREFIX := "dead_mans_ante_run_summary_"
@@ -237,17 +238,29 @@ func get_current_reward_tag_names() -> Array[String]:
 	return _format_reward_tags(node.get("reward_tags", []))
 
 
+func get_current_tactical_map() -> Dictionary:
+	var node: Dictionary = get_current_node()
+	var map_id := String(node.get("tactical_map_id", TACTICAL_MAP_SCRIPT.MAP_CROSSFIRE_TABLE))
+	var tactical_map: Dictionary = TACTICAL_MAP_SCRIPT.get_map(map_id)
+	tactical_map["encounter_name"] = String(node.get("name", "Table"))
+	tactical_map["encounter_note"] = String(node.get("encounter_intro", "Read the table before combat starts."))
+	return tactical_map
+
+
 func get_run_path() -> Array[Dictionary]:
 	var path: Array[Dictionary] = []
 	for index in range(RUN_NODES.size()):
 		var node: Dictionary = RUN_NODES[index]
 		var status: String = _get_run_path_status(index)
 		var modifier: Dictionary = _get_node_table_modifier(node)
+		var tactical_map: Dictionary = TACTICAL_MAP_SCRIPT.get_map(String(node.get("tactical_map_id", TACTICAL_MAP_SCRIPT.MAP_CROSSFIRE_TABLE)))
 		path.append({
 			"index": index,
 			"table_number": index + 1,
 			"name": String(node.get("name", "Table")),
 			"kind": String(node.get("kind", "combat")),
+			"tactical_map_name": String(tactical_map.get("name", "Crossfire Table")),
+			"tactical_map_summary": String(tactical_map.get("summary", "")),
 			"enemy_names": _get_enemy_names_from_paths(node.get("enemy_paths", [])),
 			"enemy_cards": _get_enemy_cards_from_paths(node.get("enemy_paths", [])),
 			"encounter_intro": String(node.get("encounter_intro", "Read the table before combat starts.")),
@@ -543,6 +556,7 @@ func get_export_route_summary() -> Array[Dictionary]:
 			"table_number": int(entry.get("table_number", 0)),
 			"name": String(entry.get("name", "Table")),
 			"kind": String(entry.get("kind", "combat")),
+			"tactical_map_name": String(entry.get("tactical_map_name", "Crossfire Table")),
 			"status": String(entry.get("status", "upcoming")),
 			"status_label": String(entry.get("status_label", "UPCOMING")),
 			"enemy_names": entry.get("enemy_names", []),
@@ -743,6 +757,7 @@ func get_state() -> Dictionary:
 		"encounter_intro": get_current_encounter_intro(),
 		"table_modifier": get_current_table_modifier(),
 		"table_modifiers": get_table_modifiers(),
+		"tactical_map": get_current_tactical_map(),
 		"run_path": get_run_path(),
 		"reward_stakes": get_current_reward_stakes(),
 		"reward_tag_names": get_current_reward_tag_names(),

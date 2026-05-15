@@ -4,6 +4,7 @@
 
 [resource]
 script = ExtResource("1")
+icon_path = "res://art/game/icons/intents/icon_intent_attack.png"
 id = &"grave_dealer_cross_cut"
 display_name = "Cross Cut"
 public_text = "A fast cut that tracks your position."

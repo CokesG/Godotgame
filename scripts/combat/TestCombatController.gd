@@ -1,13 +1,19 @@
 extends Control
 
 const COMBAT_GRID_SCRIPT := preload("res://scripts/grid/CombatGrid.gd")
+const TACTICAL_MAP_SCRIPT := preload("res://scripts/grid/TacticalMapDefinition.gd")
 const BLUFF_SYSTEM_SCRIPT := preload("res://scripts/combat/BluffSystem.gd")
 const COMBAT_RESOLVER_SCRIPT := preload("res://scripts/combat/CombatResolver.gd")
 const COMBAT_SESSION_SCRIPT := preload("res://scripts/combat/CombatSession.gd")
+const COMBAT_VFX_SCRIPT := preload("res://scripts/vfx/CombatVFX.gd")
+const ARENA_3D_VIEW_SCRIPT := preload("res://scripts/arena/Arena3DView.gd")
+const ACTION_BEAT_RESOLVER_SCRIPT := preload("res://scripts/combat/ActionBeatResolver.gd")
 const DECK_MANAGER_SCRIPT := preload("res://scripts/cards/DeckManager.gd")
 const ENEMY_INTENT_SYSTEM_SCRIPT := preload("res://scripts/enemies/EnemyIntentSystem.gd")
 const HAND_VIEW_SCRIPT := preload("res://scripts/ui/HandView.gd")
+const DEAD_MANS_ANTE_SKIN_SCRIPT := preload("res://scripts/ui/DeadMansAnteSkin.gd")
 const RUN_MANAGER_SCRIPT := preload("res://scripts/run/RunManager.gd")
+const TEST_COMBAT_COPY_SCRIPT := preload("res://scripts/combat/TestCombatCopy.gd")
 const STARTER_CARD_PATHS := [
 	"res://resources/cards/quick_slash.tres",
 	"res://resources/cards/low_stab.tres",
@@ -37,81 +43,10 @@ const FEEDBACK_CARD_COLOR := Color(1.0, 0.78, 0.36)
 const FEEDBACK_PHASE_COLOR := Color(0.72, 0.90, 1.0)
 const FEEDBACK_REVEAL_COLOR := Color(0.90, 0.68, 1.0)
 const FEEDBACK_MOVE_COLOR := Color(0.52, 1.0, 0.62)
-const PHASE_ACTION_LABELS := {
-	"START_TURN": "Begin Turn",
-	"DRAW": "Begin Turn",
-	"ENEMY_INTENT_PREVIEW": "Begin Turn",
-	"PLAYER_COMMIT": "Resolve Turn",
-	"BLUFF_WAGER": "Reveal Turn",
-	"REVEAL": "Review Results",
-	"RESOLVE": "Next Turn",
-	"CLEANUP": "Next Turn"
-}
-const PHASE_GUIDANCE := {
-	"START_TURN": {
-		"title": "Start Turn",
-		"detail": "Energy refreshes. Continue to fill the hand."
-	},
-	"DRAW": {
-		"title": "Draw",
-		"detail": "The hand fills toward five cards automatically."
-	},
-	"ENEMY_INTENT_PREVIEW": {
-		"title": "Read",
-		"detail": "Compare enemy odds and tells before committing."
-	},
-	"PLAYER_COMMIT": {
-		"title": "Commit",
-		"detail": "Choose targets, click cards to play them, or commit the first card face-down."
-	},
-	"BLUFF_WAGER": {
-		"title": "Bluff",
-		"detail": "Set a call, raise if confident, or fold the committed card."
-	},
-	"REVEAL": {
-		"title": "Reveal",
-		"detail": "Enemy intent and committed cards resolve once this phase begins."
-	},
-	"RESOLVE": {
-		"title": "Resolve",
-		"detail": "Review HP, Guard, traps, and the combat log."
-	},
-	"CLEANUP": {
-		"title": "Cleanup",
-		"detail": "Leftover hand cards are discarded before the next turn."
-	}
-}
-const RECIPE_STEPS := [
-	{
-		"id": "read_intents",
-		"label": "Read one enemy intent preview"
-	},
-	{
-		"id": "play_or_commit",
-		"label": "Play a card or commit one face-down"
-	},
-	{
-		"id": "bluff_choice",
-		"label": "Set a call, raise, or fold"
-	},
-	{
-		"id": "reveal_resolve",
-		"label": "Resolve the reveal"
-	},
-	{
-		"id": "cleanup",
-		"label": "Clean up and start the next turn"
-	}
-]
-const RUN_INSPECTOR_FILTERS := [
-	{"id": "all", "label": "All"},
-	{"id": "attack", "label": "Attack"},
-	{"id": "guard", "label": "Guard"},
-	{"id": "movement", "label": "Move"},
-	{"id": "read", "label": "Read"},
-	{"id": "trap", "label": "Trap"},
-	{"id": "ritual", "label": "Ritual"}
-]
+const PHASE_ACTION_LABELS := TEST_COMBAT_COPY_SCRIPT.PHASE_ACTION_LABELS
+const PHASE_GUIDANCE := TEST_COMBAT_COPY_SCRIPT.PHASE_GUIDANCE
+const RECIPE_STEPS := TEST_COMBAT_COPY_SCRIPT.RECIPE_STEPS
+const RUN_INSPECTOR_FILTERS := TEST_COMBAT_COPY_SCRIPT.RUN_INSPECTOR_FILTERS
 
 @onready var turn_manager: Node = $TurnManager
 
@@ -119,6 +54,16 @@ var phase_label: Label
 var turn_label: Label
 var log_label: RichTextLabel
 var combat_grid: Control
+var combat_vfx: Control
+var arena_view: Control
+var battlefield_focus_label: Label
+var battlefield_callout_label: Label
+var action_beat_panel: PanelContainer
+var action_beat_label: Label
+var action_beat_progress: ProgressBar
+var action_beat_button: Button
+var action_target_ring: PanelContainer
+var action_aim_reticle: PanelContainer
 var bluff_system: Node
 var combat_resolver: Node
 var combat_session: Node
@@ -128,6 +73,18 @@ var enemy_intent_system: Node
 var hand_view: HBoxContainer
 var pile_counts_label: Label
 var resource_state_label: Label
+var shooter_economy_label: Label
+var arena_payout_panel: PanelContainer
+var arena_payout_label: RichTextLabel
+var arena_payout_continue_button: Button
+var loadout_slot_row: HBoxContainer
+var loadout_slot_buttons: Dictionary = {}
+var hand_action_button_row: HBoxContainer
+var slot_selected_button: Button
+var burn_selected_button: Button
+var hold_selected_button: Button
+var bridge_payload_button: Button
+var enter_arena_button: Button
 var run_header_label: RichTextLabel
 var run_path_label: RichTextLabel
 var run_path_buttons_row: HBoxContainer
@@ -154,11 +111,30 @@ var shell_inspect_run_button: Button
 var shell_view_history_button: Button
 var shell_export_history_csv_button: Button
 var shell_archive_history_button: Button
+var action_cue_panel: PanelContainer
+var action_cue_title_label: Label
+var action_cue_detail_label: Label
+var action_cue_pip_label: Label
+var opening_click_prompt_label: Label
+var combat_action_badge_label: Label
+var opening_step_row: HBoxContainer
+var opening_step_buttons: Array[Button] = []
 var turn_status_label: RichTextLabel
 var feedback_banner_label: Label
 var combat_feedback_label: RichTextLabel
 var action_prompt_label: Label
 var first_play_path_label: RichTextLabel
+var first_play_coach_panel: PanelContainer
+var first_play_coach_label: Label
+var live_state_chip_row: HBoxContainer
+var phase_state_chip: Button
+var energy_state_chip: Button
+var target_state_chip: Button
+var move_state_chip: Button
+var threat_state_chip: Button
+var rule_state_chip: Button
+var first_play_step_row: HBoxContainer
+var first_play_step_buttons: Array[Button] = []
 var phase_guidance_label: Label
 var phase_detail_label: Label
 var table_rule_status_label: RichTextLabel
@@ -188,6 +164,9 @@ var intent_call_option: OptionButton
 var lane_call_option: OptionButton
 var target_enemy_option: OptionButton
 var movement_cell_option: OptionButton
+var enemy_target_cards_row: HBoxContainer
+var opponent_title_label: Label
+var enemy_target_card_buttons: Array[Button] = []
 var enemy_status_label: RichTextLabel
 var intent_icon_strip_label: RichTextLabel
 var threat_summary_label: RichTextLabel
@@ -216,6 +195,7 @@ var fold_button: Button
 var reset_bluff_button: Button
 var card_action_hint_label: RichTextLabel
 var card_target_preview_label: RichTextLabel
+var hand_action_status_label: Label
 var debug_controls_visible: bool = false
 var debug_truth_visible: bool = false
 var current_intent_previews: Array[Dictionary] = []
@@ -224,6 +204,14 @@ var run_flow_state: String = RUN_FLOW_START
 var recipe_progress: Dictionary = {}
 var pending_card_context: Dictionary = {}
 var committed_card_context: Dictionary = {}
+var shooter_chips: int = 7
+var held_hand_indices: Dictionary = {}
+var loadout_slots: Dictionary = {}
+var selected_hand_index: int = -1
+var arena_bridge_payload: Dictionary = {}
+var arena_round_armed := false
+var pending_arena_result: Dictionary = {}
+var arena_payout_pending := false
 var feedback_history: Array[String] = []
 var run_ceremony_history: Array[String] = []
 var table_rule_effect_history: Array[String] = []
@@ -244,43 +232,134 @@ var last_run_inspection_report: Dictionary = {}
 var run_inspector_requested: bool = false
 var run_inspector_card_filter: String = "all"
 var run_inspector_filter_buttons: Array[Button] = []
+var last_action_cue_key: String = ""
+var last_reward_shimmer_key: String = ""
+var first_play_coach_steps: Dictionary = {}
+var first_play_coach_complete: bool = false
+var active_action_beat: Dictionary = {}
+var active_action_card: Resource
+var active_action_context: Dictionary = {}
+var active_action_target_position: Vector2 = Vector2.ZERO
+var opening_idle_tween: Tween
+var guide_beacon_timer: Timer
+var guided_click_target: CanvasItem
+var guided_click_label: String = ""
+var guided_click_color: Color = Color(1.0, 0.78, 0.32)
+var last_action_guide_key: String = ""
 
 
 func _ready() -> void:
 	_build_ui()
+	_build_vfx_layer()
 	_connect_turn_manager()
 	log_label.clear()
 	_reset_run_slice()
 
 
+func _process(_delta: float) -> void:
+	if active_action_beat.is_empty() or action_beat_panel == null or not action_beat_panel.visible:
+		return
+
+	var aim_position: Vector2 = get_viewport().get_mouse_position()
+	_position_action_marker(action_aim_reticle, aim_position, Vector2(30, 30))
+	var distance: float = aim_position.distance_to(active_action_target_position)
+	var ratio: float = clampf(1.0 - (distance / 170.0), 0.0, 1.0)
+	if action_beat_progress != null:
+		action_beat_progress.value = ratio * 100.0
+	_update_action_beat_copy(distance)
+
+
+func _input(event: InputEvent) -> void:
+	if active_action_beat.is_empty():
+		return
+	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		_complete_action_beat()
+		get_viewport().set_input_as_handled()
+		return
+	if event is InputEventKey and event.pressed and not event.echo:
+		var key_event := event as InputEventKey
+		if key_event.keycode == KEY_SPACE or key_event.keycode == KEY_ENTER:
+			_complete_action_beat()
+			get_viewport().set_input_as_handled()
+
+
+func _build_vfx_layer() -> void:
+	combat_vfx = COMBAT_VFX_SCRIPT.new()
+	combat_vfx.name = "CombatVFX"
+	combat_vfx.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(combat_vfx)
+	combat_vfx.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+
+	guide_beacon_timer = Timer.new()
+	guide_beacon_timer.name = "GuideBeaconTimer"
+	guide_beacon_timer.wait_time = 0.74
+	guide_beacon_timer.autostart = true
+	guide_beacon_timer.timeout.connect(_on_guide_beacon_timeout)
+	add_child(guide_beacon_timer)
+
+
+func _add_table_backdrop() -> void:
+	var fallback := ColorRect.new()
+	fallback.name = "TableBackdropFallback"
+	fallback.color = Color(0.028, 0.024, 0.022)
+	fallback.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(fallback)
+	fallback.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+
+	var texture := DEAD_MANS_ANTE_SKIN_SCRIPT.load_texture(DEAD_MANS_ANTE_SKIN_SCRIPT.TABLE_BACKDROP_PATH)
+	if texture == null:
+		return
+
+	var backdrop := TextureRect.new()
+	backdrop.name = "TableBackdrop"
+	backdrop.texture = texture
+	backdrop.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	backdrop.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	add_child(backdrop)
+	backdrop.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+
+
 func _build_ui() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	DEAD_MANS_ANTE_SKIN_SCRIPT.apply_to(self)
+	_add_table_backdrop()
 
 	var margin := MarginContainer.new()
 	margin.name = "RootMargin"
 	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	margin.add_theme_constant_override("margin_left", 24)
-	margin.add_theme_constant_override("margin_top", 24)
-	margin.add_theme_constant_override("margin_right", 24)
-	margin.add_theme_constant_override("margin_bottom", 24)
+	margin.add_theme_constant_override("margin_left", 8)
+	margin.add_theme_constant_override("margin_top", 8)
+	margin.add_theme_constant_override("margin_right", 8)
+	margin.add_theme_constant_override("margin_bottom", 8)
 	add_child(margin)
 
 	var layout := VBoxContainer.new()
 	layout.name = "Layout"
 	layout.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	layout.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	layout.add_theme_constant_override("separation", 12)
+	layout.add_theme_constant_override("separation", 6)
 	margin.add_child(layout)
+
+	var title_plate := PanelContainer.new()
+	title_plate.name = "TitlePlaque"
+	title_plate.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title_plate.custom_minimum_size = Vector2(0, 62)
+	layout.add_child(title_plate)
 
 	var title := Label.new()
 	title.name = "ScreenTitle"
-	title.text = "Dead Man's Ante - Prototype Run"
-	title.add_theme_font_size_override("font_size", 28)
-	layout.add_child(title)
+	title.text = "Dead Man's Ante"
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 30)
+	title_plate.add_child(title)
 
 	var subtitle := Label.new()
 	subtitle.name = "ScreenSubtitle"
-	subtitle.text = "Read the table, survive five fights, and tune the run from what actually happens."
+	subtitle.text = "Five cursed tables. One clean read."
+	subtitle.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	subtitle.add_theme_font_size_override("font_size", 16)
 	layout.add_child(subtitle)
 
@@ -359,6 +438,38 @@ func _build_ui() -> void:
 	run_shell_detail_label.custom_minimum_size = Vector2(0, 56)
 	run_shell_layout.add_child(run_shell_detail_label)
 
+	opening_click_prompt_label = Label.new()
+	opening_click_prompt_label.name = "OpeningClickPrompt"
+	opening_click_prompt_label.text = "START HERE: CLICK DEAL IN"
+	opening_click_prompt_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	opening_click_prompt_label.add_theme_font_size_override("font_size", 18)
+	opening_click_prompt_label.add_theme_color_override("font_color", Color(1.0, 0.86, 0.34))
+	run_shell_layout.add_child(opening_click_prompt_label)
+
+	opening_step_row = HBoxContainer.new()
+	opening_step_row.name = "OpeningStepRow"
+	opening_step_row.add_theme_constant_override("separation", 8)
+	run_shell_layout.add_child(opening_step_row)
+
+	var opening_steps := [
+		{"label": "1 DEAL IN\nDraw 5", "tooltip": "Start the first table and draw your opening hand."},
+		{"label": "2 TARGET\nClick enemy", "tooltip": "Combat starts with a visible enemy target."},
+		{"label": "3 CARD\nPlay glow", "tooltip": "Glowing hand cards are playable."},
+		{"label": "4 RESOLVE\nEnemy acts", "tooltip": "Resolve Turn lets the table answer."}
+	]
+	for index in range(opening_steps.size()):
+		var step_button := Button.new()
+		step_button.name = "OpeningStep%d" % index
+		step_button.text = String(opening_steps[index].get("label", "STEP"))
+		step_button.tooltip_text = String(opening_steps[index].get("tooltip", ""))
+		step_button.focus_mode = Control.FOCUS_NONE
+		step_button.clip_text = true
+		step_button.custom_minimum_size = Vector2(0, 54)
+		step_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		step_button.pressed.connect(_on_opening_step_pressed.bind(index))
+		opening_step_buttons.append(step_button)
+		opening_step_row.add_child(step_button)
+
 	run_continuity_label = RichTextLabel.new()
 	run_continuity_label.name = "RunContinuity"
 	run_continuity_label.bbcode_enabled = false
@@ -377,6 +488,7 @@ func _build_ui() -> void:
 	run_ceremony_label.bbcode_enabled = false
 	run_ceremony_label.fit_content = true
 	run_ceremony_label.scroll_active = false
+	run_ceremony_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	run_ceremony_label.custom_minimum_size = Vector2(0, 96)
 	run_ceremony_panel.add_child(run_ceremony_label)
 
@@ -444,15 +556,16 @@ func _build_ui() -> void:
 
 	var run_shell_actions := HBoxContainer.new()
 	run_shell_actions.name = "RunShellActions"
+	run_shell_actions.alignment = BoxContainer.ALIGNMENT_CENTER
 	run_shell_actions.add_theme_constant_override("separation", 8)
 	run_shell_layout.add_child(run_shell_actions)
 
 	start_run_button = Button.new()
 	start_run_button.name = "StartRunButton"
-	start_run_button.text = "Open Opening Table"
-	start_run_button.custom_minimum_size = Vector2(220, 44)
-	start_run_button.add_theme_font_size_override("font_size", 18)
-	start_run_button.tooltip_text = "Begin the first fight."
+	start_run_button.text = "CLICK DEAL IN\nDraw Hand"
+	start_run_button.custom_minimum_size = Vector2(300, 68)
+	start_run_button.add_theme_font_size_override("font_size", 22)
+	start_run_button.tooltip_text = "Deal into the first fight."
 	start_run_button.pressed.connect(_on_start_run_pressed)
 	run_shell_actions.add_child(start_run_button)
 
@@ -499,6 +612,44 @@ func _build_ui() -> void:
 	shell_archive_history_button.pressed.connect(_on_archive_history_pressed)
 	run_shell_actions.add_child(shell_archive_history_button)
 	run_shell_layout.move_child(run_shell_actions, 1)
+
+	action_cue_panel = PanelContainer.new()
+	action_cue_panel.name = "ActionCuePanel"
+	action_cue_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	action_cue_panel.custom_minimum_size = Vector2(0, 72)
+	layout.add_child(action_cue_panel)
+
+	var action_cue_layout := HBoxContainer.new()
+	action_cue_layout.name = "ActionCueLayout"
+	action_cue_layout.add_theme_constant_override("separation", 10)
+	action_cue_panel.add_child(action_cue_layout)
+
+	var action_cue_copy := VBoxContainer.new()
+	action_cue_copy.name = "ActionCueCopy"
+	action_cue_copy.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	action_cue_copy.add_theme_constant_override("separation", 2)
+	action_cue_layout.add_child(action_cue_copy)
+
+	action_cue_title_label = Label.new()
+	action_cue_title_label.name = "ActionCueTitle"
+	action_cue_title_label.text = "DEAL IN"
+	action_cue_title_label.add_theme_font_size_override("font_size", 22)
+	action_cue_copy.add_child(action_cue_title_label)
+
+	action_cue_detail_label = Label.new()
+	action_cue_detail_label.name = "ActionCueDetail"
+	action_cue_detail_label.text = "Deal In to start the hand."
+	action_cue_detail_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	action_cue_detail_label.add_theme_font_size_override("font_size", 14)
+	action_cue_copy.add_child(action_cue_detail_label)
+
+	action_cue_pip_label = Label.new()
+	action_cue_pip_label.name = "ActionCuePip"
+	action_cue_pip_label.text = "OPEN"
+	action_cue_pip_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	action_cue_pip_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	action_cue_pip_label.custom_minimum_size = Vector2(104, 46)
+	action_cue_layout.add_child(action_cue_pip_label)
 
 	turn_label = Label.new()
 	turn_label.text = "Turn: -"
@@ -563,6 +714,20 @@ func _build_ui() -> void:
 	phase_detail_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	guidance_layout.add_child(phase_detail_label)
 
+	live_state_chip_row = HBoxContainer.new()
+	live_state_chip_row.name = "LiveStateChips"
+	live_state_chip_row.add_theme_constant_override("separation", 6)
+	guidance_layout.add_child(live_state_chip_row)
+
+	phase_state_chip = _create_compact_chip("PhaseStateChip", "PHASE START")
+	energy_state_chip = _create_compact_chip("EnergyStateChip", "ENERGY 0/0")
+	target_state_chip = _create_compact_chip("TargetStateChip", "TARGET --")
+	move_state_chip = _create_compact_chip("MoveStateChip", "MOVE --")
+	threat_state_chip = _create_compact_chip("ThreatStateChip", "THREAT ?")
+	rule_state_chip = _create_compact_chip("RuleStateChip", "RULE --")
+	for chip in [phase_state_chip, energy_state_chip, target_state_chip, move_state_chip, threat_state_chip, rule_state_chip]:
+		live_state_chip_row.add_child(chip)
+
 	action_prompt_label = Label.new()
 	action_prompt_label.name = "ActionPrompt"
 	action_prompt_label.text = "Next: start the run."
@@ -578,6 +743,35 @@ func _build_ui() -> void:
 	first_play_path_label.custom_minimum_size = Vector2(0, 48)
 	guidance_layout.add_child(first_play_path_label)
 
+	first_play_coach_panel = PanelContainer.new()
+	first_play_coach_panel.name = "FirstPlayCoachPanel"
+	first_play_coach_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	guidance_layout.add_child(first_play_coach_panel)
+
+	first_play_coach_label = Label.new()
+	first_play_coach_label.name = "FirstPlayCoach"
+	first_play_coach_label.text = "Coach: OPEN -> TARGET -> CARD -> RESOLVE"
+	first_play_coach_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	first_play_coach_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	first_play_coach_label.custom_minimum_size = Vector2(0, 30)
+	first_play_coach_label.add_theme_font_size_override("font_size", 15)
+	first_play_coach_panel.add_child(first_play_coach_label)
+
+	first_play_step_row = HBoxContainer.new()
+	first_play_step_row.name = "FirstPlayStepButtons"
+	first_play_step_row.add_theme_constant_override("separation", 6)
+	guidance_layout.add_child(first_play_step_row)
+
+	for step in [
+		{"name": "FirstPlayStepOpen", "text": "1 Open"},
+		{"name": "FirstPlayStepTarget", "text": "2 Target"},
+		{"name": "FirstPlayStepCard", "text": "3 Card"},
+		{"name": "FirstPlayStepResolve", "text": "4 Resolve"}
+	]:
+		var step_button := _create_compact_chip(String(step.get("name", "FirstPlayStep")), String(step.get("text", "Step")))
+		first_play_step_buttons.append(step_button)
+		first_play_step_row.add_child(step_button)
+
 	var feedback_panel := PanelContainer.new()
 	feedback_panel.name = "CombatFeedbackPanel"
 	feedback_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -591,6 +785,9 @@ func _build_ui() -> void:
 	feedback_banner_label = Label.new()
 	feedback_banner_label.name = "FeedbackBanner"
 	feedback_banner_label.text = "Ready"
+	feedback_banner_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	feedback_banner_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	feedback_banner_label.custom_minimum_size = Vector2(0, 34)
 	feedback_banner_label.add_theme_font_size_override("font_size", 20)
 	feedback_layout.add_child(feedback_banner_label)
 
@@ -737,7 +934,8 @@ func _build_ui() -> void:
 		reward_button.text = "Card Reward"
 		reward_button.disabled = true
 		reward_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		reward_button.custom_minimum_size = Vector2(0, 136)
+		reward_button.custom_minimum_size = Vector2(0, 96)
+		reward_button.clip_text = true
 		reward_button.pressed.connect(_on_card_reward_pressed.bind(index))
 		card_reward_buttons.append(reward_button)
 		card_rewards_row.add_child(reward_button)
@@ -764,6 +962,11 @@ func _build_ui() -> void:
 	skip_rewards_button.disabled = true
 	skip_rewards_button.pressed.connect(_on_skip_rewards_pressed)
 	run_layout.add_child(skip_rewards_button)
+	var reward_prompt_index := reward_prompt_label.get_index()
+	run_layout.move_child(card_rewards_row, reward_prompt_index + 1)
+	run_layout.move_child(relic_rewards_row, reward_prompt_index + 2)
+	run_layout.move_child(skip_rewards_button, reward_prompt_index + 3)
+	run_layout.move_child(reward_impact_label, reward_prompt_index + 4)
 
 	var primary_controls := HBoxContainer.new()
 	primary_controls.name = "PrimaryControls"
@@ -775,6 +978,16 @@ func _build_ui() -> void:
 	next_phase_button.text = "Start Draw"
 	next_phase_button.pressed.connect(_on_next_phase_pressed)
 	primary_controls.add_child(next_phase_button)
+
+	combat_action_badge_label = Label.new()
+	combat_action_badge_label.name = "NextActionBadge"
+	combat_action_badge_label.text = "NEXT: CLICK"
+	combat_action_badge_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	combat_action_badge_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	combat_action_badge_label.custom_minimum_size = Vector2(0, 46)
+	combat_action_badge_label.add_theme_font_size_override("font_size", 18)
+	combat_action_badge_label.add_theme_color_override("font_color", Color(1.0, 0.86, 0.34))
+	primary_controls.add_child(combat_action_badge_label)
 
 	reset_button = Button.new()
 	reset_button.name = "NewCombatButton"
@@ -871,6 +1084,16 @@ func _build_ui() -> void:
 	body.add_theme_constant_override("separation", 8)
 	layout.add_child(body)
 
+	battlefield_focus_label = Label.new()
+	battlefield_focus_label.name = "BattlefieldFocus"
+	battlefield_focus_label.text = "BATTLEFIELD"
+	battlefield_focus_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	battlefield_focus_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	battlefield_focus_label.custom_minimum_size = Vector2(0, 38)
+	battlefield_focus_label.add_theme_font_size_override("font_size", 20)
+	battlefield_focus_label.add_theme_color_override("font_color", Color(1.0, 0.86, 0.34))
+	body.add_child(battlefield_focus_label)
+
 	var table_row := HBoxContainer.new()
 	table_row.name = "TableRow"
 	table_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -880,33 +1103,132 @@ func _build_ui() -> void:
 
 	var table_board_panel := PanelContainer.new()
 	table_board_panel.name = "TableBoardPanel"
-	table_board_panel.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	table_board_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	table_board_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	table_board_panel.size_flags_stretch_ratio = 2.45
 	table_row.add_child(table_board_panel)
+
+	var table_stage := Control.new()
+	table_stage.name = "TableStage"
+	table_stage.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	table_stage.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	table_stage.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	table_board_panel.add_child(table_stage)
+
+	arena_view = ARENA_3D_VIEW_SCRIPT.new()
+	arena_view.name = "Arena3DView"
+	arena_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	arena_view.modulate = Color.WHITE
+	table_stage.add_child(arena_view)
+	arena_view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
 	combat_grid = Control.new()
 	combat_grid.name = "CombatGrid"
 	combat_grid.set_script(COMBAT_GRID_SCRIPT)
-	table_board_panel.add_child(combat_grid)
+	table_stage.add_child(combat_grid)
+	combat_grid.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+
+	battlefield_callout_label = Label.new()
+	battlefield_callout_label.name = "BattlefieldCallout"
+	battlefield_callout_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	battlefield_callout_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	battlefield_callout_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	battlefield_callout_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	battlefield_callout_label.custom_minimum_size = Vector2(0, 58)
+	battlefield_callout_label.add_theme_font_size_override("font_size", 18)
+	battlefield_callout_label.add_theme_color_override("font_color", Color(1.0, 0.90, 0.56))
+	battlefield_callout_label.add_theme_color_override("font_shadow_color", Color(0.0, 0.0, 0.0, 0.78))
+	battlefield_callout_label.add_theme_constant_override("shadow_offset_x", 2)
+	battlefield_callout_label.add_theme_constant_override("shadow_offset_y", 2)
+	battlefield_callout_label.z_index = 35
+	table_stage.add_child(battlefield_callout_label)
+	battlefield_callout_label.set_anchors_preset(Control.PRESET_TOP_WIDE)
+	battlefield_callout_label.offset_left = 16
+	battlefield_callout_label.offset_top = 12
+	battlefield_callout_label.offset_right = -16
+	battlefield_callout_label.offset_bottom = 64
+
+	action_beat_panel = PanelContainer.new()
+	action_beat_panel.name = "ActionBeatPanel"
+	action_beat_panel.visible = false
+	action_beat_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	action_beat_panel.z_index = 60
+	table_stage.add_child(action_beat_panel)
+	action_beat_panel.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+	action_beat_panel.offset_left = 190
+	action_beat_panel.offset_top = -126
+	action_beat_panel.offset_right = -190
+	action_beat_panel.offset_bottom = -14
+	_style_play_panel(action_beat_panel, Color(0.08, 0.035, 0.028, 0.94), Color(1.0, 0.62, 0.20), "cue")
+
+	var beat_layout := VBoxContainer.new()
+	beat_layout.name = "ActionBeatLayout"
+	beat_layout.add_theme_constant_override("separation", 8)
+	action_beat_panel.add_child(beat_layout)
+
+	action_beat_label = Label.new()
+	action_beat_label.name = "ActionBeatLabel"
+	action_beat_label.text = "ACTION BEAT"
+	action_beat_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	action_beat_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	action_beat_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	action_beat_label.add_theme_font_size_override("font_size", 19)
+	action_beat_label.add_theme_color_override("font_color", Color(1.0, 0.90, 0.58))
+	beat_layout.add_child(action_beat_label)
+
+	action_beat_progress = ProgressBar.new()
+	action_beat_progress.name = "ActionAimAccuracy"
+	action_beat_progress.min_value = 0.0
+	action_beat_progress.max_value = 100.0
+	action_beat_progress.value = 0.0
+	action_beat_progress.show_percentage = false
+	action_beat_progress.custom_minimum_size = Vector2(0, 18)
+	beat_layout.add_child(action_beat_progress)
+
+	action_beat_button = Button.new()
+	action_beat_button.name = "ActionBeatButton"
+	action_beat_button.text = "AIM ON TARGET - CLICK ARENA OR PRESS SPACE"
+	action_beat_button.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	action_beat_button.focus_mode = Control.FOCUS_NONE
+	action_beat_button.custom_minimum_size = Vector2(0, 38)
+	action_beat_button.add_theme_font_size_override("font_size", 18)
+	action_beat_button.pressed.connect(_on_action_beat_pressed)
+	beat_layout.add_child(action_beat_button)
+
+	action_target_ring = _make_action_marker("ActionTargetRing", Color(1.0, 0.24, 0.16), 4)
+	table_stage.add_child(action_target_ring)
+	action_target_ring.visible = false
+
+	action_aim_reticle = _make_action_marker("ActionAimReticle", Color(0.42, 0.86, 1.0), 2)
+	table_stage.add_child(action_aim_reticle)
+	action_aim_reticle.visible = false
 
 	var opponent_panel := PanelContainer.new()
 	opponent_panel.name = "OpponentCardsPanel"
 	opponent_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	opponent_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	opponent_panel.size_flags_stretch_ratio = 0.54
 	table_row.add_child(opponent_panel)
 
 	var intent_column := VBoxContainer.new()
 	intent_column.name = "IntentColumn"
-	intent_column.custom_minimum_size = Vector2(390, 0)
+	intent_column.custom_minimum_size = Vector2(300, 0)
 	intent_column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	intent_column.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	intent_column.add_theme_constant_override("separation", 6)
 	opponent_panel.add_child(intent_column)
 
-	var intent_title := Label.new()
-	intent_title.text = "Opponent Cards"
-	intent_title.add_theme_font_size_override("font_size", 18)
-	intent_column.add_child(intent_title)
+	opponent_title_label = Label.new()
+	opponent_title_label.name = "OpponentTargetTitle"
+	opponent_title_label.text = "Enemy Fighters"
+	opponent_title_label.add_theme_font_size_override("font_size", 18)
+	opponent_title_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	intent_column.add_child(opponent_title_label)
+
+	enemy_target_cards_row = HBoxContainer.new()
+	enemy_target_cards_row.name = "EnemyTargetCards"
+	enemy_target_cards_row.add_theme_constant_override("separation", 6)
+	intent_column.add_child(enemy_target_cards_row)
 
 	enemy_status_label = RichTextLabel.new()
 	enemy_status_label.name = "EnemyStatus"
@@ -943,7 +1265,7 @@ func _build_ui() -> void:
 	target_controls_panel.add_child(target_controls_layout)
 
 	var target_title := Label.new()
-	target_title.text = "Target Controls"
+	target_title.text = "Advanced Target Controls"
 	target_title.add_theme_font_size_override("font_size", 16)
 	target_controls_layout.add_child(target_title)
 
@@ -1007,6 +1329,7 @@ func _build_ui() -> void:
 	intent_column.add_child(debug_truth_label)
 
 	var bluff_title := Label.new()
+	bluff_title.name = "BluffTitle"
 	bluff_title.text = "Commit / Bluff / Reveal"
 	bluff_title.add_theme_font_size_override("font_size", 18)
 	intent_column.add_child(bluff_title)
@@ -1098,16 +1421,92 @@ func _build_ui() -> void:
 	log_column.add_child(log_label)
 	combat_grid.connect("log_requested", _on_log_requested)
 	combat_grid.connect("unit_moved", _on_grid_unit_moved)
+	combat_grid.connect("cell_selected", _on_grid_cell_selected)
 
-	var deck_panel := VBoxContainer.new()
+	var deck_panel := PanelContainer.new()
 	deck_panel.name = "DeckPanel"
-	deck_panel.add_theme_constant_override("separation", 8)
+	deck_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	layout.add_child(deck_panel)
+
+	var deck_layout := VBoxContainer.new()
+	deck_layout.name = "DeckLayout"
+	deck_layout.add_theme_constant_override("separation", 8)
+	deck_panel.add_child(deck_layout)
 
 	pile_counts_label = Label.new()
 	pile_counts_label.text = "Draw: 0 | Hand: 0 | Discard: 0 | Exhaust: 0"
 	pile_counts_label.add_theme_font_size_override("font_size", 16)
-	deck_panel.add_child(pile_counts_label)
+	deck_layout.add_child(pile_counts_label)
+
+	hand_action_status_label = Label.new()
+	hand_action_status_label.name = "HandActionStatus"
+	hand_action_status_label.text = "Cards locked until the table opens."
+	hand_action_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	hand_action_status_label.custom_minimum_size = Vector2(0, 28)
+	hand_action_status_label.add_theme_font_size_override("font_size", 15)
+	hand_action_status_label.add_theme_color_override("font_shadow_color", Color(0.0, 0.0, 0.0, 0.68))
+	hand_action_status_label.add_theme_constant_override("shadow_offset_x", 1)
+	hand_action_status_label.add_theme_constant_override("shadow_offset_y", 1)
+	deck_layout.add_child(hand_action_status_label)
+
+	shooter_economy_label = Label.new()
+	shooter_economy_label.name = "ShooterEconomyStrip"
+	shooter_economy_label.text = "CHIPS 7 | ARMOR 0 | AMMO 18 | LOADOUT EMPTY"
+	shooter_economy_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	shooter_economy_label.add_theme_font_size_override("font_size", 15)
+	shooter_economy_label.add_theme_color_override("font_color", Color(1.0, 0.86, 0.42))
+	deck_layout.add_child(shooter_economy_label)
+
+	loadout_slot_row = HBoxContainer.new()
+	loadout_slot_row.name = "LoadoutSlotRow"
+	loadout_slot_row.add_theme_constant_override("separation", 6)
+	deck_layout.add_child(loadout_slot_row)
+	for slot_id in ["weapon", "ability_1", "ability_2", "passive", "wager"]:
+		var slot_button := Button.new()
+		slot_button.name = "LoadoutSlot_%s" % slot_id
+		slot_button.text = "%s\nEMPTY" % _get_loadout_slot_label(slot_id)
+		slot_button.focus_mode = Control.FOCUS_NONE
+		slot_button.clip_text = true
+		slot_button.custom_minimum_size = Vector2(132, 48)
+		slot_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		slot_button.pressed.connect(_on_loadout_slot_pressed.bind(slot_id))
+		loadout_slot_buttons[slot_id] = slot_button
+		loadout_slot_row.add_child(slot_button)
+
+	hand_action_button_row = HBoxContainer.new()
+	hand_action_button_row.name = "HandCardActionRow"
+	hand_action_button_row.add_theme_constant_override("separation", 6)
+	deck_layout.add_child(hand_action_button_row)
+
+	slot_selected_button = Button.new()
+	slot_selected_button.name = "SlotSelectedCardButton"
+	slot_selected_button.text = "Slot Selected"
+	slot_selected_button.pressed.connect(_on_slot_selected_card_pressed)
+	hand_action_button_row.add_child(slot_selected_button)
+
+	burn_selected_button = Button.new()
+	burn_selected_button.name = "BurnSelectedCardButton"
+	burn_selected_button.text = "Burn +2 Chips"
+	burn_selected_button.pressed.connect(_on_burn_selected_card_pressed)
+	hand_action_button_row.add_child(burn_selected_button)
+
+	hold_selected_button = Button.new()
+	hold_selected_button.name = "HoldSelectedCardButton"
+	hold_selected_button.text = "Hold"
+	hold_selected_button.pressed.connect(_on_hold_selected_card_pressed)
+	hand_action_button_row.add_child(hold_selected_button)
+
+	bridge_payload_button = Button.new()
+	bridge_payload_button.name = "CombatBridgePayloadButton"
+	bridge_payload_button.text = "Preview Payload"
+	bridge_payload_button.pressed.connect(_on_bridge_payload_pressed)
+	hand_action_button_row.add_child(bridge_payload_button)
+
+	enter_arena_button = Button.new()
+	enter_arena_button.name = "EnterArenaButton"
+	enter_arena_button.text = "Enter Arena"
+	enter_arena_button.pressed.connect(_on_enter_arena_pressed)
+	hand_action_button_row.add_child(enter_arena_button)
 
 	card_action_hint_label = RichTextLabel.new()
 	card_action_hint_label.name = "CardActionHint"
@@ -1115,7 +1514,7 @@ func _build_ui() -> void:
 	card_action_hint_label.fit_content = true
 	card_action_hint_label.scroll_active = false
 	card_action_hint_label.custom_minimum_size = Vector2(0, 64)
-	deck_panel.add_child(card_action_hint_label)
+	deck_layout.add_child(card_action_hint_label)
 
 	card_target_preview_label = RichTextLabel.new()
 	card_target_preview_label.name = "CardTargetPreview"
@@ -1123,15 +1522,15 @@ func _build_ui() -> void:
 	card_target_preview_label.fit_content = true
 	card_target_preview_label.scroll_active = false
 	card_target_preview_label.custom_minimum_size = Vector2(0, 72)
-	deck_panel.add_child(card_target_preview_label)
+	deck_layout.add_child(card_target_preview_label)
 
 	var hand_scroll := ScrollContainer.new()
 	hand_scroll.name = "HandScroll"
 	hand_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
 	hand_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	hand_scroll.custom_minimum_size = Vector2(0, 196)
+	hand_scroll.custom_minimum_size = Vector2(0, 154)
 	hand_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	deck_panel.add_child(hand_scroll)
+	deck_layout.add_child(hand_scroll)
 
 	hand_view = HBoxContainer.new()
 	hand_view.name = "HandView"
@@ -1152,6 +1551,7 @@ func _build_ui() -> void:
 		feedback_panel,
 		recipe_panel,
 		run_panel,
+		action_cue_panel,
 		primary_controls,
 		debug_drawer_panel,
 		body,
@@ -1226,15 +1626,27 @@ func _apply_phase35_default_layout(
 	feedback_panel: Control,
 	recipe_panel: Control,
 	run_panel: Control,
+	action_cue_panel: Control,
 	primary_controls: Control,
 	debug_drawer_panel: Control,
 	body: Control,
 	deck_panel: Control,
 	log_column: Control
 ) -> void:
-	layout.add_theme_constant_override("separation", 8)
-	title.add_theme_font_size_override("font_size", 22)
+	layout.add_theme_constant_override("separation", 6)
+	title.add_theme_font_size_override("font_size", 30)
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	title.add_theme_color_override("font_color", Color(1.0, 0.88, 0.50))
+	subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	subtitle.add_theme_color_override("font_color", Color(0.78, 0.72, 0.62))
 	subtitle.visible = false
+	var title_parent := title.get_parent()
+	if title_parent is PanelContainer:
+		_style_play_panel(title_parent as PanelContainer, Color(0.075, 0.044, 0.050, 0.95), Color(0.88, 0.62, 0.24), "header")
+	run_header_label.add_theme_stylebox_override(
+		"normal",
+		DEAD_MANS_ANTE_SKIN_SCRIPT.make_panel_style(Color(0.052, 0.040, 0.040, 0.92), Color(0.70, 0.50, 0.24), "header")
+	)
 	var table_board_panel: Node = body.find_child("TableBoardPanel", true, false)
 	if table_board_panel is PanelContainer:
 		_style_play_panel(table_board_panel as PanelContainer, Color(0.12, 0.105, 0.085), Color(0.72, 0.56, 0.26))
@@ -1244,6 +1656,38 @@ func _apply_phase35_default_layout(
 	var target_controls_panel: Node = body.find_child("TargetControlsPanel", true, false)
 	if target_controls_panel is PanelContainer:
 		_style_play_panel(target_controls_panel as PanelContainer, Color(0.13, 0.115, 0.09), Color(0.68, 0.55, 0.28))
+	if run_shell_panel is PanelContainer:
+		_style_play_panel(run_shell_panel as PanelContainer, Color(0.105, 0.085, 0.072), Color(0.64, 0.45, 0.22))
+	if guidance_panel is PanelContainer:
+		_style_play_panel(guidance_panel as PanelContainer, Color(0.085, 0.088, 0.095), Color(0.38, 0.50, 0.62))
+	if feedback_panel is PanelContainer:
+		_style_play_panel(feedback_panel as PanelContainer, Color(0.095, 0.080, 0.072), Color(0.56, 0.40, 0.22))
+	if run_path_panel is PanelContainer:
+		_style_play_panel(run_path_panel as PanelContainer, Color(0.075, 0.078, 0.082), Color(0.34, 0.34, 0.38))
+	if turn_status_panel is PanelContainer:
+		_style_play_panel(turn_status_panel as PanelContainer, Color(0.070, 0.060, 0.055), Color(0.52, 0.42, 0.26))
+	if table_rule_panel is PanelContainer:
+		_style_play_panel(table_rule_panel as PanelContainer, Color(0.060, 0.058, 0.066), Color(0.44, 0.34, 0.58))
+	if recipe_panel is PanelContainer:
+		_style_play_panel(recipe_panel as PanelContainer, Color(0.058, 0.052, 0.048), Color(0.46, 0.36, 0.24))
+	if run_panel is PanelContainer:
+		_style_play_panel(run_panel as PanelContainer, Color(0.065, 0.052, 0.048), Color(0.58, 0.40, 0.20))
+	if debug_drawer_panel is PanelContainer:
+		_style_play_panel(debug_drawer_panel as PanelContainer, Color(0.052, 0.052, 0.056), Color(0.32, 0.32, 0.35))
+	if action_cue_panel is PanelContainer:
+		_style_play_panel(action_cue_panel as PanelContainer, Color(0.062, 0.046, 0.040), Color(0.82, 0.56, 0.22), "cue")
+	if first_play_coach_panel is PanelContainer:
+		_style_play_panel(first_play_coach_panel as PanelContainer, Color(0.070, 0.052, 0.036), Color(0.92, 0.64, 0.24), "cue")
+	if deck_panel is PanelContainer:
+		_style_play_panel(deck_panel as PanelContainer, Color(0.070, 0.050, 0.038), Color(0.78, 0.54, 0.24), "hand")
+	if run_ceremony_panel != null:
+		_style_play_panel(run_ceremony_panel, Color(0.070, 0.052, 0.046), Color(0.68, 0.48, 0.22))
+	if encounter_approach_panel != null:
+		_style_play_panel(encounter_approach_panel, Color(0.060, 0.055, 0.058), Color(0.58, 0.44, 0.24))
+	if run_finale_panel != null:
+		_style_play_panel(run_finale_panel, Color(0.070, 0.052, 0.052), Color(0.76, 0.52, 0.22))
+	if run_inspector_panel != null:
+		_style_play_panel(run_inspector_panel, Color(0.052, 0.050, 0.052), Color(0.42, 0.36, 0.30))
 
 	run_header_label.custom_minimum_size = Vector2(0, 42)
 	run_path_label.custom_minimum_size = Vector2(0, 42)
@@ -1253,23 +1697,31 @@ func _apply_phase35_default_layout(
 	encounter_preview_label.custom_minimum_size = Vector2(0, 64)
 	run_ceremony_label.custom_minimum_size = Vector2(0, 72)
 
-	body.custom_minimum_size = Vector2(0, 430)
+	body.custom_minimum_size = Vector2(0, 0)
 	var table_row: Node = body.find_child("TableRow", true, false)
 	if table_row is Control:
-		(table_row as Control).custom_minimum_size = Vector2(0, 258)
-	combat_grid.custom_minimum_size = Vector2(410, 258)
-	enemy_status_label.custom_minimum_size = Vector2(360, 92)
+		(table_row as Control).custom_minimum_size = Vector2(0, 430)
+		(table_row as Control).size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	combat_grid.custom_minimum_size = Vector2(760, 430)
+	enemy_status_label.custom_minimum_size = Vector2(320, 92)
 	intent_icon_strip_label.custom_minimum_size = Vector2(360, 58)
 	threat_summary_label.custom_minimum_size = Vector2(360, 58)
 	intent_preview_label.custom_minimum_size = Vector2(360, 104)
 	bluff_state_label.custom_minimum_size = Vector2(360, 64)
+	live_state_chip_row.custom_minimum_size = Vector2(0, 34)
 	first_play_path_label.custom_minimum_size = Vector2(0, 50)
+	first_play_step_row.custom_minimum_size = Vector2(0, 34)
 	card_action_hint_label.custom_minimum_size = Vector2(0, 48)
 	card_target_preview_label.custom_minimum_size = Vector2(0, 46)
+	action_cue_panel.custom_minimum_size = Vector2(0, 72)
+	if first_play_coach_panel != null:
+		first_play_coach_panel.custom_minimum_size = Vector2(0, 38)
+	if hand_action_status_label != null:
+		hand_action_status_label.custom_minimum_size = Vector2(0, 28)
 
 	var hand_scroll: Node = deck_panel.find_child("HandScroll", true, false)
 	if hand_scroll is Control:
-		(hand_scroll as Control).custom_minimum_size = Vector2(0, 176)
+		(hand_scroll as Control).custom_minimum_size = Vector2(0, 154)
 
 	if deck_panel.get_parent() != body:
 		var previous_parent := deck_panel.get_parent()
@@ -1288,38 +1740,65 @@ func _apply_phase35_default_layout(
 
 	layout.move_child(run_header_label, 1)
 	layout.move_child(run_shell_panel, 2)
-	layout.move_child(run_path_panel, 3)
+	layout.move_child(action_cue_panel, 3)
 	layout.move_child(primary_controls, 4)
 	layout.move_child(body, 5)
-	layout.move_child(guidance_panel, 6)
-	layout.move_child(turn_status_panel, 7)
-	layout.move_child(table_rule_panel, 8)
-	layout.move_child(feedback_panel, 9)
-	layout.move_child(run_panel, 10)
-	layout.move_child(debug_drawer_panel, 11)
-	layout.move_child(recipe_panel, 12)
+	layout.move_child(run_path_panel, 6)
+	layout.move_child(guidance_panel, 7)
+	layout.move_child(turn_status_panel, 8)
+	layout.move_child(table_rule_panel, 9)
+	layout.move_child(feedback_panel, 10)
+	layout.move_child(run_panel, 11)
+	layout.move_child(debug_drawer_panel, 12)
+	layout.move_child(recipe_panel, 13)
 
 
-func _style_play_panel(panel: PanelContainer, bg_color: Color, border_color: Color) -> void:
+func _style_play_panel(panel: PanelContainer, bg_color: Color, border_color: Color, kind: String = "panel") -> void:
 	if panel == null:
 		return
 
+	DEAD_MANS_ANTE_SKIN_SCRIPT.apply_panel(panel, bg_color, border_color, kind)
+
+
+func _make_action_marker(marker_name: String, color: Color, border_width: int) -> PanelContainer:
+	var marker := PanelContainer.new()
+	marker.name = marker_name
+	marker.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	marker.z_index = 58
 	var style := StyleBoxFlat.new()
-	style.bg_color = bg_color
-	style.border_color = border_color
-	style.border_width_left = 2
-	style.border_width_top = 2
-	style.border_width_right = 2
-	style.border_width_bottom = 2
-	style.corner_radius_top_left = 6
-	style.corner_radius_top_right = 6
-	style.corner_radius_bottom_left = 6
-	style.corner_radius_bottom_right = 6
-	style.content_margin_left = 8
-	style.content_margin_top = 8
-	style.content_margin_right = 8
-	style.content_margin_bottom = 8
-	panel.add_theme_stylebox_override("panel", style)
+	style.bg_color = Color(color.r, color.g, color.b, 0.10)
+	style.border_color = color
+	style.border_width_left = border_width
+	style.border_width_top = border_width
+	style.border_width_right = border_width
+	style.border_width_bottom = border_width
+	style.corner_radius_top_left = 999
+	style.corner_radius_top_right = 999
+	style.corner_radius_bottom_left = 999
+	style.corner_radius_bottom_right = 999
+	marker.add_theme_stylebox_override("panel", style)
+	return marker
+
+
+func _create_compact_chip(chip_name: String, label: String) -> Button:
+	var chip := Button.new()
+	chip.name = chip_name
+	chip.text = label
+	chip.focus_mode = Control.FOCUS_NONE
+	chip.clip_text = true
+	chip.custom_minimum_size = Vector2(96, 30)
+	chip.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_style_compact_button(chip, false, Color(0.56, 0.56, 0.58), "Compact state.")
+	return chip
+
+
+func _style_compact_button(button: Button, active: bool, color: Color, tooltip: String) -> void:
+	if button == null:
+		return
+
+	button.tooltip_text = tooltip
+	button.add_theme_font_size_override("font_size", 13 if active else 12)
+	DEAD_MANS_ANTE_SKIN_SCRIPT.apply_chip(button, active, color, tooltip)
 
 
 func _connect_turn_manager() -> void:
@@ -1377,6 +1856,9 @@ func _on_next_phase_pressed() -> void:
 	if not bool(combat_session.call("can_debug_adjust")):
 		_append_log("Combat is over. Reset to start a new loop.")
 		return
+	if String(combat_session.get("current_phase_key")) == "PLAYER_COMMIT":
+		_record_first_play_step("resolve")
+		_play_resolve_anticipation()
 	_advance_play_loop()
 
 
@@ -1398,6 +1880,26 @@ func _advance_play_loop() -> void:
 			turn_manager.advance_phase()
 
 
+func _play_resolve_anticipation() -> void:
+	var target := _get_selected_enemy_target()
+	var target_id := StringName(target.get("id", &"")) if not target.is_empty() else _get_selected_enemy_target_id()
+	var target_name := String(target.get("name", "enemy fighter")) if not target.is_empty() else "enemy fighter"
+	var target_center := _get_unit_vfx_position(target_id)
+	if battlefield_callout_label != null:
+		battlefield_callout_label.text = "Resolve: cards hit, enemies answer, Blood and Guard update."
+		_pulse_canvas_item(battlefield_callout_label, FEEDBACK_REVEAL_COLOR)
+	if battlefield_focus_label != null:
+		_pulse_canvas_item(battlefield_focus_label, FEEDBACK_REVEAL_COLOR)
+	if combat_vfx != null and target_center != Vector2.ZERO:
+		if combat_vfx.has_method("play_target_lock_at"):
+			combat_vfx.call("play_target_lock_at", target_center, FEEDBACK_REVEAL_COLOR)
+		if combat_vfx.has_method("play_ring_at"):
+			combat_vfx.call("play_ring_at", target_center, FEEDBACK_CARD_COLOR, 54.0)
+	if arena_view != null and arena_view.has_method("focus_unit") and not target_id.is_empty():
+		arena_view.call("focus_unit", target_id)
+	_push_feedback("Resolving against %s. Watch the battlefield, not the old debug log." % target_name, FEEDBACK_REVEAL_COLOR, battlefield_focus_label)
+
+
 func _advance_to_phase(target_phase: String, max_steps: int) -> void:
 	for _index in range(max_steps):
 		var current_phase: String = String(combat_session.get("current_phase_key"))
@@ -1417,8 +1919,10 @@ func _on_start_run_pressed() -> void:
 	if run_flow_state != RUN_FLOW_START:
 		return
 	_set_run_flow_state(RUN_FLOW_COMBAT)
-	_append_log("Opening Table opened: combat is live.")
-	_push_feedback("Run map: Opening Table is live.", FEEDBACK_PHASE_COLOR, run_path_label)
+	_advance_to_phase("PLAYER_COMMIT", 4)
+	_record_first_play_step("open")
+	_append_log("Opening Table dealt: pick a target and play a card.")
+	_push_feedback("Opening Table dealt: pick a target and play a card.", FEEDBACK_PHASE_COLOR, run_path_label)
 	_refresh_action_controls()
 
 
@@ -1443,17 +1947,20 @@ func _on_next_encounter_pressed() -> void:
 	_append_log("Approach complete: %s dealt from the run map into combat." % node_name)
 	_record_run_ceremony("Approach: %s dealt into combat. The ceremony hands back to turn play." % node_name, FEEDBACK_PHASE_COLOR, run_shell_panel)
 	_reset_playable_combat()
+	_advance_to_phase("PLAYER_COMMIT", 4)
 	_push_feedback("Run map: moving to Table %d/%d - %s." % [
 		table_number,
 		table_count,
 		node_name
 	], FEEDBACK_PHASE_COLOR, run_path_label)
-	_push_feedback("Approach: %s dealt into combat. Read enemies, table rule, then begin turn." % node_name, FEEDBACK_PHASE_COLOR, run_shell_panel)
+	_push_feedback("Approach: %s dealt into combat. Read the table, pick a target, then play." % node_name, FEEDBACK_PHASE_COLOR, run_shell_panel)
 	_surface_latest_table_rule_effect()
 
 
 func _on_reset_grid_pressed() -> void:
+	_apply_current_tactical_map()
 	combat_grid.call("reset_grid", run_manager.call("get_current_enemy_spawns"))
+	_sync_arena_units()
 
 
 func _on_draw_pressed() -> void:
@@ -1502,6 +2009,8 @@ func _on_toggle_debug_pressed() -> void:
 
 
 func _on_card_clicked(hand_index: int) -> void:
+	selected_hand_index = hand_index
+	_refresh_loadout_ui()
 	if not bool(combat_session.call("can_play_cards")):
 		_append_log("Cards can only be played during Player Commit.")
 		_push_feedback("Locked: %s" % _get_global_card_lock_reason(combat_session.call("get_state")), FEEDBACK_PHASE_COLOR, card_action_hint_label)
@@ -1512,6 +2021,10 @@ func _on_card_clicked(hand_index: int) -> void:
 		_append_log("No card at hand index %d." % hand_index)
 		return
 
+	var source_card_view := _get_hand_card_view(hand_index)
+	if source_card_view != null and source_card_view.has_method("play_feedback"):
+		source_card_view.call("play_feedback", FEEDBACK_CARD_COLOR)
+
 	var cost := _get_card_cost(card)
 	var card_name := _get_card_name(card)
 	pending_card_context = _build_card_context(card)
@@ -1520,26 +2033,487 @@ func _on_card_clicked(hand_index: int) -> void:
 		return
 
 	if not bool(combat_session.call("spend_energy", cost, card_name)):
+		_push_feedback("Blocked: %s needs %d Energy." % [card_name, cost], FEEDBACK_DAMAGE_COLOR, hand_action_status_label)
 		pending_card_context.clear()
 		return
 
+	var play_context := pending_card_context.duplicate()
 	if not bool(deck_manager.call("play_card_at", hand_index)):
 		combat_session.call("refund_energy", cost, "%s failed to play" % card_name)
 		pending_card_context.clear()
 	else:
+		_play_card_commit_vfx(card, play_context, source_card_view, false)
 		_mark_recipe_step("play_or_commit")
 
 
 func _on_card_played(card: Resource) -> void:
 	_push_feedback("Card: %s played." % _get_card_name(card), FEEDBACK_CARD_COLOR, card_action_hint_label)
-	if _is_movement_card(card):
-		if bool(_resolve_movement_card(card, pending_card_context)):
-			_apply_card_side_effects(card)
-	else:
-		combat_resolver.call("apply_card_with_context", card, pending_card_context)
-		_apply_card_side_effects(card)
+	_record_first_play_step("card")
+	if _should_start_action_duel(card):
+		_start_action_duel(card, pending_card_context.duplicate())
+		return
+
+	_apply_played_card_effect(card, pending_card_context)
 	pending_card_context.clear()
 	_refresh_targeting_options()
+
+
+func _on_slot_selected_card_pressed() -> void:
+	_slot_selected_card()
+
+
+func _on_burn_selected_card_pressed() -> void:
+	_burn_selected_card()
+
+
+func _on_hold_selected_card_pressed() -> void:
+	if selected_hand_index < 0:
+		_push_feedback("Hover or click a card first, then Hold.", FEEDBACK_PHASE_COLOR, hand_action_status_label)
+		return
+	held_hand_indices[selected_hand_index] = true
+	_push_feedback("Held card %d for later. Hold is a planning promise until the combat bridge owns persistence." % (selected_hand_index + 1), FEEDBACK_PHASE_COLOR, hand_action_status_label)
+	_refresh_loadout_ui()
+
+
+func _on_bridge_payload_pressed() -> void:
+	var payload := _build_combat_bridge_payload()
+	_append_log("Combat bridge payload: %s" % JSON.stringify(payload))
+	_push_feedback("Bridge payload ready: %d chips, %d slotted card%s." % [
+		shooter_chips,
+		_get_slotted_card_count(),
+		"" if _get_slotted_card_count() == 1 else "s"
+	], FEEDBACK_CARD_COLOR, shooter_economy_label)
+
+
+func _on_enter_arena_pressed() -> void:
+	var payload := _build_combat_bridge_payload()
+	if _get_slotted_card_count() <= 0:
+		_push_feedback("Slot at least one card before entering the arena.", FEEDBACK_DAMAGE_COLOR, shooter_economy_label)
+		return
+	arena_bridge_payload = payload
+	arena_round_armed = true
+	var weapon_label := String(payload.get("weapon_card", ""))
+	if weapon_label.is_empty():
+		weapon_label = "sidearm"
+	var ability_cards: Array = payload.get("ability_cards", [])
+	var ability_count := ability_cards.size()
+	var economy: Dictionary = payload.get("economy", {})
+	_append_log("ENTER ARENA: %s" % JSON.stringify(payload))
+	_push_feedback("Arena armed: %s, %d ability card%s, %d armor, %d ammo." % [
+		weapon_label,
+		ability_count,
+		"" if ability_count == 1 else "s",
+		int(economy.get("armor", 0)),
+		int(economy.get("ammo", 0))
+	], FEEDBACK_MOVE_COLOR, shooter_economy_label)
+	if battlefield_callout_label != null:
+		battlefield_callout_label.text = "ARENA LIVE: your slotted cards are now shooter kit. Fight, spend, survive, then collect payout."
+		_pulse_canvas_item(battlefield_callout_label, FEEDBACK_MOVE_COLOR)
+	if arena_view != null and arena_view.has_method("focus_unit"):
+		arena_view.call("focus_unit", &"player")
+	_refresh_loadout_ui()
+	var bridge := get_node_or_null("/root/ArenaBridge")
+	if bridge != null and bridge.has_method("set_payload"):
+		bridge.call("set_payload", payload)
+	var tree := get_tree()
+	if tree != null:
+		tree.change_scene_to_file("res://scenes/fps/FPSPrototype.tscn")
+
+
+func _on_loadout_slot_pressed(slot_id: String) -> void:
+	if loadout_slots.has(slot_id):
+		var card: Resource = loadout_slots[slot_id]
+		_push_feedback("%s slot: %s." % [_get_loadout_slot_label(slot_id), _get_card_name(card)], FEEDBACK_CARD_COLOR, loadout_slot_buttons.get(slot_id, null))
+		return
+	_slot_selected_card(slot_id)
+
+
+func _slot_selected_card(forced_slot: String = "") -> bool:
+	if selected_hand_index < 0:
+		_push_feedback("Hover or click a card first, then Slot.", FEEDBACK_PHASE_COLOR, hand_action_status_label)
+		return false
+	var card: Resource = deck_manager.call("get_card_at", selected_hand_index) if deck_manager != null else null
+	if card == null:
+		_push_feedback("Selected card is no longer in hand.", FEEDBACK_DAMAGE_COLOR, hand_action_status_label)
+		selected_hand_index = -1
+		return false
+	var slot_id := forced_slot if not forced_slot.is_empty() else _get_recommended_loadout_slot(card)
+	var slot_cost := _get_loadout_slot_cost(card, slot_id)
+	if shooter_chips < slot_cost:
+		_push_feedback("Need %d Chips to slot %s; you have %d." % [slot_cost, _get_card_name(card), shooter_chips], FEEDBACK_DAMAGE_COLOR, shooter_economy_label)
+		return false
+	var slotted_card: Resource = deck_manager.call("slot_card_at", selected_hand_index)
+	if slotted_card == null:
+		_push_feedback("Could not slot that card; it may have moved already.", FEEDBACK_DAMAGE_COLOR, hand_action_status_label)
+		selected_hand_index = -1
+		return false
+	shooter_chips -= slot_cost
+	loadout_slots[slot_id] = slotted_card
+	held_hand_indices.erase(selected_hand_index)
+	arena_round_armed = false
+	arena_bridge_payload.clear()
+	selected_hand_index = min(selected_hand_index, int(deck_manager.call("get_hand_count")) - 1)
+	_push_feedback("Slotted %s into %s for %d Chips." % [_get_card_name(slotted_card), _get_loadout_slot_label(slot_id), slot_cost], FEEDBACK_CARD_COLOR, loadout_slot_buttons.get(slot_id, null))
+	_refresh_loadout_ui()
+	return true
+
+
+func _burn_selected_card() -> bool:
+	if selected_hand_index < 0:
+		_push_feedback("Hover or click a card first, then Burn.", FEEDBACK_PHASE_COLOR, hand_action_status_label)
+		return false
+	var card: Resource = deck_manager.call("get_card_at", selected_hand_index) if deck_manager != null else null
+	if card == null:
+		_push_feedback("Selected card is no longer in hand.", FEEDBACK_DAMAGE_COLOR, hand_action_status_label)
+		selected_hand_index = -1
+		return false
+	var burned: Resource = deck_manager.call("burn_card_at", selected_hand_index)
+	if burned == null:
+		return false
+	shooter_chips += _get_card_burn_value(card)
+	held_hand_indices.clear()
+	selected_hand_index = min(selected_hand_index, int(deck_manager.call("get_hand_count")) - 1)
+	_push_feedback("Burned %s for +%d Chips." % [_get_card_name(card), _get_card_burn_value(card)], FEEDBACK_CARD_COLOR, shooter_economy_label)
+	_refresh_loadout_ui()
+	return true
+
+
+func _should_start_action_duel(card: Resource) -> bool:
+	if card == null:
+		return false
+	var style: StringName = _get_card_vfx_style(card)
+	return style == &"attack" or style == &"guard" or style == &"move" or style == &"read"
+
+
+func _start_action_duel(card: Resource, context: Dictionary) -> void:
+	var style: StringName = _get_card_vfx_style(card)
+	var target_position: Vector2 = _get_card_vfx_target_position(card, context, battlefield_callout_label)
+	if target_position == Vector2.ZERO:
+		target_position = _get_canvas_item_global_center(battlefield_callout_label)
+	active_action_card = card
+	active_action_context = context
+	active_action_target_position = target_position
+	active_action_beat = ACTION_BEAT_RESOLVER_SCRIPT.make_beat(style, &"player", StringName(context.get("target_enemy_id", &"")), _get_card_name(card))
+	if action_beat_panel != null:
+		action_beat_panel.visible = true
+	if action_target_ring != null:
+		action_target_ring.visible = true
+		_position_action_marker(action_target_ring, target_position, Vector2(104, 104))
+	if action_aim_reticle != null:
+		action_aim_reticle.visible = true
+		_position_action_marker(action_aim_reticle, get_viewport().get_mouse_position(), Vector2(30, 30))
+	if action_beat_progress != null:
+		action_beat_progress.value = 0.0
+	_update_action_beat_copy(999.0)
+	_push_feedback("%s opens a live arena action: aim on the target, then strike." % _get_card_name(card), FEEDBACK_CARD_COLOR, battlefield_callout_label)
+	if combat_vfx != null and combat_vfx.has_method("play_ring_at"):
+		combat_vfx.call("play_ring_at", target_position, FEEDBACK_DAMAGE_COLOR if style == &"attack" else FEEDBACK_CARD_COLOR, 58.0)
+
+
+func _on_action_beat_pressed() -> void:
+	_complete_action_beat()
+
+
+func _complete_action_beat() -> void:
+	if active_action_beat.is_empty() or active_action_card == null:
+		return
+	var aim_position: Vector2 = get_viewport().get_mouse_position()
+	var distance: float = aim_position.distance_to(active_action_target_position)
+	var style: StringName = StringName(active_action_beat.get("style", &"attack"))
+	var result: Dictionary = ACTION_BEAT_RESOLVER_SCRIPT.resolve_aim(style, distance, 42.0, 96.0, 164.0)
+	active_action_context["action_beat_result"] = String(result.get("result", "hit"))
+	active_action_context["action_multiplier"] = float(result.get("multiplier", 1.0))
+	active_action_context["action_beat_label"] = String(result.get("label", "HIT"))
+	_push_feedback(String(result.get("message", "Arena action resolved.")), _get_action_result_color(String(result.get("result", "hit"))), battlefield_callout_label)
+	if combat_vfx != null and combat_vfx.has_method("play_burst_at"):
+		combat_vfx.call("play_burst_at", active_action_target_position, _get_action_result_color(String(result.get("result", "hit"))), &"blood" if style == &"attack" else &"chip")
+	_apply_played_card_effect(active_action_card, active_action_context)
+	_clear_action_duel()
+	pending_card_context.clear()
+	_refresh_targeting_options()
+
+
+func _apply_played_card_effect(card: Resource, context: Dictionary) -> void:
+	if _is_movement_card(card):
+		if String(context.get("action_beat_result", "hit")) == "miss":
+			_push_feedback("%s misses the dodge line. No movement." % _get_card_name(card), FEEDBACK_DAMAGE_COLOR, battlefield_callout_label)
+			return
+		if bool(_resolve_movement_card(card, context)):
+			_apply_card_side_effects(card, context)
+	else:
+		combat_resolver.call("apply_card_with_context", card, context)
+		_apply_card_side_effects(card, context)
+
+
+func _clear_action_duel() -> void:
+	active_action_beat.clear()
+	active_action_context.clear()
+	active_action_card = null
+	active_action_target_position = Vector2.ZERO
+	if action_beat_panel != null:
+		action_beat_panel.visible = false
+	if action_target_ring != null:
+		action_target_ring.visible = false
+	if action_aim_reticle != null:
+		action_aim_reticle.visible = false
+
+
+func _position_action_marker(marker: Control, global_center: Vector2, marker_size: Vector2) -> void:
+	if marker == null or not marker.is_inside_tree():
+		return
+	var parent_item: CanvasItem = marker.get_parent() as CanvasItem
+	if parent_item == null:
+		return
+	var local_center: Vector2 = parent_item.get_global_transform_with_canvas().affine_inverse() * global_center
+	marker.size = marker_size
+	marker.position = local_center - marker_size * 0.5
+	marker.pivot_offset = marker_size * 0.5
+
+
+func _update_action_beat_copy(distance: float) -> void:
+	if action_beat_label == null or active_action_beat.is_empty():
+		return
+	var label := "MISS"
+	if distance <= 42.0:
+		label = "CENTERED"
+	elif distance <= 96.0:
+		label = "ON TARGET"
+	elif distance <= 164.0:
+		label = "EDGE"
+	action_beat_label.text = "%s\nAim on the target, then strike. %s" % [
+		String(active_action_beat.get("card_name", "Action")).to_upper(),
+		label
+	]
+
+
+func _get_action_result_color(result: String) -> Color:
+	match result:
+		"perfect":
+			return Color(1.0, 0.88, 0.34)
+		"hit":
+			return FEEDBACK_DAMAGE_COLOR
+		"graze":
+			return FEEDBACK_CARD_COLOR
+		_:
+			return Color(0.55, 0.58, 0.64)
+
+
+func _get_loadout_slot_label(slot_id: String) -> String:
+	match slot_id:
+		"weapon":
+			return "Weapon"
+		"ability_1":
+			return "Ability 1"
+		"ability_2":
+			return "Ability 2"
+		"passive":
+			return "Passive"
+		"wager":
+			return "Wager"
+		_:
+			return slot_id.capitalize()
+
+
+func _get_recommended_loadout_slot(card: Resource) -> String:
+	match _get_card_vfx_style(card):
+		&"attack":
+			if not loadout_slots.has("weapon"):
+				return "weapon"
+			return _get_first_empty_loadout_slot("passive")
+		&"move", &"guard", &"read", &"trap":
+			if not loadout_slots.has("ability_1"):
+				return "ability_1"
+			if not loadout_slots.has("ability_2"):
+				return "ability_2"
+			return _get_first_empty_loadout_slot("passive")
+		&"ritual", &"bluff":
+			if not loadout_slots.has("wager"):
+				return "wager"
+			return _get_first_empty_loadout_slot("passive")
+		_:
+			return _get_first_empty_loadout_slot("passive")
+
+
+func _get_first_empty_loadout_slot(fallback: String) -> String:
+	for slot_id in ["weapon", "ability_1", "ability_2", "passive", "wager"]:
+		if not loadout_slots.has(slot_id):
+			return slot_id
+	return fallback
+
+
+func _get_loadout_slot_cost(card: Resource, slot_id: String) -> int:
+	var base_cost: int = maxi(1, _get_card_cost(card))
+	if slot_id == "passive":
+		return max(1, base_cost + 1)
+	if slot_id == "wager":
+		return base_cost
+	return base_cost
+
+
+func _get_card_burn_value(card: Resource) -> int:
+	return max(1, 1 + int(_get_card_cost(card) / 2))
+
+
+func _get_slotted_card_count() -> int:
+	var count := 0
+	for value in loadout_slots.values():
+		if value is Resource:
+			count += 1
+	return count
+
+
+func _refresh_loadout_ui() -> void:
+	if shooter_economy_label != null:
+		var arena_state := "ARENA READY" if arena_round_armed else "PREP"
+		shooter_economy_label.text = "CHIPS %d | ARMOR %d | AMMO %d | SLOTTED %d/5 | %s | SELECTED %s" % [
+			shooter_chips,
+			_get_bridge_armor_value(),
+			_get_bridge_ammo_value(),
+			_get_slotted_card_count(),
+			arena_state,
+			_get_selected_card_label()
+		]
+	for slot_id in loadout_slot_buttons.keys():
+		var button: Button = loadout_slot_buttons[slot_id]
+		if loadout_slots.has(slot_id):
+			var card: Resource = loadout_slots[slot_id]
+			button.text = "%s\n%s" % [_get_loadout_slot_label(slot_id).to_upper(), _get_card_name(card)]
+			button.tooltip_text = "%s is slotted for the combat bridge. Click another selected card action to replace it." % _get_card_name(card)
+			_style_compact_button(button, true, FEEDBACK_CARD_COLOR, button.tooltip_text)
+		else:
+			button.text = "%s\nEMPTY" % _get_loadout_slot_label(slot_id).to_upper()
+			button.tooltip_text = "Select a card, then click this slot or Slot Selected."
+			_style_compact_button(button, false, Color(0.50, 0.46, 0.38), button.tooltip_text)
+	if slot_selected_button != null:
+		slot_selected_button.disabled = selected_hand_index < 0
+	if burn_selected_button != null:
+		burn_selected_button.disabled = selected_hand_index < 0
+	if hold_selected_button != null:
+		hold_selected_button.disabled = selected_hand_index < 0
+	if enter_arena_button != null:
+		enter_arena_button.disabled = _get_slotted_card_count() <= 0
+		enter_arena_button.tooltip_text = "Slot at least one card, then enter the shooter arena with that loadout."
+		_style_compact_button(enter_arena_button, arena_round_armed or _get_slotted_card_count() > 0, FEEDBACK_MOVE_COLOR, enter_arena_button.tooltip_text)
+
+
+func _get_selected_card_label() -> String:
+	if selected_hand_index < 0 or deck_manager == null:
+		return "NONE"
+	var card: Resource = deck_manager.call("get_card_at", selected_hand_index)
+	if card == null:
+		return "NONE"
+	return _get_card_name(card)
+
+
+func _get_bridge_armor_value() -> int:
+	var armor := 0
+	for card in loadout_slots.values():
+		if not (card is Resource):
+			continue
+		var style := _get_card_vfx_style(card)
+		if style == &"guard":
+			armor += 2 + _get_card_cost(card)
+	return armor
+
+
+func _get_bridge_ammo_value() -> int:
+	var ammo := 12
+	for card in loadout_slots.values():
+		if not (card is Resource):
+			continue
+		if _get_card_vfx_style(card) == &"attack":
+			ammo += 6 + _get_card_cost(card) * 2
+	return ammo
+
+
+func _build_combat_bridge_payload() -> Dictionary:
+	var ability_cards: Array[String] = []
+	var passive_cards: Array[String] = []
+	var wager_cards: Array[String] = []
+	var loadout: Array[Dictionary] = []
+	for slot_id in loadout_slots.keys():
+		var card: Resource = loadout_slots[slot_id]
+		if card == null:
+			continue
+		var card_id := String(card.get("id"))
+		loadout.append(_get_shooter_card_payload(card, String(slot_id)))
+		match String(slot_id):
+			"ability_1", "ability_2":
+				ability_cards.append(card_id)
+			"passive":
+				passive_cards.append(card_id)
+			"wager":
+				wager_cards.append(card_id)
+	var economy := {
+		"chips": shooter_chips,
+		"armor": _get_bridge_armor_value(),
+		"ammo": _get_bridge_ammo_value()
+	}
+	return {
+		"weapon_card": String(loadout_slots.get("weapon", null).get("id")) if loadout_slots.get("weapon", null) is Resource else "",
+		"ability_cards": ability_cards,
+		"passive_cards": passive_cards,
+		"wager_cards": wager_cards,
+		"loadout": loadout,
+		"economy": economy,
+		"reads": {
+			"target_enemy": _get_selected_enemy_target_id(),
+			"threat": _get_enemy_intent_line(_get_selected_enemy_target_id())
+		}
+	}
+
+
+func _get_shooter_card_payload(card: Resource, slot_id: String) -> Dictionary:
+	var style := _get_card_vfx_style(card)
+	var card_id := String(card.get("id"))
+	var payload := {
+		"slot": slot_id,
+		"id": card_id,
+		"name": _get_card_name(card),
+		"style": String(style),
+		"cost": _get_card_cost(card),
+		"input": "instant"
+	}
+	match style:
+		&"attack":
+			payload["combat_role"] = "weapon"
+			payload["weapon"] = _get_weapon_profile_for_card(card_id)
+		&"guard":
+			payload["combat_role"] = "defense_ability"
+			payload["ability"] = {"kind": "guard_shimmer", "armor": 2 + _get_card_cost(card), "cooldown": 8.0}
+		&"move":
+			payload["combat_role"] = "movement_ability"
+			payload["ability"] = {"kind": "dash", "charges": 1, "cooldown": 6.0}
+		&"read":
+			payload["combat_role"] = "intel_ability"
+			payload["ability"] = {"kind": "reveal_target", "duration": 3.5, "cooldown": 10.0}
+		&"trap":
+			payload["combat_role"] = "area_control"
+			payload["ability"] = {"kind": "snare_field", "duration": 4.0, "cooldown": 12.0}
+		&"ritual":
+			payload["combat_role"] = "wager"
+			payload["ability"] = {"kind": "blood_overclock", "risk": 2, "reward": 4}
+		&"bluff":
+			payload["combat_role"] = "debuff"
+			payload["ability"] = {"kind": "bait_ping", "duration": 2.5, "cooldown": 9.0}
+		_:
+			payload["combat_role"] = "passive"
+			payload["ability"] = {"kind": "minor_stat_boost"}
+	return payload
+
+
+func _get_weapon_profile_for_card(card_id: String) -> Dictionary:
+	match card_id:
+		"quick_slash":
+			return {"name": "Ace Cutter Revolver", "damage": 28, "magazine": 6, "fire_rate": 3.2, "range": "mid"}
+		"low_stab":
+			return {"name": "Low Stab Sidearm", "damage": 18, "magazine": 12, "fire_rate": 5.8, "range": "close"}
+		"all_in_cut":
+			return {"name": "All-In Rail Pistol", "damage": 44, "magazine": 3, "fire_rate": 1.4, "range": "long"}
+		"center_cut":
+			return {"name": "Center Cut Carbine", "damage": 24, "magazine": 18, "fire_rate": 6.0, "range": "mid"}
+		_:
+			return {"name": "House Sidearm", "damage": 20, "magazine": 10, "fire_rate": 4.0, "range": "mid"}
 
 
 func _on_commit_first_card_pressed() -> void:
@@ -1566,12 +2540,15 @@ func _on_commit_first_card_pressed() -> void:
 	if not bool(combat_session.call("spend_energy", cost, "Commit %s" % card_name)):
 		return
 
+	var source_card_view := _get_hand_card_view(0)
 	var committed: Resource = deck_manager.call("commit_card_at", 0)
 	if committed != null:
 		committed_card_context = context.duplicate()
 		bluff_system.call("set_committed_card", committed)
 		_mark_recipe_step("play_or_commit")
+		_record_first_play_step("card")
 		_push_feedback("Committed: %s face-down." % _get_card_name(committed), FEEDBACK_CARD_COLOR, bluff_state_label)
+		_play_card_commit_vfx(committed, context, source_card_view, true)
 	else:
 		combat_session.call("refund_energy", cost, "Commit failed")
 
@@ -1601,6 +2578,7 @@ func _on_set_call_pressed() -> void:
 		intent_metadata.get("intent_name", "Intent"),
 		enemy_metadata.get("enemy_name", "Enemy")
 	], FEEDBACK_REVEAL_COLOR, bluff_state_label)
+	_play_intent_flicker_vfx(intent_preview_label, FEEDBACK_REVEAL_COLOR)
 
 
 func _on_raise_pressed() -> void:
@@ -1610,6 +2588,7 @@ func _on_raise_pressed() -> void:
 	if bool(bluff_system.call("raise_wager", 1)):
 		_mark_recipe_step("bluff_choice")
 		_push_feedback("Raise: wager increased.", FEEDBACK_REVEAL_COLOR, bluff_state_label)
+		_play_chip_vfx(bluff_state_label)
 
 
 func _on_fold_pressed() -> void:
@@ -1621,6 +2600,7 @@ func _on_fold_pressed() -> void:
 		committed_card_context.clear()
 		_mark_recipe_step("bluff_choice")
 		_push_feedback("Fold: committed card moved to discard.", FEEDBACK_REVEAL_COLOR, bluff_state_label)
+		_play_smoke_vfx(bluff_state_label)
 
 
 func _on_reset_bluff_pressed() -> void:
@@ -1651,6 +2631,7 @@ func _on_piles_changed(counts: Dictionary) -> void:
 
 func _reset_run_slice() -> void:
 	_set_run_flow_state(RUN_FLOW_START)
+	_reset_first_play_coach()
 	run_ceremony_history.clear()
 	selected_run_path_index = -1
 	last_run_path_current_index = -1
@@ -1675,8 +2656,13 @@ func _reset_playable_combat() -> void:
 	_reset_feedback_state()
 	pending_card_context.clear()
 	committed_card_context.clear()
+	shooter_chips = 7
+	loadout_slots.clear()
+	held_hand_indices.clear()
+	selected_hand_index = -1
 	_apply_relic_modifiers()
 	combat_session.call("reset_session")
+	_apply_current_tactical_map()
 	combat_grid.call("reset_grid", run_manager.call("get_current_enemy_spawns"))
 	_reset_combat_state()
 	_reset_deck_and_draw_opening_hand()
@@ -1688,6 +2674,7 @@ func _reset_playable_combat() -> void:
 	if run_flow_state != RUN_FLOW_START:
 		_set_run_flow_state(RUN_FLOW_COMBAT)
 	_refresh_action_controls()
+	_refresh_loadout_ui()
 
 
 func _reset_deck_and_draw_opening_hand() -> void:
@@ -1703,6 +2690,20 @@ func _reset_enemy_intents() -> void:
 
 func _reset_combat_state() -> void:
 	combat_resolver.call("reset_combat", run_manager.call("get_current_enemy_paths"), int(run_manager.call("get_player_hp")))
+
+
+func _apply_current_tactical_map() -> void:
+	var tactical_map := _get_current_tactical_map()
+	if combat_grid != null and combat_grid.has_method("configure_map"):
+		combat_grid.call("configure_map", tactical_map)
+	if arena_view != null and arena_view.has_method("configure_map"):
+		arena_view.call("configure_map", tactical_map)
+
+
+func _get_current_tactical_map() -> Dictionary:
+	if run_manager != null and run_manager.has_method("get_current_tactical_map"):
+		return run_manager.call("get_current_tactical_map")
+	return TACTICAL_MAP_SCRIPT.get_default_map()
 
 
 func _draw_to_hand_target() -> void:
@@ -1790,6 +2791,7 @@ func _on_intents_revealed(revealed: Array[Dictionary]) -> void:
 			entry.get("intent_name", "Intent")
 		])
 	_push_feedback("Reveal: %s." % " | ".join(reveal_names), FEEDBACK_REVEAL_COLOR, intent_preview_label)
+	_play_intent_flicker_vfx(intent_preview_label, FEEDBACK_REVEAL_COLOR)
 
 
 func _on_bluff_state_changed(state: Dictionary) -> void:
@@ -1828,6 +2830,7 @@ func _on_combat_state_changed(state: Dictionary) -> void:
 		state.get("outcome", "ongoing")
 	])
 	_emit_combat_delta_feedback(state)
+	_sync_arena_combat_state(state)
 	_refresh_enemy_status(state)
 	_refresh_targeting_options()
 	_refresh_action_controls()
@@ -1865,27 +2868,35 @@ func _on_target_enemy_selected(_index: int) -> void:
 	_sync_target_focus()
 	var target: Dictionary = _get_selected_enemy_target()
 	if not target.is_empty():
+		_record_first_play_step("target")
 		_flash_grid_unit(StringName(target.get("id", &"")), FEEDBACK_CARD_COLOR)
 		_push_feedback("Target selected: %s for attack/read cards." % target.get("name", "Enemy"), FEEDBACK_CARD_COLOR, target_enemy_option)
+		_refresh_enemy_target_cards(combat_resolver.call("get_state") if combat_resolver != null else {})
 	_refresh_card_action_hint()
 	_refresh_card_target_preview()
+	_refresh_compact_play_state(run_manager.call("get_state") if run_manager != null else {})
 
 
 func _on_movement_cell_selected(_index: int) -> void:
 	_sync_target_focus()
 	var target_cell: Vector2i = _get_selected_move_cell()
 	if target_cell != Vector2i(-1, -1) and combat_grid != null:
+		_record_first_play_step("target")
 		combat_grid.call("flash_cell", target_cell, FEEDBACK_MOVE_COLOR)
 		_push_feedback("Move selected: %s for movement/trap cards." % combat_grid.call("format_cell", target_cell), FEEDBACK_MOVE_COLOR, movement_cell_option)
 	_refresh_card_action_hint()
 	_refresh_card_target_preview()
+	_refresh_compact_play_state(run_manager.call("get_state") if run_manager != null else {})
 
 
 func _on_card_previewed(hand_index: int) -> void:
 	previewed_hand_index = hand_index
+	selected_hand_index = hand_index
 	if hand_view != null and hand_view.has_method("set_previewed_index"):
 		hand_view.call("set_previewed_index", hand_index)
 	_refresh_card_target_preview()
+	_sync_target_focus()
+	_refresh_loadout_ui()
 
 
 func _on_card_preview_cleared(hand_index: int) -> void:
@@ -1904,7 +2915,10 @@ func _on_run_state_changed(state: Dictionary) -> void:
 
 func _on_run_path_table_pressed(index: int) -> void:
 	if run_flow_state == RUN_FLOW_START:
-		_push_feedback("Open Opening Table first; route previews unlock after the deal-in.", FEEDBACK_PHASE_COLOR, run_path_label)
+		if index == 0:
+			_on_start_run_pressed()
+		else:
+			_push_feedback("Deal In first; later tables unlock after the first fight.", FEEDBACK_PHASE_COLOR, run_path_buttons[index] if index >= 0 and index < run_path_buttons.size() else run_path_label)
 		return
 	selected_run_path_index = index
 	if run_manager == null:
@@ -1923,11 +2937,23 @@ func _on_run_path_table_pressed(index: int) -> void:
 
 func _on_run_path_table_hovered(index: int) -> void:
 	if run_flow_state == RUN_FLOW_START:
+		if index >= 0 and index < run_path_buttons.size():
+			_flash_canvas_item(run_path_buttons[index], FEEDBACK_CARD_COLOR if index == 0 else FEEDBACK_PHASE_COLOR, 0.12)
 		return
 	selected_run_path_index = index
 	if run_manager == null:
 		return
 	_refresh_run_path(run_manager.call("get_state"))
+
+
+func _on_opening_step_pressed(index: int) -> void:
+	if run_flow_state != RUN_FLOW_START:
+		return
+	if index == 0:
+		_on_start_run_pressed()
+		return
+	var target: Node = opening_step_buttons[index] if index >= 0 and index < opening_step_buttons.size() else run_shell_panel
+	_push_feedback("Deal In first. That step lights up once combat starts.", FEEDBACK_PHASE_COLOR, target)
 
 
 func _on_card_reward_pressed(index: int) -> void:
@@ -2379,7 +3405,128 @@ func _on_grid_unit_moved(unit_id: StringName, from_cell: Vector2i, to_cell: Vect
 		combat_grid.call("format_cell", to_cell)
 	], FEEDBACK_MOVE_COLOR, combat_grid)
 	_flash_grid_unit(unit_id, FEEDBACK_MOVE_COLOR)
+	_play_unit_or_cell_burst(unit_id, to_cell, FEEDBACK_MOVE_COLOR, &"move")
+	if arena_view != null and arena_view.has_method("play_move"):
+		arena_view.call("play_move", unit_id, from_cell, to_cell)
 	_refresh_targeting_options()
+
+
+func _on_grid_cell_selected(cell: Vector2i) -> void:
+	if combat_grid == null:
+		return
+
+	var occupant_id: StringName = combat_grid.call("get_occupant_at", cell)
+	if _is_clickable_enemy_target(occupant_id):
+		_select_enemy_target_by_id(occupant_id, combat_grid)
+		return
+
+	if _is_valid_player_move_target(cell):
+		_select_move_target_cell(cell, combat_grid)
+
+
+func _on_enemy_target_card_pressed(enemy_id: StringName) -> void:
+	var source_button: Button = null
+	for button in enemy_target_card_buttons:
+		if button == null:
+			continue
+		if StringName(button.get_meta("enemy_id", &"")) == enemy_id:
+			source_button = button
+			break
+	_select_enemy_target_by_id(enemy_id, source_button)
+
+
+func _on_enemy_target_card_button_down(enemy_id: StringName, source_button: Button) -> void:
+	if enemy_id.is_empty() or run_flow_state != RUN_FLOW_COMBAT:
+		return
+
+	_play_target_lock_vfx(enemy_id, source_button)
+	if source_button != null:
+		_flash_canvas_item(source_button, FEEDBACK_CARD_COLOR, 0.16)
+	if combat_vfx != null and combat_vfx.has_method("play_button_sheen_on") and _is_live_canvas_item(source_button):
+		combat_vfx.call("play_button_sheen_on", source_button, FEEDBACK_DAMAGE_COLOR)
+
+
+func _on_enemy_target_card_hovered(enemy_id: StringName, source_button: Button) -> void:
+	if enemy_id.is_empty() or run_flow_state != RUN_FLOW_COMBAT:
+		return
+
+	_play_target_lock_vfx(enemy_id, source_button)
+	if source_button != null:
+		_flash_canvas_item(source_button, FEEDBACK_CARD_COLOR, 0.18)
+
+
+func _on_enemy_target_card_unhovered(_enemy_id: StringName) -> void:
+	_sync_target_focus()
+
+
+func _select_enemy_target_by_id(enemy_id: StringName, source: Node = null) -> bool:
+	if target_enemy_option == null or enemy_id.is_empty():
+		return false
+
+	var option_index := _get_enemy_target_option_index(enemy_id)
+	if option_index < 0:
+		return false
+
+	target_enemy_option.select(option_index)
+	_sync_target_focus()
+	var target: Dictionary = _get_selected_enemy_target()
+	if target.is_empty():
+		return false
+
+	_record_first_play_step("target")
+	_flash_grid_unit(enemy_id, FEEDBACK_CARD_COLOR)
+	_play_target_lock_vfx(enemy_id, source as CanvasItem if source is CanvasItem else null)
+	_push_feedback("Target selected: %s. Attack/read cards will hit this card." % target.get("name", "Enemy"), FEEDBACK_CARD_COLOR, source if source != null else target_enemy_option)
+	_refresh_card_action_hint()
+	_refresh_card_target_preview()
+	_refresh_enemy_target_cards(combat_resolver.call("get_state") if combat_resolver != null else {})
+	_refresh_compact_play_state(run_manager.call("get_state") if run_manager != null else {})
+	return true
+
+
+func _select_move_target_cell(cell: Vector2i, source: Node = null) -> bool:
+	if movement_cell_option == null or combat_grid == null:
+		return false
+
+	var option_index := _get_move_target_option_index(cell)
+	if option_index < 0:
+		return false
+
+	movement_cell_option.select(option_index)
+	_sync_target_focus()
+	_record_first_play_step("target")
+	combat_grid.call("flash_cell", cell, FEEDBACK_MOVE_COLOR)
+	_push_feedback("Move selected: %s. Movement/trap cards will use this cell." % combat_grid.call("format_cell", cell), FEEDBACK_MOVE_COLOR, source if source != null else movement_cell_option)
+	_refresh_card_action_hint()
+	_refresh_card_target_preview()
+	_refresh_compact_play_state(run_manager.call("get_state") if run_manager != null else {})
+	return true
+
+
+func _get_enemy_target_option_index(enemy_id: StringName) -> int:
+	if target_enemy_option == null:
+		return -1
+	for index in range(target_enemy_option.item_count):
+		var metadata = target_enemy_option.get_item_metadata(index)
+		if typeof(metadata) == TYPE_DICTIONARY and StringName(metadata.get("id", &"")) == enemy_id:
+			return index
+	return -1
+
+
+func _get_move_target_option_index(cell: Vector2i) -> int:
+	if movement_cell_option == null:
+		return -1
+	for index in range(movement_cell_option.item_count):
+		var metadata = movement_cell_option.get_item_metadata(index)
+		if typeof(metadata) == TYPE_VECTOR2I and metadata == cell:
+			return index
+	return -1
+
+
+func _is_clickable_enemy_target(unit_id: StringName) -> bool:
+	if unit_id.is_empty() or unit_id == &"player" or combat_resolver == null:
+		return false
+	return bool(combat_resolver.call("has_living_enemy", unit_id))
 
 
 func _on_enemy_call_selected(_index: int) -> void:
@@ -2398,13 +3545,16 @@ func _resolve_reveal() -> void:
 		var resolved_card: Resource = deck_manager.call("resolve_committed_card")
 		if resolved_card != null:
 			committed_card_context["bluff_state"] = bluff_state
+			var resolved_context := committed_card_context.duplicate()
 			if _is_movement_card(resolved_card):
 				if bool(_resolve_movement_card(resolved_card, committed_card_context)):
-					_apply_card_side_effects(resolved_card)
+					_apply_card_side_effects(resolved_card, committed_card_context)
 			else:
 				combat_resolver.call("apply_card_with_context", resolved_card, committed_card_context)
-				_apply_card_side_effects(resolved_card)
+				_apply_card_side_effects(resolved_card, committed_card_context)
+			_play_card_commit_vfx(resolved_card, resolved_context, bluff_state_label, false)
 			committed_card_context.clear()
+	_apply_enemy_grid_moves(revealed)
 	combat_resolver.call("apply_revealed_intents_with_context", revealed, _build_reveal_context(bluff_state))
 	_mark_recipe_step("reveal_resolve")
 	_refresh_action_controls()
@@ -2552,7 +3702,7 @@ func _refresh_action_controls() -> void:
 	next_phase_button.disabled = shell_blocks_combat or not can_debug_adjust
 	next_phase_button.visible = run_flow_state == RUN_FLOW_COMBAT
 	if run_flow_state == RUN_FLOW_START:
-		next_phase_button.text = "Open Opening Table"
+		next_phase_button.text = "Deal In"
 	elif run_flow_state == RUN_FLOW_NEXT_ENCOUNTER:
 		next_phase_button.text = "Open Next Table"
 	elif run_outcome == "victory":
@@ -2584,9 +3734,14 @@ func _refresh_action_controls() -> void:
 	_refresh_run_shell(run_state)
 	_refresh_turn_status(run_state)
 	_refresh_table_rule_status(run_state)
+	var session_state: Dictionary = combat_session.call("get_state")
+	_refresh_action_cue(session_state, run_state)
 	_refresh_card_action_hint()
 	_sync_hand_card_interaction()
 	_sync_target_focus()
+	_refresh_battlefield_focus()
+	_refresh_compact_play_state(run_state)
+	_refresh_action_guide(session_state, run_state)
 
 
 func _refresh_primary_action_emphasis(shell_blocks_combat: bool, can_continue: bool, phase_key: String) -> void:
@@ -2594,8 +3749,12 @@ func _refresh_primary_action_emphasis(shell_blocks_combat: bool, can_continue: b
 		_apply_dominant_button_style(
 			start_run_button,
 			run_flow_state == RUN_FLOW_START,
-			"Open Opening Table to begin the first fight."
+			"Deal In to begin the first fight."
 		)
+		if run_flow_state == RUN_FLOW_START:
+			start_run_button.text = "CLICK DEAL IN\nDraw Hand"
+			start_run_button.custom_minimum_size = Vector2(300, 68)
+			start_run_button.add_theme_font_size_override("font_size", 21)
 	if next_encounter_button != null:
 		_apply_dominant_button_style(
 			next_encounter_button,
@@ -2613,34 +3772,318 @@ func _apply_dominant_button_style(button: Button, active: bool, hint: String) ->
 		return
 
 	button.tooltip_text = "Dominant next action: %s" % hint if active else "Locked: %s" % hint
-	button.add_theme_font_size_override("font_size", 19 if active else 16)
-	button.custom_minimum_size = Vector2(240, 46) if active else Vector2(180, 40)
+	button.add_theme_font_size_override("font_size", 22 if active else 16)
+	button.custom_minimum_size = Vector2(260, 54) if active else Vector2(180, 40)
+	DEAD_MANS_ANTE_SKIN_SCRIPT.apply_button(button, active, button.tooltip_text)
+	_ensure_button_hover_vfx(button)
 
-	var style := StyleBoxFlat.new()
-	style.corner_radius_top_left = 6
-	style.corner_radius_top_right = 6
-	style.corner_radius_bottom_left = 6
-	style.corner_radius_bottom_right = 6
-	style.border_width_left = 2
-	style.border_width_top = 2
-	style.border_width_right = 2
-	style.border_width_bottom = 2
-	style.bg_color = Color(0.30, 0.22, 0.10) if active else Color(0.12, 0.12, 0.13)
-	style.border_color = Color(1.0, 0.78, 0.28) if active else Color(0.36, 0.36, 0.38)
-	button.add_theme_stylebox_override("normal", style)
-	var hover_style := style.duplicate()
-	hover_style.bg_color = Color(0.38, 0.27, 0.12) if active else Color(0.16, 0.16, 0.17)
-	button.add_theme_stylebox_override("hover", hover_style)
-	button.add_theme_stylebox_override("pressed", style)
-	var disabled_style := style.duplicate()
-	disabled_style.bg_color = Color(0.08, 0.08, 0.085)
-	disabled_style.border_color = Color(0.24, 0.24, 0.25)
-	button.add_theme_stylebox_override("disabled", disabled_style)
+
+func _refresh_action_guide(session_state: Dictionary, run_state: Dictionary) -> void:
+	var guide := _get_action_guide_snapshot(session_state, run_state)
+	var target: CanvasItem = guide.get("target", null)
+	var label := String(guide.get("label", "CLICK"))
+	var detail := String(guide.get("detail", ""))
+	var color: Color = guide.get("color", FEEDBACK_CARD_COLOR)
+	var key := "%s|%s|%s" % [label, detail, target.get_path() if target != null and target.is_inside_tree() else NodePath("")]
+
+	guided_click_target = target
+	guided_click_label = label
+	guided_click_color = color
+
+	if opening_click_prompt_label != null:
+		opening_click_prompt_label.visible = run_flow_state == RUN_FLOW_START
+		if opening_click_prompt_label.visible:
+			opening_click_prompt_label.text = "%s: %s" % [label.to_upper(), detail.to_upper()]
+			opening_click_prompt_label.add_theme_color_override("font_color", color.lerp(Color(1.0, 0.92, 0.52), 0.55))
+
+	if combat_action_badge_label != null:
+		combat_action_badge_label.visible = run_flow_state == RUN_FLOW_COMBAT
+		combat_action_badge_label.text = "NEXT: %s - %s" % [label.to_upper(), detail]
+		combat_action_badge_label.add_theme_color_override("font_color", color.lerp(Color(1.0, 0.92, 0.52), 0.45))
+
+	if key != last_action_guide_key:
+		last_action_guide_key = key
+		_queue_guided_click_beacon()
+
+
+func _get_action_guide_snapshot(session_state: Dictionary, run_state: Dictionary) -> Dictionary:
+	match run_flow_state:
+		RUN_FLOW_START:
+			return {
+				"target": start_run_button,
+				"label": "CLICK",
+				"detail": "Deal In",
+				"color": FEEDBACK_CARD_COLOR
+			}
+		RUN_FLOW_REWARD:
+			return {
+				"target": _get_first_visible_reward_button(),
+				"label": "TAKE",
+				"detail": "Pick a reward",
+				"color": FEEDBACK_CARD_COLOR
+			}
+		RUN_FLOW_NEXT_ENCOUNTER:
+			return {
+				"target": next_encounter_button,
+				"label": "CLICK",
+				"detail": "Open Next Table",
+				"color": FEEDBACK_PHASE_COLOR
+			}
+		RUN_FLOW_RESULTS:
+			return {
+				"target": shell_new_run_button,
+				"label": "NEW",
+				"detail": "Start another run",
+				"color": FEEDBACK_REVEAL_COLOR
+			}
+
+	if bool(session_state.get("combat_over", false)):
+		if bool(run_state.get("waiting_for_reward", false)):
+			return {
+				"target": _get_first_visible_reward_button(),
+				"label": "TAKE",
+				"detail": "Choose reward",
+				"color": FEEDBACK_CARD_COLOR
+			}
+		return {
+			"target": next_phase_button,
+			"label": "DONE",
+			"detail": "Combat ended",
+			"color": FEEDBACK_PHASE_COLOR
+		}
+
+	var phase_key := String(session_state.get("current_phase_key", "START_TURN"))
+	if phase_key == "PLAYER_COMMIT":
+		return _get_player_commit_action_guide()
+
+	return {
+		"target": next_phase_button,
+		"label": "CLICK",
+		"detail": String(next_phase_button.get("text")) if next_phase_button != null else "Continue",
+		"color": FEEDBACK_PHASE_COLOR
+	}
+
+
+func _get_player_commit_action_guide() -> Dictionary:
+	if _is_first_table_coach_active() and not first_play_coach_complete:
+		if not bool(first_play_coach_steps.get("target", false)):
+			return {
+				"target": _get_first_live_enemy_target_card(),
+				"label": "TARGET",
+				"detail": "Click enemy",
+				"color": FEEDBACK_DAMAGE_COLOR
+			}
+		if not bool(first_play_coach_steps.get("card", false)):
+			return {
+				"target": _get_first_playable_hand_card(),
+				"label": "PLAY",
+				"detail": "Glowing card",
+				"color": FEEDBACK_CARD_COLOR
+			}
+		return {
+			"target": next_phase_button,
+			"label": "RESOLVE",
+			"detail": "Enemy acts",
+			"color": FEEDBACK_REVEAL_COLOR
+		}
+
+	var playable_card := _get_first_playable_hand_card()
+	if playable_card != null:
+		return {
+			"target": playable_card,
+			"label": "PLAY",
+			"detail": "Glowing card",
+			"color": FEEDBACK_CARD_COLOR
+		}
+
+	return {
+		"target": next_phase_button,
+		"label": "RESOLVE",
+		"detail": "End turn",
+		"color": FEEDBACK_REVEAL_COLOR
+	}
+
+
+func _refresh_battlefield_focus() -> void:
+	if battlefield_focus_label == null:
+		return
+
+	if run_flow_state != RUN_FLOW_COMBAT:
+		battlefield_focus_label.visible = false
+		if battlefield_callout_label != null:
+			battlefield_callout_label.visible = false
+		if opponent_title_label != null:
+			opponent_title_label.text = "Enemy Fighters"
+		return
+
+	battlefield_focus_label.visible = true
+	if battlefield_callout_label != null:
+		battlefield_callout_label.visible = true
+	var target := _get_selected_enemy_target()
+	var target_name := String(target.get("name", "Enemy")) if not target.is_empty() else "none"
+	var target_role := _get_enemy_battle_role(target) if not target.is_empty() else "Enemy fighter"
+	var target_intent := _get_enemy_intent_line(StringName(target.get("id", &""))) if not target.is_empty() else "no intent read"
+	var target_status := _get_enemy_battle_state_text(target) if not target.is_empty() else "No target"
+	var map_hint := _get_live_map_hint()
+	var phase_text := String(next_phase_button.get("text")) if next_phase_button != null else "Resolve"
+	battlefield_focus_label.text = "%s  |  %s  |  %s  |  %s" % [
+		target_name.to_upper(),
+		target_role,
+		target_intent,
+		phase_text.to_upper()
+	]
+	battlefield_focus_label.tooltip_text = "%s is an enemy %s. Your attack/read cards currently aim here. Click another enemy card to switch targets.\n%s" % [
+		target_name,
+		target_role,
+		map_hint
+	]
+	var phase_key := String(combat_session.get("current_phase_key")) if combat_session != null else ""
+	battlefield_focus_label.add_theme_color_override("font_color", FEEDBACK_CARD_COLOR if phase_key == "PLAYER_COMMIT" else FEEDBACK_PHASE_COLOR)
+	_flash_canvas_item(battlefield_focus_label, FEEDBACK_CARD_COLOR, 0.12)
+	if battlefield_callout_label != null:
+		battlefield_callout_label.text = _get_battlefield_callout_text(phase_key, target_name, target_role, target_intent, target_status, map_hint)
+		battlefield_callout_label.add_theme_color_override("font_color", _get_battlefield_callout_color(phase_key))
+
+	if opponent_title_label != null:
+		opponent_title_label.text = "Enemy Fighters\nTarget: %s" % target_name
+
+	var table_title := combat_grid.find_child("TableTitle", true, false) if combat_grid != null else null
+	if table_title is Label:
+		(table_title as Label).text = "Crossfire - %s %s" % [target_status, target_name]
+
+
+func _get_battlefield_callout_text(phase_key: String, target_name: String, target_role: String, target_intent: String, target_status: String, map_hint: String) -> String:
+	if phase_key == "PLAYER_COMMIT":
+		if _is_first_table_coach_active() and not bool(first_play_coach_steps.get("target", false)):
+			return "Aim first: click a fighter card or pawn. Current aim: %s, the %s." % [target_name, target_role]
+		if _is_first_table_coach_active() and not bool(first_play_coach_steps.get("card", false)):
+			return "Play next: choose a glowing card. It will act on %s." % target_name
+		return "Resolve next: press Resolve Turn and watch the arena answer."
+	if phase_key == "BLUFF_WAGER":
+		return "Bluff window: call, raise, or fold. Then Reveal Turn resolves the wager."
+	if phase_key == "REVEAL":
+		return "Reveal: enemy intent fires now. Watch HP, Guard, smoke, slash, and chips."
+	if phase_key == "RESOLVE":
+		return "Aftermath: read the wounds, then press Next Turn to deal the next hand."
+	return "%s | %s | %s | %s" % [target_status, target_role, target_intent, map_hint]
+
+
+func _get_live_map_hint() -> String:
+	if combat_grid == null or not combat_grid.has_method("get_map_context"):
+		return "Map: Crossfire Table"
+	var map_context: Dictionary = combat_grid.call("get_map_context")
+	var map_name := String(map_context.get("map_name", "Crossfire Table"))
+	var player_feature := String(map_context.get("player_feature_label", ""))
+	if player_feature.is_empty():
+		return "Map: %s" % map_name
+	return "Map: %s - you hold %s" % [map_name, player_feature]
+
+
+func _get_battlefield_callout_color(phase_key: String) -> Color:
+	match phase_key:
+		"PLAYER_COMMIT":
+			return FEEDBACK_CARD_COLOR
+		"BLUFF_WAGER", "REVEAL":
+			return FEEDBACK_REVEAL_COLOR
+		"RESOLVE":
+			return FEEDBACK_PHASE_COLOR
+		_:
+			return Color(1.0, 0.90, 0.56)
+
+
+func _get_enemy_battle_state_text(enemy: Dictionary) -> String:
+	if enemy.is_empty():
+		return "No target"
+	if not bool(enemy.get("alive", false)):
+		return "Defeated"
+	var enemy_id := StringName(enemy.get("id", &""))
+	if enemy_id == _get_selected_enemy_target_id():
+		return "Targeting"
+	var hp_status := _get_enemy_hp_status(enemy)
+	if hp_status == "FINISH":
+		return "Wounded"
+	return "Standing"
+
+
+func _get_first_live_enemy_target_card() -> Button:
+	for button in enemy_target_card_buttons:
+		if button != null and button.is_inside_tree() and bool(button.get("visible")) and not bool(button.get("disabled")):
+			return button
+	return null
+
+
+func _get_first_playable_hand_card() -> Button:
+	if hand_view == null:
+		return null
+	for child in hand_view.get_children():
+		if child is Button and bool(child.get("visible")) and not bool((child as Button).get("disabled")):
+			return child as Button
+	return null
+
+
+func _get_first_visible_reward_button() -> Button:
+	for button in card_reward_buttons:
+		if button != null and button.is_inside_tree() and bool(button.get("visible")) and not bool(button.get("disabled")):
+			return button
+	if skip_rewards_button != null and skip_rewards_button.is_inside_tree() and bool(skip_rewards_button.get("visible")) and not bool(skip_rewards_button.get("disabled")):
+		return skip_rewards_button
+	return null
+
+
+func _on_guide_beacon_timeout() -> void:
+	_play_guided_click_beacon()
+
+
+func _queue_guided_click_beacon() -> void:
+	var tree := get_tree()
+	if tree == null:
+		return
+	tree.create_timer(0.08).timeout.connect(_play_guided_click_beacon)
+
+
+func _play_guided_click_beacon() -> void:
+	if combat_vfx == null or not combat_vfx.has_method("play_click_beacon_on"):
+		return
+	if guided_click_target == null or not is_instance_valid(guided_click_target):
+		return
+	if not guided_click_target.is_inside_tree() or not bool(guided_click_target.get("visible")):
+		return
+	if guided_click_target is BaseButton and bool((guided_click_target as BaseButton).get("disabled")):
+		return
+
+	combat_vfx.call("play_click_beacon_on", guided_click_target, guided_click_color, guided_click_label)
+
+
+func _ensure_button_hover_vfx(button: Button) -> void:
+	if button == null or bool(button.get_meta("phase44_action_vfx_connected", false)):
+		return
+
+	button.mouse_entered.connect(_on_juicy_button_hovered.bind(button))
+	button.button_down.connect(_on_juicy_button_pressed.bind(button))
+	button.set_meta("phase44_action_vfx_connected", true)
+
+
+func _on_juicy_button_hovered(button: Button) -> void:
+	if button == null or not button.is_inside_tree() or bool(button.get("disabled")):
+		return
+
+	if combat_vfx != null and combat_vfx.has_method("play_button_sheen_on"):
+		combat_vfx.call("play_button_sheen_on", button, FEEDBACK_CARD_COLOR)
+	_flash_canvas_item(button, FEEDBACK_CARD_COLOR, 0.18)
+
+
+func _on_juicy_button_pressed(button: Button) -> void:
+	if button == null or not button.is_inside_tree() or bool(button.get("disabled")):
+		return
+
+	if combat_vfx != null and combat_vfx.has_method("play_button_sheen_on"):
+		combat_vfx.call("play_button_sheen_on", button, FEEDBACK_REVEAL_COLOR)
+	_flash_canvas_item(button, FEEDBACK_CARD_COLOR, 0.14)
 
 
 func _get_continue_button_hint(phase_key: String) -> String:
 	if run_flow_state == RUN_FLOW_START:
-		return "Open Opening Table is the only live action."
+		return "Deal In is the only live action."
 	if run_flow_state == RUN_FLOW_REWARD:
 		return "Choose or skip the reward before combat continues."
 	if run_flow_state == RUN_FLOW_NEXT_ENCOUNTER:
@@ -2661,6 +4104,143 @@ func _get_continue_button_hint(phase_key: String) -> String:
 			return "Next Turn cleans up and deals the next planning hand."
 		_:
 			return "Continue the combat loop."
+
+
+func _refresh_action_cue(session_state: Dictionary, run_state: Dictionary) -> void:
+	if action_cue_panel == null or action_cue_title_label == null or action_cue_detail_label == null or action_cue_pip_label == null:
+		return
+
+	var cue := _get_action_cue_snapshot(session_state, run_state)
+	var title := String(cue.get("title", "PLAY"))
+	var detail := String(cue.get("detail", "Read the table and take the next action."))
+	var pip := String(cue.get("pip", "READY"))
+	var color: Color = cue.get("color", FEEDBACK_PHASE_COLOR)
+	var key := "%s|%s|%s" % [title, detail, pip]
+
+	action_cue_title_label.text = title
+	action_cue_detail_label.text = detail
+	action_cue_pip_label.text = pip
+	_style_action_cue(color)
+	if key != last_action_cue_key:
+		last_action_cue_key = key
+		_pulse_canvas_item(action_cue_panel, color)
+
+
+func _get_action_cue_snapshot(session_state: Dictionary, run_state: Dictionary) -> Dictionary:
+	if run_flow_state == RUN_FLOW_START:
+		return {
+			"title": "DEAL IN",
+			"detail": "Deal In to draw five cards and reveal the first enemy target.",
+			"pip": "OPEN",
+			"color": FEEDBACK_CARD_COLOR
+		}
+	if run_flow_state == RUN_FLOW_REWARD:
+		return {
+			"title": "CASH OUT",
+			"detail": "Take the highlighted reward, or skip to keep the deck lean and move the marker.",
+			"pip": "REWARD",
+			"color": FEEDBACK_CARD_COLOR
+		}
+	if run_flow_state == RUN_FLOW_NEXT_ENCOUNTER:
+		return {
+			"title": "APPROACH",
+			"detail": "Read the enemy cards and table rule, then Open Next Table when the matchup feels right.",
+			"pip": "NEXT",
+			"color": FEEDBACK_PHASE_COLOR
+		}
+	if run_flow_state == RUN_FLOW_RESULTS:
+		return {
+			"title": "FINAL HAND",
+			"detail": "Export the run summary or start a fresh run from the results ceremony.",
+			"pip": "RESULTS",
+			"color": _get_results_cue_color(run_state)
+		}
+
+	if bool(session_state.get("combat_over", false)):
+		if bool(run_state.get("waiting_for_reward", false)):
+			return {
+				"title": "PAYOUT",
+				"detail": "The table is cleared. Pick a reward to keep the run moving.",
+				"pip": "REWARD",
+				"color": FEEDBACK_CARD_COLOR
+			}
+		return {
+			"title": "TABLE ENDS",
+			"detail": "Combat is over. Review the result and follow the run shell.",
+			"pip": "DONE",
+			"color": FEEDBACK_PHASE_COLOR
+		}
+
+	var phase_key := String(session_state.get("current_phase_key", "START_TURN"))
+	match phase_key:
+		"START_TURN", "DRAW", "ENEMY_INTENT_PREVIEW":
+			return {
+				"title": "SET THE TABLE",
+				"detail": "Begin Turn finishes setup and deals you straight into card play.",
+				"pip": "BEGIN",
+				"color": FEEDBACK_PHASE_COLOR
+			}
+		"PLAYER_COMMIT":
+			var target_name := String(_get_selected_enemy_target().get("name", "target"))
+			var energy := int(session_state.get("energy", 0))
+			var detail := "Target %s, play a lit card, then Resolve Turn." % target_name
+			if energy <= 0:
+				detail = "Energy is spent. Resolve Turn to let the table answer."
+			return {
+				"title": "YOUR PLAY",
+				"detail": detail,
+				"pip": "PLAY",
+				"color": FEEDBACK_CARD_COLOR
+			}
+		"BLUFF_WAGER":
+			return {
+				"title": "MAKE THE CALL",
+				"detail": "Call the intent, raise if confident, or fold before the reveal.",
+				"pip": "BLUFF",
+				"color": FEEDBACK_REVEAL_COLOR
+			}
+		"REVEAL":
+			return {
+				"title": "REVEAL",
+				"detail": "The committed card and enemy intent are turning over.",
+				"pip": "FLIP",
+				"color": FEEDBACK_REVEAL_COLOR
+			}
+		"RESOLVE", "CLEANUP":
+			return {
+				"title": "NEXT HAND",
+				"detail": "Press Next Turn to clean up, draw, read, and return to planning.",
+				"pip": "NEXT",
+				"color": FEEDBACK_MOVE_COLOR
+			}
+		_:
+			return {
+				"title": "PLAY",
+				"detail": "Read the table and take the highlighted action.",
+				"pip": "READY",
+				"color": FEEDBACK_PHASE_COLOR
+			}
+
+
+func _style_action_cue(color: Color) -> void:
+	var panel_style := DEAD_MANS_ANTE_SKIN_SCRIPT.make_panel_style(
+		Color(0.055, 0.050, 0.045).lerp(color, 0.11),
+		color,
+		"cue"
+	)
+	action_cue_panel.add_theme_stylebox_override("panel", panel_style)
+
+	action_cue_title_label.add_theme_color_override("font_color", Color(1.0, 0.94, 0.76))
+	action_cue_detail_label.add_theme_color_override("font_color", Color(0.86, 0.84, 0.78))
+	action_cue_pip_label.add_theme_font_size_override("font_size", 15)
+	action_cue_pip_label.add_theme_color_override("font_color", Color(0.08, 0.06, 0.035))
+
+	var pip_style := DEAD_MANS_ANTE_SKIN_SCRIPT.make_action_pip_style(color)
+	action_cue_pip_label.add_theme_stylebox_override("normal", pip_style)
+
+
+func _get_results_cue_color(run_state: Dictionary) -> Color:
+	return FEEDBACK_PHASE_COLOR if String(run_state.get("run_outcome", "running")) == "victory" else FEEDBACK_DAMAGE_COLOR
 
 
 func _refresh_run_panel(state: Dictionary) -> void:
@@ -2758,11 +4338,13 @@ func _refresh_run_panel(state: Dictionary) -> void:
 		if index < card_rewards.size():
 			var reward: Dictionary = card_rewards[index]
 			button.text = _get_card_reward_button_text(reward, index)
+			button.tooltip_text = _get_card_reward_tooltip_text(reward, index)
 			button.disabled = false
 			button.visible = true
 			button.modulate = Color(1.0, 0.95, 0.72) if index == 0 else Color.WHITE
 		else:
 			button.text = "Card Reward"
+			button.tooltip_text = "No card reward in this slot."
 			button.disabled = true
 			button.visible = false
 			button.modulate = Color.WHITE
@@ -2783,6 +4365,7 @@ func _refresh_run_panel(state: Dictionary) -> void:
 		skip_rewards_button.disabled = not bool(state.get("waiting_for_reward", false))
 		skip_rewards_button.visible = bool(state.get("waiting_for_reward", false))
 		skip_rewards_button.text = "Skip Reward - keep deck lean" if bool(state.get("waiting_for_reward", false)) else "Skip Rewards"
+	_maybe_play_reward_shimmer(state, card_rewards)
 	_sync_run_panel_visibility()
 
 
@@ -2809,6 +4392,42 @@ func _refresh_playtest_report(batch: Dictionary) -> void:
 		playtest_report_label.append_text("\nWatch: no repeated danger nodes in the current sims.")
 	else:
 		playtest_report_label.append_text("\nWatch: %s" % ", ".join(danger_nodes))
+
+
+func _maybe_play_reward_shimmer(state: Dictionary, card_rewards: Array) -> void:
+	if combat_vfx == null or not combat_vfx.has_method("play_reward_shimmer_on"):
+		return
+	if run_flow_state != RUN_FLOW_REWARD or not bool(state.get("waiting_for_reward", false)) or card_rewards.is_empty():
+		last_reward_shimmer_key = ""
+		return
+	if card_reward_buttons.is_empty() or card_reward_buttons[0] == null:
+		return
+
+	var first_reward: Dictionary = card_rewards[0] if typeof(card_rewards[0]) == TYPE_DICTIONARY else {}
+	var key := "%s|%s|%s" % [
+		state.get("current_node_index", 0),
+		first_reward.get("id", first_reward.get("name", "reward")),
+		state.get("deck_size", 0)
+	]
+	if key == last_reward_shimmer_key:
+		return
+	last_reward_shimmer_key = key
+	call_deferred("_play_reward_shimmer_deferred", 0)
+
+
+func _play_reward_shimmer_deferred(button_index: int) -> void:
+	await get_tree().process_frame
+	await get_tree().process_frame
+
+	if combat_vfx == null or not combat_vfx.has_method("play_reward_shimmer_on"):
+		return
+	if button_index < 0 or button_index >= card_reward_buttons.size():
+		return
+
+	var button := card_reward_buttons[button_index]
+	if button == null or not _is_live_canvas_item(button) or not bool(button.get("visible")) or bool(button.get("disabled")):
+		return
+	combat_vfx.call("play_reward_shimmer_on", button)
 
 
 func _refresh_debug_summary(state: Dictionary, evaluation: Dictionary, fast_run: Dictionary, playtest_batch: Dictionary) -> void:
@@ -2863,9 +4482,11 @@ func _refresh_run_shell(state: Dictionary) -> void:
 		return
 
 	run_shell_panel.visible = true
+	_style_run_shell_for_state()
 	run_shell_title_label.text = _get_run_shell_title(state)
 	run_shell_detail_label.clear()
 	run_shell_detail_label.append_text(_get_run_shell_detail(state))
+	_refresh_opening_steps()
 	if run_continuity_label != null:
 		run_continuity_label.clear()
 		run_continuity_label.append_text(_get_run_continuity_text(state))
@@ -2880,7 +4501,10 @@ func _refresh_run_shell(state: Dictionary) -> void:
 	if start_run_button != null:
 		start_run_button.visible = run_flow_state == RUN_FLOW_START
 		start_run_button.disabled = run_flow_state != RUN_FLOW_START
-		start_run_button.text = "Open Opening Table"
+		start_run_button.text = "CLICK DEAL IN\nDraw Hand"
+		if run_flow_state == RUN_FLOW_START:
+			start_run_button.custom_minimum_size = Vector2(300, 68)
+			start_run_button.add_theme_font_size_override("font_size", 21)
 	if next_encounter_button != null:
 		next_encounter_button.visible = run_flow_state == RUN_FLOW_NEXT_ENCOUNTER
 		next_encounter_button.disabled = run_flow_state != RUN_FLOW_NEXT_ENCOUNTER
@@ -2905,12 +4529,68 @@ func _refresh_run_shell(state: Dictionary) -> void:
 	if shell_archive_history_button != null:
 		shell_archive_history_button.visible = history_tools_visible
 		shell_archive_history_button.disabled = run_manager == null
+	_sync_opening_idle_animation()
+
+
+func _style_run_shell_for_state() -> void:
+	if not (run_shell_panel is PanelContainer):
+		return
+
+	match run_flow_state:
+		RUN_FLOW_START:
+			_style_play_panel(run_shell_panel, Color(0.13, 0.075, 0.040, 0.96), FEEDBACK_CARD_COLOR, "cue")
+		RUN_FLOW_REWARD:
+			_style_play_panel(run_shell_panel, Color(0.12, 0.072, 0.045, 0.94), FEEDBACK_CARD_COLOR, "panel")
+		RUN_FLOW_NEXT_ENCOUNTER:
+			_style_play_panel(run_shell_panel, Color(0.060, 0.080, 0.090, 0.94), FEEDBACK_PHASE_COLOR, "panel")
+		RUN_FLOW_RESULTS:
+			_style_play_panel(run_shell_panel, Color(0.075, 0.060, 0.065, 0.95), FEEDBACK_REVEAL_COLOR, "panel")
+		_:
+			_style_play_panel(run_shell_panel, Color(0.105, 0.085, 0.072), Color(0.64, 0.45, 0.22))
+
+
+func _refresh_opening_steps() -> void:
+	if opening_step_row == null:
+		return
+
+	opening_step_row.visible = run_flow_state == RUN_FLOW_START
+	if not opening_step_row.visible:
+		return
+
+	var colors := [FEEDBACK_CARD_COLOR, FEEDBACK_REVEAL_COLOR, FEEDBACK_MOVE_COLOR, FEEDBACK_PHASE_COLOR]
+	for index in range(opening_step_buttons.size()):
+		var button := opening_step_buttons[index]
+		var active := index == 0
+		button.visible = true
+		button.disabled = false
+		button.self_modulate = Color.WHITE if active else Color(0.88, 0.90, 0.96, 0.82)
+		button.add_theme_font_size_override("font_size", 13 if active else 12)
+		_style_compact_button(button, true, colors[index], button.tooltip_text)
+
+
+func _sync_opening_idle_animation() -> void:
+	var should_play := run_flow_state == RUN_FLOW_START and start_run_button != null and start_run_button.visible and not bool(start_run_button.get("disabled"))
+	if not should_play:
+		if opening_idle_tween != null and opening_idle_tween.is_valid():
+			opening_idle_tween.kill()
+		opening_idle_tween = null
+		if start_run_button != null:
+			start_run_button.modulate = Color.WHITE
+		return
+
+	if opening_idle_tween != null and opening_idle_tween.is_valid():
+		return
+
+	opening_idle_tween = create_tween()
+	opening_idle_tween.set_loops()
+	opening_idle_tween.tween_property(start_run_button, "modulate", Color(1.0, 0.88, 0.48), 0.72).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	opening_idle_tween.tween_property(start_run_button, "modulate", Color.WHITE, 0.72).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 
 
 func _get_run_shell_title(state: Dictionary) -> String:
 	match run_flow_state:
 		RUN_FLOW_START:
-			return "Run Start"
+			return "Opening Table"
 		RUN_FLOW_REWARD:
 			return "Post-Combat Reward"
 		RUN_FLOW_NEXT_ENCOUNTER:
@@ -2927,11 +4607,7 @@ func _get_run_shell_detail(state: Dictionary) -> String:
 	var node_count := int(state.get("current_node_count", 0))
 	match run_flow_state:
 		RUN_FLOW_START:
-			return "Opening Table is ready in the five-table run.\nPress Open Opening Table to deal in. You begin at %d/%d Blood with a %d-card deck." % [
-				state.get("player_hp", 0),
-				state.get("player_max_hp", 0),
-				state.get("deck_size", 0)
-			]
+			return "Your first click: Deal In.\nThen the fight becomes target -> glowing card -> Resolve Turn."
 		RUN_FLOW_REWARD:
 			var card_rewards: Array = state.get("pending_card_rewards", [])
 			var relic_rewards: Array = state.get("pending_relic_rewards", [])
@@ -2987,7 +4663,11 @@ func _get_run_continuity_text(state: Dictionary) -> String:
 	var current_index: int = mini(int(state.get("current_node_index", 0)) + 1, node_count)
 	match run_flow_state:
 		RUN_FLOW_START:
-			return "Current stop: Opening Table. Future table details unlock after the first deal-in."
+			return "Blood %d/%d | Deck %d | First fight is ready." % [
+				state.get("player_hp", 0),
+				state.get("player_max_hp", 0),
+				state.get("deck_size", 0)
+			]
 		RUN_FLOW_COMBAT:
 			return "Run map: marker is on Table %d/%d, %s. Clear the table to open rewards or results." % [
 				current_index,
@@ -3030,7 +4710,9 @@ func _refresh_run_ceremony(state: Dictionary) -> void:
 		return
 
 	run_ceremony_label.append_text("Latest: %s\n" % run_ceremony_history[0])
-	run_ceremony_label.append_text("Thread: %s" % _get_run_ceremony_thread_text())
+	if run_flow_state == RUN_FLOW_COMBAT:
+		return
+	run_ceremony_label.append_text("Thread:\n%s" % _get_run_ceremony_thread_text())
 
 
 func _should_show_run_ceremony(state: Dictionary) -> bool:
@@ -3085,8 +4767,8 @@ func _get_run_ceremony_thread_text() -> String:
 	var entries := PackedStringArray()
 	var limit: int = min(3, run_ceremony_history.size())
 	for index in range(limit):
-		entries.append(run_ceremony_history[index])
-	return " | ".join(entries)
+		entries.append("- %s" % run_ceremony_history[index])
+	return "\n".join(entries)
 
 
 func _record_run_ceremony(message: String, color: Color = FEEDBACK_PHASE_COLOR, pulse_node: Node = null) -> void:
@@ -3170,7 +4852,7 @@ func _get_run_finale_text(state: Dictionary) -> String:
 
 
 func _should_show_encounter_preview() -> bool:
-	return run_flow_state == RUN_FLOW_NEXT_ENCOUNTER or run_flow_state == RUN_FLOW_COMBAT
+	return run_flow_state == RUN_FLOW_NEXT_ENCOUNTER or (run_flow_state == RUN_FLOW_COMBAT and debug_controls_visible)
 
 
 func _get_encounter_preview_text(state: Dictionary) -> String:
@@ -3179,16 +4861,21 @@ func _get_encounter_preview_text(state: Dictionary) -> String:
 	var modifier: Dictionary = state.get("table_modifier", {})
 	var modifier_name: String = String(modifier.get("name", "No table modifier"))
 	var modifier_summary: String = String(modifier.get("summary", "No special rule is active."))
+	var tactical_map: Dictionary = state.get("tactical_map", {})
+	var map_name: String = String(tactical_map.get("name", "Crossfire Table"))
+	var map_summary: String = String(tactical_map.get("summary", "Use cover, center control, and long angles."))
 	var reward_stakes: String = String(state.get("reward_stakes", "Clear the table to improve the run."))
 	var enemies: Array = state.get("current_enemy_names", [])
 	var enemy_text: String = "unknown opposition" if enemies.is_empty() else ", ".join(enemies)
 	var reward_tags: Array = state.get("reward_tag_names", [])
 	var tag_text: String = "Run clear" if reward_tags.is_empty() else ", ".join(reward_tags)
 
-	return "Encounter: %s\nEnemies: %s\nIntro: %s\nModifier: %s - %s\nReward stakes: %s\nReward tags: %s" % [
+	return "Encounter: %s\nEnemies: %s\nIntro: %s\nMap: %s - %s\nModifier: %s - %s\nReward stakes: %s\nReward tags: %s" % [
 		table_name,
 		enemy_text,
 		intro,
+		map_name,
+		map_summary,
 		modifier_name,
 		modifier_summary,
 		reward_stakes,
@@ -3240,10 +4927,13 @@ func _get_current_run_path_entry(state: Dictionary) -> Dictionary:
 		return Dictionary(path_entries[index])
 
 	var modifier: Dictionary = state.get("table_modifier", {})
+	var tactical_map: Dictionary = state.get("tactical_map", {})
 	return {
 		"name": String(state.get("current_node_name", "Encounter")),
 		"kind": String(state.get("current_node_kind", "combat")),
 		"enemy_cards": state.get("current_enemy_cards", []),
+		"tactical_map_name": String(tactical_map.get("name", "Crossfire Table")),
+		"tactical_map_summary": String(tactical_map.get("summary", "Use cover, center control, and long angles.")),
 		"table_modifier_name": String(modifier.get("name", "House Rules")),
 		"table_modifier_summary": String(modifier.get("summary", "No special rule is active.")),
 		"reward_stakes": String(state.get("reward_stakes", "Clear the table to improve the run.")),
@@ -3281,7 +4971,9 @@ func _get_approach_enemy_cards_text(entry: Dictionary) -> String:
 
 
 func _get_approach_rule_text(entry: Dictionary) -> String:
-	return "Table Rule Card: %s\nEffect: %s" % [
+	return "Map: %s\n%s\nTable Rule Card: %s\nEffect: %s" % [
+		entry.get("tactical_map_name", "Crossfire Table"),
+		entry.get("tactical_map_summary", "Use cover, center control, and long angles."),
 		entry.get("table_modifier_name", "House Rules"),
 		entry.get("table_modifier_summary", "No special rule is active.")
 	]
@@ -3367,11 +5059,11 @@ func _refresh_run_path(state: Dictionary) -> void:
 
 	if run_flow_state == RUN_FLOW_START:
 		selected_run_path_index = current_index
-		run_path_label.append_text("Opening Table ready | Route 1/%d\n" % node_count)
-		run_path_label.append_text("Current: %s. Press Open Opening Table to deal in.\n" % state.get("current_node_name", "Opening Table"))
-		run_path_label.append_text("Route ahead: %d more tables unlock after combat begins." % max(0, node_count - 1))
+		run_path_label.append_text("Route 1/%d | Opening Table is ready\n" % node_count)
+		run_path_label.append_text("Deal In now. Clear tables to reveal rewards and move the marker.")
 		if run_path_buttons_row != null:
-			run_path_buttons_row.visible = false
+			run_path_buttons_row.visible = true
+			_refresh_opening_route_buttons(path_entries, current_index)
 		if run_path_preview_label != null:
 			run_path_preview_label.visible = false
 			run_path_preview_label.clear()
@@ -3404,6 +5096,32 @@ func _refresh_run_path(state: Dictionary) -> void:
 	_refresh_run_path_preview(path_entries)
 
 
+func _refresh_opening_route_buttons(path_entries: Array, current_index: int) -> void:
+	for index in range(run_path_buttons.size()):
+		var button: Button = run_path_buttons[index]
+		if index >= path_entries.size() or typeof(path_entries[index]) != TYPE_DICTIONARY:
+			button.visible = false
+			button.disabled = true
+			continue
+
+		var entry: Dictionary = Dictionary(path_entries[index])
+		var active := index == current_index
+		button.visible = true
+		button.disabled = false
+		button.custom_minimum_size = Vector2(0, 54)
+		button.add_theme_font_size_override("font_size", 13 if active else 12)
+		button.self_modulate = Color.WHITE if active else Color(0.82, 0.86, 0.94, 0.76)
+		button.text = "Table %d\n%s\n%s" % [
+			entry.get("table_number", index + 1),
+			entry.get("name", "Table"),
+			"READY" if active else "LOCKED"
+		]
+		var tooltip := "Click to Deal In." if active else "Clear earlier tables to unlock this stop."
+		var palette := [FEEDBACK_CARD_COLOR, FEEDBACK_MOVE_COLOR, FEEDBACK_REVEAL_COLOR, FEEDBACK_PHASE_COLOR, FEEDBACK_DAMAGE_COLOR]
+		var color: Color = FEEDBACK_CARD_COLOR if active else palette[index % palette.size()]
+		_style_compact_button(button, true, color, tooltip)
+
+
 func _refresh_run_path_buttons(path_entries: Array) -> void:
 	for index in range(run_path_buttons.size()):
 		var button: Button = run_path_buttons[index]
@@ -3424,7 +5142,9 @@ func _refresh_run_path_buttons(path_entries: Array) -> void:
 
 		button.visible = true
 		button.disabled = false
-		button.self_modulate = _get_run_path_button_color(status, selected)
+		var color := _get_run_path_button_color(status, selected)
+		button.self_modulate = Color.WHITE
+		_style_compact_button(button, selected or status == "current" or status == "next" or status == "reward", color, _get_run_path_button_tooltip(entry))
 		button.text = "%sTable %d\n%s\n%s%s" % [
 			prefix,
 			entry.get("table_number", index + 1),
@@ -3432,7 +5152,6 @@ func _refresh_run_path_buttons(path_entries: Array) -> void:
 			status_label,
 			suffix
 		]
-		button.tooltip_text = _get_run_path_button_tooltip(entry)
 
 
 func _refresh_run_path_preview(path_entries: Array) -> void:
@@ -3462,6 +5181,10 @@ func _refresh_run_path_preview(path_entries: Array) -> void:
 		enemy_text,
 		entry.get("table_modifier_name", "House Rules"),
 		entry.get("table_modifier_summary", "No special rule is active.")
+	])
+	run_path_preview_label.append_text("Map: %s - %s\n" % [
+		entry.get("tactical_map_name", "Crossfire Table"),
+		entry.get("tactical_map_summary", "Use cover, center control, and long angles.")
 	])
 	run_path_preview_label.append_text("Stakes: %s | Reward tags: %s" % [
 		entry.get("reward_stakes", "Clear the table to improve the run."),
@@ -3511,9 +5234,10 @@ func _get_run_path_button_color(status: String, selected: bool) -> Color:
 func _get_run_path_button_tooltip(entry: Dictionary) -> String:
 	var enemies: Array = entry.get("enemy_names", [])
 	var enemy_text: String = "unknown opposition" if enemies.is_empty() else ", ".join(enemies)
-	return "%s\nEnemies: %s\nRule: %s" % [
+	return "%s\nEnemies: %s\nMap: %s\nRule: %s" % [
 		entry.get("encounter_intro", "Read the table before combat starts."),
 		enemy_text,
+		entry.get("tactical_map_name", "Crossfire Table"),
 		entry.get("table_modifier_name", "House Rules")
 	]
 
@@ -3628,10 +5352,19 @@ func _get_card_reward_button_text(reward: Dictionary, index: int) -> String:
 	var rank_label: String = String(reward.get("recommendation_label", "Option %d" % (index + 1)))
 	if index == 0:
 		rank_label = "#1 Recommended"
-	return "%s\nTake %s\n%s\nReasons: %s\nImpact: %s" % [
+	return "%s\nTake %s\n%s" % [
 		rank_label,
 		reward.get("name", "Card"),
-		reward.get("text", ""),
+		reward.get("text", "")
+	]
+
+
+func _get_card_reward_tooltip_text(reward: Dictionary, index: int) -> String:
+	var rank_label: String = String(reward.get("recommendation_label", "Option %d" % (index + 1)))
+	if index == 0:
+		rank_label = "#1 Recommended"
+	return "%s | Reasons: %s | Impact: %s" % [
+		rank_label,
 		_join_reward_reasons(reward.get("top_reasons", [])),
 		reward.get("impact_summary", "Impact unavailable.")
 	]
@@ -3816,11 +5549,12 @@ func _refresh_targeting_options() -> void:
 	for target in targets:
 		if typeof(target) != TYPE_DICTIONARY:
 			continue
-		target_enemy_option.add_item("Target: %s HP %d/%d" % [
+		var target_label := "Target: %s HP %d/%d" % [
 			target.get("name", "Enemy"),
 			target.get("hp", 0),
 			target.get("max_hp", 0)
-		])
+		]
+		target_enemy_option.add_item(target_label)
 		target_enemy_option.set_item_metadata(target_enemy_option.item_count - 1, target)
 		if StringName(target.get("id", &"")) == selected_enemy_id:
 			target_enemy_option.select(target_enemy_option.item_count - 1)
@@ -3850,6 +5584,8 @@ func _refresh_targeting_options() -> void:
 	_refresh_card_action_hint()
 	_refresh_card_target_preview()
 	_sync_target_focus()
+	_refresh_loadout_ui()
+	_refresh_enemy_target_cards(combat_resolver.call("get_state"))
 
 
 func _sync_target_focus() -> void:
@@ -3888,6 +5624,7 @@ func _build_card_context(card: Resource) -> Dictionary:
 	var target_enemy: Dictionary = _get_selected_enemy_target()
 	var target_cell: Vector2i = _get_selected_move_cell()
 	var player_context: Dictionary = combat_grid.call("get_player_context")
+	var map_context: Dictionary = combat_grid.call("get_map_context", target_cell) if combat_grid.has_method("get_map_context") else {}
 	var target_enemy_id: StringName = StringName(target_enemy.get("id", &""))
 	var target_enemy_name: String = String(target_enemy.get("name", "Enemy"))
 	return {
@@ -3896,6 +5633,7 @@ func _build_card_context(card: Resource) -> Dictionary:
 		"target_cell": target_cell,
 		"target_cell_label": combat_grid.call("format_cell", target_cell),
 		"player_lane": int(player_context.get("lane", -1)),
+		"map_context": map_context,
 		"card_id": card.get("id")
 	}
 
@@ -3903,11 +5641,13 @@ func _build_card_context(card: Resource) -> Dictionary:
 func _build_reveal_context(bluff_state: Dictionary) -> Dictionary:
 	var player_context: Dictionary = combat_grid.call("get_player_context")
 	var resolver_state: Dictionary = combat_resolver.call("get_state")
+	var map_context: Dictionary = combat_grid.call("get_map_context") if combat_grid.has_method("get_map_context") else {}
 	return {
 		"player_cell": player_context.get("cell", Vector2i(-1, -1)),
 		"player_lane": int(player_context.get("lane", -1)),
 		"unit_positions": combat_grid.call("get_unit_position_snapshot"),
 		"active_trap_cells": resolver_state.get("trap_cells", []),
+		"map_context": map_context,
 		"bluff_state": bluff_state
 	}
 
@@ -3917,12 +5657,14 @@ func _validate_card_context(card: Resource, context: Dictionary) -> bool:
 		var target_enemy_id: StringName = StringName(context.get("target_enemy_id", &""))
 		if target_enemy_id.is_empty() or not bool(combat_resolver.call("has_living_enemy", target_enemy_id)):
 			_append_log("%s needs a living enemy target." % _get_card_name(card))
+			_push_feedback("Blocked: pick a living Target enemy for %s." % _get_card_name(card), FEEDBACK_DAMAGE_COLOR, hand_action_status_label)
 			return false
 
 	if _is_grid_cell_card(card):
 		var target_cell: Vector2i = context.get("target_cell", Vector2i(-1, -1))
 		if not _is_valid_player_move_target(target_cell):
 			_append_log("%s needs a legal adjacent move target." % _get_card_name(card))
+			_push_feedback("Blocked: pick a legal Move cell for %s." % _get_card_name(card), FEEDBACK_DAMAGE_COLOR, hand_action_status_label)
 			return false
 
 	return true
@@ -3935,6 +5677,7 @@ func _resolve_movement_card(card: Resource, context: Dictionary) -> bool:
 		return false
 
 	if bool(combat_grid.call("move_unit", &"player", target_cell)):
+		context["movement_resolved"] = true
 		_append_log("%s moves the Gambler-Knight to %s." % [
 			_get_card_name(card),
 			combat_grid.call("format_cell", target_cell)
@@ -3944,10 +5687,13 @@ func _resolve_movement_card(card: Resource, context: Dictionary) -> bool:
 	return false
 
 
-func _apply_card_side_effects(card: Resource) -> void:
+func _apply_card_side_effects(card: Resource, context: Dictionary = {}) -> void:
 	var card_id: StringName = StringName(card.get("id"))
 	var card_name := _get_card_name(card)
 	match card_id:
+		&"hook_step":
+			combat_resolver.call("apply_follow_up_damage", 2, "%s follow-up" % card_name, context)
+			_play_unit_burst(StringName(context.get("target_enemy_id", &"")), FEEDBACK_DAMAGE_COLOR, &"blood")
 		&"blood_ritual":
 			bluff_system.call("gain_nerve", 2, card_name)
 		&"marked_card":
@@ -3956,6 +5702,59 @@ func _apply_card_side_effects(card: Resource) -> void:
 			bluff_system.call("gain_nerve", 1, card_name)
 		&"shadow_step":
 			combat_resolver.call("add_player_guard", 2, card_name)
+
+
+func _apply_enemy_grid_moves(revealed: Array) -> void:
+	if combat_grid == null:
+		return
+
+	var moved_any := false
+	for entry in revealed:
+		if typeof(entry) != TYPE_DICTIONARY:
+			continue
+		var entry_data: Dictionary = Dictionary(entry)
+		var payload: Dictionary = entry_data.get("payload", {})
+		if not payload.has("move"):
+			continue
+
+		var enemy_id: StringName = StringName(entry_data.get("enemy_id", &""))
+		if enemy_id.is_empty() or not bool(combat_resolver.call("has_living_enemy", enemy_id)):
+			continue
+
+		var move_cells: Array = combat_grid.call("get_empty_adjacent_cells_for", enemy_id)
+		if move_cells.is_empty():
+			_append_log("%s tries to reposition, but the table has no open adjacent cell." % entry_data.get("enemy_name", "Enemy"))
+			continue
+
+		var destination: Vector2i = _pick_enemy_reposition_cell(enemy_id, move_cells)
+		if bool(combat_grid.call("move_unit", enemy_id, destination)):
+			moved_any = true
+			_append_log("%s repositions to %s." % [
+				entry_data.get("enemy_name", "Enemy"),
+				combat_grid.call("format_cell", destination)
+			])
+			_play_unit_or_cell_burst(enemy_id, destination, FEEDBACK_MOVE_COLOR, &"move")
+
+	if moved_any:
+		_refresh_targeting_options()
+
+
+func _pick_enemy_reposition_cell(enemy_id: StringName, move_cells: Array) -> Vector2i:
+	var player_cell: Vector2i = combat_grid.call("get_unit_position", &"player")
+	var origin: Vector2i = combat_grid.call("get_unit_position", enemy_id)
+	var best_cell: Vector2i = move_cells[0]
+	var best_score := -9999
+	for value in move_cells:
+		if typeof(value) != TYPE_VECTOR2I:
+			continue
+		var candidate: Vector2i = value
+		var distance_from_player: int = abs(candidate.x - player_cell.x) + abs(candidate.y - player_cell.y)
+		var forward_bias: int = origin.y - candidate.y
+		var score: int = distance_from_player * 10 + forward_bias
+		if score > best_score:
+			best_score = score
+			best_cell = candidate
+	return best_cell
 
 
 func _is_valid_player_move_target(target_cell: Vector2i) -> bool:
@@ -4005,7 +5804,7 @@ func _refresh_guidance() -> void:
 
 	if run_flow_state == RUN_FLOW_START:
 		phase_guidance_label.text = "Run Start"
-		phase_detail_label.text = "Press Open Opening Table when you are ready to sit at the first table."
+		phase_detail_label.text = "Press Deal In when you are ready to sit at the first table."
 	elif run_flow_state == RUN_FLOW_REWARD:
 		phase_guidance_label.text = "Choose Reward"
 		phase_detail_label.text = "Pick a card, then claim a relic if one is pending."
@@ -4039,7 +5838,7 @@ func _refresh_guidance() -> void:
 
 func _get_action_prompt(session_state: Dictionary, run_state: Dictionary) -> String:
 	if run_flow_state == RUN_FLOW_START:
-		return "Next: Open Opening Table. Then pick Target, play a card, and Resolve Turn."
+		return "Next: Deal In. Then pick Target, play a card, and Resolve Turn."
 	if run_flow_state == RUN_FLOW_REWARD:
 		return "Next: choose one reward; the next table starts when rewards are clear."
 	if run_flow_state == RUN_FLOW_NEXT_ENCOUNTER:
@@ -4085,12 +5884,104 @@ func _refresh_first_play_path(session_state: Dictionary, run_state: Dictionary) 
 
 	first_play_path_label.clear()
 	first_play_path_label.append_text("First Play Path | ACTIVE: %s\n" % _get_first_play_active_step(session_state, run_state))
-	first_play_path_label.append_text("1 Open Table -> 2 Pick Target -> 3 Play Card -> 4 Resolve Turn")
+	first_play_path_label.append_text("1 Deal In -> 2 Pick Target -> 3 Play Card -> 4 Resolve Turn")
+	_refresh_first_play_coach()
+
+
+func _reset_first_play_coach() -> void:
+	first_play_coach_steps = {
+		"open": false,
+		"target": false,
+		"card": false,
+		"resolve": false
+	}
+	first_play_coach_complete = false
+	if first_play_coach_panel != null:
+		first_play_coach_panel.modulate = Color.WHITE
+		first_play_coach_panel.visible = true
+	_refresh_first_play_coach()
+
+
+func _record_first_play_step(step_id: String) -> void:
+	if first_play_coach_complete or not _is_first_table_coach_active():
+		return
+	if not first_play_coach_steps.has(step_id):
+		return
+
+	if bool(first_play_coach_steps.get(step_id, false)):
+		_refresh_first_play_coach()
+		return
+
+	first_play_coach_steps[step_id] = true
+	_refresh_first_play_coach()
+	if first_play_coach_panel != null:
+		_pulse_canvas_item(first_play_coach_panel, FEEDBACK_CARD_COLOR)
+	if _is_first_play_coach_ready_to_complete():
+		_complete_first_play_coach()
+
+
+func _refresh_first_play_coach() -> void:
+	if first_play_coach_panel == null or first_play_coach_label == null:
+		return
+
+	var should_show := _is_first_table_coach_active() and not first_play_coach_complete
+	first_play_coach_panel.visible = should_show
+	if not should_show:
+		return
+
+	first_play_coach_label.text = "Coach: %s -> %s -> %s -> %s" % [
+		_get_first_play_coach_step_text("open", "DEAL"),
+		_get_first_play_coach_step_text("target", "TARGET"),
+		_get_first_play_coach_step_text("card", "CARD"),
+		_get_first_play_coach_step_text("resolve", "RESOLVE")
+	]
+	first_play_coach_label.add_theme_color_override("font_color", Color(1.0, 0.92, 0.70))
+
+
+func _get_first_play_coach_step_text(step_id: String, label: String) -> String:
+	return "%s OK" % label if bool(first_play_coach_steps.get(step_id, false)) else label
+
+
+func _is_first_play_coach_ready_to_complete() -> bool:
+	return (
+		bool(first_play_coach_steps.get("open", false))
+		and bool(first_play_coach_steps.get("target", false))
+		and bool(first_play_coach_steps.get("card", false))
+		and bool(first_play_coach_steps.get("resolve", false))
+	)
+
+
+func _complete_first_play_coach() -> void:
+	first_play_coach_complete = true
+	if first_play_coach_label != null:
+		first_play_coach_label.text = "Coach complete: you can read the table from here."
+	if first_play_coach_panel == null:
+		return
+
+	first_play_coach_panel.visible = true
+	first_play_coach_panel.modulate = Color(1.0, 0.92, 0.62)
+	var tween := create_tween()
+	tween.tween_interval(0.45)
+	tween.tween_property(first_play_coach_panel, "modulate", Color(1.0, 1.0, 1.0, 0.0), 0.35).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tween.tween_callback(func() -> void:
+		if first_play_coach_panel != null:
+			first_play_coach_panel.visible = false
+			first_play_coach_panel.modulate = Color.WHITE
+	)
+
+
+func _is_first_table_coach_active() -> bool:
+	if run_flow_state == RUN_FLOW_RESULTS:
+		return false
+	if run_manager == null:
+		return true
+	var state: Dictionary = run_manager.call("get_state")
+	return int(state.get("current_node_index", 0)) == 0
 
 
 func _get_first_play_active_step(session_state: Dictionary, run_state: Dictionary) -> String:
 	if run_flow_state == RUN_FLOW_START:
-		return "1 Open Table"
+		return "1 Deal In"
 	if run_flow_state == RUN_FLOW_REWARD:
 		return "Reward Choice"
 	if run_flow_state == RUN_FLOW_NEXT_ENCOUNTER:
@@ -4112,6 +6003,337 @@ func _get_first_play_active_step(session_state: Dictionary, run_state: Dictionar
 			return "4 Resolve Turn"
 		_:
 			return "Continue"
+
+
+func _refresh_compact_play_state(run_state: Dictionary) -> void:
+	if live_state_chip_row == null or combat_session == null:
+		return
+
+	var session_state: Dictionary = combat_session.call("get_state")
+	var phase_key: String = String(session_state.get("current_phase_key", "START_TURN"))
+	var phase_text: String = phase_key.capitalize().replace("_", " ")
+	var phase_active := run_flow_state == RUN_FLOW_COMBAT
+	phase_state_chip.text = "PHASE %s" % _shorten_chip_text(phase_text, 14)
+	_style_compact_button(phase_state_chip, phase_active, FEEDBACK_PHASE_COLOR, _get_turn_state_feedback(session_state, run_state))
+
+	energy_state_chip.text = "ENERGY %d/%d" % [
+		session_state.get("energy", 0),
+		session_state.get("max_energy", 0)
+	]
+	_style_compact_button(
+		energy_state_chip,
+		phase_key == "PLAYER_COMMIT" and int(session_state.get("energy", 0)) > 0,
+		FEEDBACK_CARD_COLOR,
+		"Energy pays for card clicks during Player Commit."
+	)
+
+	target_state_chip.text = _get_target_chip_text()
+	_style_compact_button(target_state_chip, phase_key == "PLAYER_COMMIT", FEEDBACK_DAMAGE_COLOR, "Attack and read cards use this enemy target.")
+
+	move_state_chip.text = _get_move_chip_text()
+	_style_compact_button(move_state_chip, phase_key == "PLAYER_COMMIT", FEEDBACK_MOVE_COLOR, "Movement and trap cards use this table cell.")
+
+	var threat_chip: Dictionary = _get_threat_chip_snapshot()
+	threat_state_chip.text = String(threat_chip.get("text", "THREAT ?"))
+	_style_compact_button(
+		threat_state_chip,
+		phase_active,
+		threat_chip.get("color", Color(0.80, 0.80, 0.82)),
+		String(threat_chip.get("tooltip", "No enemy read yet."))
+	)
+
+	rule_state_chip.text = _get_rule_chip_text(run_state)
+	_style_compact_button(rule_state_chip, phase_active, Color(0.78, 0.62, 0.30), _get_rule_chip_tooltip(run_state, session_state))
+	_refresh_first_play_step_buttons(session_state, run_state)
+	_sync_live_text_density()
+
+
+func _refresh_first_play_step_buttons(session_state: Dictionary, run_state: Dictionary) -> void:
+	if first_play_step_buttons.size() < 4:
+		return
+
+	var active_indices: Array[int] = _get_active_first_play_step_indices(session_state, run_state)
+	var labels := ["1 Deal", "2 Target", "3 Card", "4 Resolve"]
+	var tooltips := [
+		"Deal into the current table.",
+		"Pick the enemy target or move cell.",
+		"Click a ready hand card.",
+		"Resolve Turn advances the plan."
+	]
+	for index in range(first_play_step_buttons.size()):
+		var button := first_play_step_buttons[index]
+		var active := active_indices.has(index)
+		button.text = labels[index]
+		var tooltip_prefix := "Active step: " if active else "Step: "
+		_style_compact_button(button, active, FEEDBACK_CARD_COLOR, "%s%s" % [tooltip_prefix, tooltips[index]])
+
+
+func _get_active_first_play_step_indices(session_state: Dictionary, _run_state: Dictionary) -> Array[int]:
+	if run_flow_state == RUN_FLOW_START:
+		return [0]
+	if run_flow_state == RUN_FLOW_REWARD or run_flow_state == RUN_FLOW_NEXT_ENCOUNTER or run_flow_state == RUN_FLOW_RESULTS:
+		return []
+	if bool(session_state.get("combat_over", false)):
+		return []
+
+	var phase_key: String = String(session_state.get("current_phase_key", "START_TURN"))
+	match phase_key:
+		"PLAYER_COMMIT":
+			return [1, 2]
+		"BLUFF_WAGER", "REVEAL", "RESOLVE", "CLEANUP":
+			return [3]
+		_:
+			return [0]
+
+
+func _sync_live_text_density() -> void:
+	var compact_live := run_flow_state == RUN_FLOW_COMBAT and not debug_controls_visible
+	var title_plate := find_child("TitlePlaque", true, false)
+	if title_plate is Control:
+		(title_plate as Control).visible = not compact_live
+	if run_header_label != null:
+		run_header_label.visible = not compact_live and run_flow_state != RUN_FLOW_START
+	var body := find_child("CombatBody", true, false)
+	if body is Control:
+		(body as Control).visible = run_flow_state == RUN_FLOW_COMBAT
+	var deck_panel_node := find_child("DeckPanel", true, false)
+	if deck_panel_node is Control:
+		(deck_panel_node as Control).visible = run_flow_state == RUN_FLOW_COMBAT
+	if pile_counts_label != null:
+		pile_counts_label.visible = not compact_live
+	var run_path_panel := find_child("RunPathPanel", true, false)
+	if run_path_panel is Control:
+		(run_path_panel as Control).visible = not compact_live and run_flow_state != RUN_FLOW_REWARD
+	var route_decision_shell := run_flow_state == RUN_FLOW_REWARD or run_flow_state == RUN_FLOW_NEXT_ENCOUNTER or run_flow_state == RUN_FLOW_RESULTS
+	var compact_reward := run_flow_state == RUN_FLOW_REWARD and not debug_controls_visible
+	var show_expanded_combat_detail := run_flow_state == RUN_FLOW_COMBAT and not compact_live
+	for panel_name in ["TurnGuidance", "TurnStatusPanel", "TableRulePanel", "CombatFeedbackPanel"]:
+		var panel := find_child(panel_name, true, false)
+		if panel is Control:
+			(panel as Control).visible = not route_decision_shell
+	var target_controls_panel := find_child("TargetControlsPanel", true, false)
+	if target_controls_panel is Control:
+		(target_controls_panel as Control).visible = not compact_live
+	if run_shell_panel != null:
+		var show_shell_in_live := run_ceremony_panel != null and bool(run_ceremony_panel.get("visible"))
+		run_shell_panel.visible = not compact_live or show_shell_in_live
+	if run_shell_title_label != null:
+		run_shell_title_label.visible = not compact_live
+	var run_shell_actions := find_child("RunShellActions", true, false)
+	if run_shell_actions is Control:
+		(run_shell_actions as Control).visible = not compact_live
+	if action_cue_panel != null:
+		action_cue_panel.visible = not compact_live and not route_decision_shell and run_flow_state != RUN_FLOW_START
+		action_cue_panel.custom_minimum_size = Vector2(0, 62) if compact_live else Vector2(0, 72)
+	if combat_grid != null and combat_grid.has_method("set_compact_mode"):
+		combat_grid.call("set_compact_mode", compact_live)
+	_sync_compact_live_layout(compact_live)
+	if toggle_debug_button != null:
+		toggle_debug_button.visible = run_flow_state == RUN_FLOW_COMBAT or debug_controls_visible
+	if live_state_chip_row != null:
+		live_state_chip_row.visible = show_expanded_combat_detail
+	if first_play_step_row != null:
+		first_play_step_row.visible = run_flow_state == RUN_FLOW_COMBAT and not compact_live
+	if first_play_coach_panel != null:
+		first_play_coach_panel.visible = run_flow_state == RUN_FLOW_COMBAT and _is_first_table_coach_active() and not first_play_coach_complete and not compact_live
+	_sync_reward_panel_priority(compact_reward)
+	if run_shell_detail_label != null:
+		run_shell_detail_label.visible = not compact_live and not compact_reward
+	if run_continuity_label != null:
+		run_continuity_label.visible = not compact_live and not compact_reward
+	if encounter_preview_label != null and compact_live:
+		encounter_preview_label.visible = false
+	var turn_status_panel := find_child("TurnStatusPanel", true, false)
+	if turn_status_panel is Control:
+		(turn_status_panel as Control).visible = show_expanded_combat_detail
+	var table_rule_panel := find_child("TableRulePanel", true, false)
+	if table_rule_panel is Control:
+		(table_rule_panel as Control).visible = show_expanded_combat_detail
+	var turn_guidance_panel := find_child("TurnGuidance", true, false)
+	if turn_guidance_panel is Control:
+		(turn_guidance_panel as Control).visible = show_expanded_combat_detail
+	var combat_feedback_panel := find_child("CombatFeedbackPanel", true, false)
+	if combat_feedback_panel is Control:
+		(combat_feedback_panel as Control).visible = show_expanded_combat_detail
+	if phase_guidance_label != null:
+		phase_guidance_label.visible = show_expanded_combat_detail
+	if phase_detail_label != null:
+		phase_detail_label.visible = show_expanded_combat_detail
+	if action_prompt_label != null:
+		action_prompt_label.visible = show_expanded_combat_detail
+	if first_play_path_label != null:
+		first_play_path_label.visible = show_expanded_combat_detail
+	if turn_status_label != null:
+		turn_status_label.visible = show_expanded_combat_detail
+	if table_rule_status_label != null:
+		table_rule_status_label.visible = show_expanded_combat_detail
+	if enemy_status_label != null:
+		enemy_status_label.visible = show_expanded_combat_detail
+	if intent_icon_strip_label != null:
+		intent_icon_strip_label.visible = show_expanded_combat_detail
+	if threat_summary_label != null:
+		threat_summary_label.visible = show_expanded_combat_detail
+	var bluff_title := find_child("BluffTitle", true, false)
+	if bluff_title is Control:
+		(bluff_title as Control).visible = show_expanded_combat_detail
+	if intent_preview_label != null:
+		intent_preview_label.visible = show_expanded_combat_detail
+	if bluff_state_label != null:
+		bluff_state_label.visible = show_expanded_combat_detail
+	if enemy_call_option != null:
+		enemy_call_option.visible = show_expanded_combat_detail
+	if intent_call_option != null:
+		intent_call_option.visible = show_expanded_combat_detail
+	if lane_call_option != null:
+		lane_call_option.visible = show_expanded_combat_detail
+	if commit_first_card_button != null and commit_first_card_button.get_parent() is Control:
+		(commit_first_card_button.get_parent() as Control).visible = show_expanded_combat_detail
+	if reset_bluff_button != null:
+		reset_bluff_button.visible = show_expanded_combat_detail
+	if card_action_hint_label != null:
+		card_action_hint_label.visible = show_expanded_combat_detail
+	if card_target_preview_label != null:
+		card_target_preview_label.visible = show_expanded_combat_detail
+	if shooter_economy_label != null:
+		shooter_economy_label.visible = run_flow_state == RUN_FLOW_COMBAT
+	if loadout_slot_row != null:
+		loadout_slot_row.visible = run_flow_state == RUN_FLOW_COMBAT
+	if hand_action_button_row != null:
+		hand_action_button_row.visible = run_flow_state == RUN_FLOW_COMBAT
+	if combat_feedback_label != null:
+		combat_feedback_label.visible = show_expanded_combat_detail
+
+
+func _sync_compact_live_layout(compact_live: bool) -> void:
+	var body := find_child("CombatBody", true, false)
+	if body is Control:
+		(body as Control).custom_minimum_size = Vector2(0, 0)
+		if body is BoxContainer:
+			(body as BoxContainer).add_theme_constant_override("separation", 4 if compact_live else 8)
+
+	var table_row := find_child("TableRow", true, false)
+	if table_row is Control:
+		(table_row as Control).custom_minimum_size = Vector2(0, 440) if compact_live else Vector2(0, 430)
+
+	var opponent_panel := find_child("OpponentCardsPanel", true, false)
+	if opponent_panel is Control:
+		(opponent_panel as Control).custom_minimum_size = Vector2(280, 0) if compact_live else Vector2(320, 0)
+
+	if hand_action_status_label != null:
+		hand_action_status_label.custom_minimum_size = Vector2(0, 30) if compact_live else Vector2(0, 28)
+		hand_action_status_label.add_theme_font_size_override("font_size", 16 if compact_live else 15)
+
+	if hand_view != null and hand_view.has_method("set_compact_mode"):
+		hand_view.call("set_compact_mode", compact_live)
+
+	var hand_scroll := find_child("HandScroll", true, false)
+	if hand_scroll is Control:
+		(hand_scroll as Control).custom_minimum_size = Vector2(0, 188) if compact_live else Vector2(0, 196)
+
+
+func _sync_reward_panel_priority(compact_reward: bool) -> void:
+	var layout_node := find_child("Layout", true, false)
+	var run_panel_node := find_child("RunPanel", true, false)
+	if not (layout_node is BoxContainer) or run_panel_node == null:
+		return
+
+	var layout_box := layout_node as BoxContainer
+	var run_shell_node := find_child("RunShellPanel", true, false)
+	if compact_reward and run_shell_node != null and run_shell_node.get_parent() == layout_box:
+		layout_box.move_child(run_panel_node, run_shell_node.get_index())
+		return
+
+	var debug_drawer_node := find_child("DebugDrawer", true, false)
+	if debug_drawer_node != null and debug_drawer_node.get_parent() == layout_box:
+		layout_box.move_child(run_panel_node, max(0, debug_drawer_node.get_index() - 1))
+
+
+func _get_target_chip_text() -> String:
+	var target: Dictionary = _get_selected_enemy_target()
+	if target.is_empty():
+		return "TARGET --"
+	return "TARGET %s" % _shorten_chip_text(String(target.get("name", "Enemy")), 14)
+
+
+func _get_move_chip_text() -> String:
+	var target_cell: Vector2i = _get_selected_move_cell()
+	if target_cell == Vector2i(-1, -1) or combat_grid == null:
+		return "MOVE --"
+	return "MOVE %s" % combat_grid.call("format_cell", target_cell)
+
+
+func _get_threat_chip_snapshot() -> Dictionary:
+	if current_intent_previews.is_empty():
+		return {
+			"text": "THREAT ?",
+			"tooltip": "No enemy read yet.",
+			"color": Color(0.80, 0.80, 0.82)
+		}
+
+	var best_preview: Dictionary = {}
+	var best_option: Dictionary = {}
+	var best_score := -1
+	for preview in current_intent_previews:
+		var options: Array = preview.get("options", [])
+		var option: Dictionary = _get_top_intent_option(options)
+		var score := _get_intent_threat_score(option)
+		if score > best_score:
+			best_score = score
+			best_preview = preview
+			best_option = option
+
+	if best_option.is_empty():
+		return {
+			"text": "THREAT LOW",
+			"tooltip": "No weighted enemy read.",
+			"color": Color(0.55, 0.85, 0.62)
+		}
+
+	var level := _get_threat_level(best_option)
+	return {
+		"text": "THREAT %s" % level,
+		"tooltip": "%s: %s %d%%. %s" % [
+			best_preview.get("enemy_name", "Enemy"),
+			best_option.get("intent_name", "Intent"),
+			best_option.get("percentage", 0),
+			_get_threat_response(best_option)
+		],
+		"color": _get_threat_chip_color(level)
+	}
+
+
+func _get_threat_chip_color(level: String) -> Color:
+	match level:
+		"HIGH":
+			return Color(1.0, 0.38, 0.26)
+		"MED":
+			return Color(1.0, 0.70, 0.32)
+		"SETUP":
+			return Color(0.72, 0.58, 1.0)
+		_:
+			return Color(0.55, 0.85, 0.62)
+
+
+func _get_rule_chip_text(run_state: Dictionary) -> String:
+	var table_modifier: Dictionary = run_state.get("table_modifier", {})
+	var modifier_name := String(table_modifier.get("name", "Rule"))
+	if modifier_name.is_empty():
+		modifier_name = "Rule"
+	return "RULE %s" % _shorten_chip_text(modifier_name, 15)
+
+
+func _get_rule_chip_tooltip(run_state: Dictionary, session_state: Dictionary) -> String:
+	var table_modifier: Dictionary = run_state.get("table_modifier", {})
+	var modifier_name := String(table_modifier.get("name", "Table Rule"))
+	var modifier_summary := String(table_modifier.get("summary", "No special rule is active."))
+	var active_text := _get_table_rule_active_effect_text(run_state.get("table_modifiers", {}), session_state)
+	return "%s: %s Active: %s" % [modifier_name, modifier_summary, active_text]
+
+
+func _shorten_chip_text(value: String, max_length: int) -> String:
+	if value.length() <= max_length:
+		return value
+	return "%s..." % value.substr(0, max(0, max_length - 3))
 
 
 func _refresh_turn_status(run_state: Dictionary) -> void:
@@ -4185,7 +6407,7 @@ func _get_table_rule_active_effect_text(table_modifiers: Dictionary, session_sta
 
 func _get_turn_state_feedback(session_state: Dictionary, run_state: Dictionary) -> String:
 	if run_flow_state == RUN_FLOW_START:
-		return "State: Open Opening Table is live. Combat buttons and card clicks wait until the table opens."
+		return "State: Deal In is live. Combat buttons and card clicks wait until the table opens."
 	if run_flow_state == RUN_FLOW_REWARD:
 		return "State: rewards are live. Pick the card that closes the shown deck gap."
 	if run_flow_state == RUN_FLOW_NEXT_ENCOUNTER:
@@ -4256,6 +6478,165 @@ func _refresh_enemy_status(state: Dictionary) -> void:
 			_get_enemy_hp_status(enemy_data),
 			_get_enemy_read_text(enemy_id)
 		])
+	_refresh_enemy_target_cards(state)
+
+
+func _refresh_enemy_target_cards(state: Dictionary) -> void:
+	if enemy_target_cards_row == null:
+		return
+
+	for child in enemy_target_cards_row.get_children():
+		child.queue_free()
+	enemy_target_card_buttons.clear()
+
+	var show_live_targets := run_flow_state == RUN_FLOW_COMBAT and not bool(state.get("combat_over", false))
+	enemy_target_cards_row.visible = show_live_targets
+	if not show_live_targets:
+		return
+
+	var enemies: Array = state.get("enemies", [])
+	if enemies.is_empty():
+		var empty_label := Label.new()
+		empty_label.name = "EnemyTargetCardsEmpty"
+		empty_label.text = "No targets"
+		enemy_target_cards_row.add_child(empty_label)
+		return
+
+	var selected_enemy_id := _get_selected_enemy_target_id()
+	for enemy in enemies:
+		if typeof(enemy) != TYPE_DICTIONARY:
+			continue
+		var enemy_data: Dictionary = enemy
+		if not bool(enemy_data.get("alive", false)):
+			continue
+
+		var enemy_id := StringName(enemy_data.get("id", &""))
+		var button := Button.new()
+		button.name = "EnemyTargetCard%d" % enemy_target_card_buttons.size()
+		button.set_meta("enemy_id", enemy_id)
+		button.focus_mode = Control.FOCUS_NONE
+		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		button.custom_minimum_size = Vector2(140, 112)
+		button.text = _get_enemy_target_card_text(enemy_data, enemy_id == selected_enemy_id)
+		button.tooltip_text = "%s is an enemy %s. Click to make your next attack/read card aim at this combatant." % [
+			enemy_data.get("name", "Enemy"),
+			_get_enemy_battle_role(enemy_data)
+		]
+		button.pressed.connect(_on_enemy_target_card_pressed.bind(enemy_id))
+		button.button_down.connect(_on_enemy_target_card_button_down.bind(enemy_id, button))
+		button.mouse_entered.connect(_on_enemy_target_card_hovered.bind(enemy_id, button))
+		button.mouse_exited.connect(_on_enemy_target_card_unhovered.bind(enemy_id))
+		_style_enemy_target_card_button(button, enemy_data, enemy_id == selected_enemy_id)
+		enemy_target_cards_row.add_child(button)
+		enemy_target_card_buttons.append(button)
+
+
+func _get_enemy_target_card_text(enemy: Dictionary, active: bool) -> String:
+	var enemy_id := StringName(enemy.get("id", &""))
+	var prefix := "CURRENT TARGET" if active else "CLICK TO AIM"
+	return "%s\n%s\n%s\nHP %d/%d\nPlan: %s\n%s" % [
+		prefix,
+		enemy.get("name", "Enemy"),
+		_get_enemy_battle_role(enemy),
+		enemy.get("hp", 0),
+		enemy.get("max_hp", 0),
+		_get_enemy_intent_line(enemy_id),
+		_get_enemy_target_reason(enemy)
+	]
+
+
+func _get_enemy_battle_role(enemy: Dictionary) -> String:
+	var enemy_id := StringName(enemy.get("id", &""))
+	match enemy_id:
+		&"skulker":
+			return "Knife Duelist"
+		&"shieldbearer":
+			return "Shield Guard"
+		&"brute":
+			return "Brute Enforcer"
+		&"needle_eye":
+			return "Backline Sniper"
+		&"hexmonger":
+			return "Hex Caster"
+		&"grave_dealer":
+			return "Elite Cardsharp"
+		&"house_champion":
+			return "Boss Champion"
+
+	var role_text := String(enemy.get("role", "")).strip_edges()
+	if role_text.is_empty():
+		return "Enemy Fighter"
+	return role_text
+
+
+func _get_enemy_target_reason(enemy: Dictionary) -> String:
+	var enemy_id := StringName(enemy.get("id", &""))
+	match enemy_id:
+		&"skulker":
+			return "Fighter: quick attacker"
+		&"shieldbearer":
+			return "Fighter: protects allies"
+		&"brute":
+			return "Fighter: heavy hitter"
+		&"needle_eye":
+			return "Fighter: lane sniper"
+		&"hexmonger":
+			return "Fighter: curse caster"
+		&"grave_dealer":
+			return "Fighter: elite cardsharp"
+		&"house_champion":
+			return "Fighter: boss"
+
+	var hp_status := _get_enemy_hp_status(enemy).to_lower()
+	return "Fighter: %s target" % hp_status
+
+
+func _get_enemy_intent_line(enemy_id: StringName) -> String:
+	var preview: Dictionary = _get_intent_preview_for_enemy(enemy_id)
+	if preview.is_empty():
+		return "intent hidden"
+
+	var options: Array = preview.get("options", [])
+	var top_option: Dictionary = _get_top_intent_option(options)
+	if top_option.is_empty():
+		return "intent unknown"
+
+	return "%s %d%%" % [
+		top_option.get("intent_name", "Intent"),
+		top_option.get("percentage", 0)
+	]
+
+
+func _style_enemy_target_card_button(button: Button, enemy: Dictionary, active: bool) -> void:
+	var enemy_id := StringName(enemy.get("id", &""))
+	var preview: Dictionary = _get_intent_preview_for_enemy(enemy_id)
+	var top_option: Dictionary = _get_top_intent_option(preview.get("options", []))
+	var threat_level := _get_threat_level(top_option) if not top_option.is_empty() else "LOW"
+	var threat_color := _get_threat_chip_color(threat_level)
+	var style := StyleBoxFlat.new()
+	style.corner_radius_top_left = 6
+	style.corner_radius_top_right = 6
+	style.corner_radius_bottom_left = 6
+	style.corner_radius_bottom_right = 6
+	style.border_width_left = 4 if active else 2
+	style.border_width_top = 4 if active else 2
+	style.border_width_right = 4 if active else 2
+	style.border_width_bottom = 4 if active else 2
+	style.bg_color = Color(0.18, 0.10, 0.075, 0.96).lerp(threat_color, 0.12 if active else 0.06)
+	style.border_color = Color(1.0, 0.82, 0.28) if active else threat_color
+	style.content_margin_left = 8
+	style.content_margin_top = 8
+	style.content_margin_right = 8
+	style.content_margin_bottom = 8
+	button.add_theme_stylebox_override("normal", style)
+	var hover_style := style.duplicate()
+	hover_style.bg_color = style.bg_color.lightened(0.08)
+	hover_style.border_color = Color(1.0, 0.86, 0.36)
+	button.add_theme_stylebox_override("hover", hover_style)
+	button.add_theme_stylebox_override("pressed", style)
+	button.add_theme_font_size_override("font_size", 12)
+	button.add_theme_color_override("font_color", Color(1.0, 0.92, 0.74) if active else Color(0.94, 0.88, 0.78))
+	button.add_theme_color_override("font_hover_color", Color(1.0, 0.96, 0.82))
 
 
 func _get_enemy_hp_status(enemy: Dictionary) -> String:
@@ -4303,14 +6684,15 @@ func _refresh_card_action_hint() -> void:
 	var session_state: Dictionary = combat_session.call("get_state") if combat_session != null else {}
 	var counts: Dictionary = deck_manager.call("get_counts") if deck_manager != null else {}
 	card_action_hint_label.clear()
-	card_action_hint_label.append_text("Hand %d | Energy %d/%d | Target: %s | Move: %s\n" % [
+	card_action_hint_label.append_text("Hand %d | Chips %d | Energy %d/%d | Target: %s | Move: %s\n" % [
 		counts.get("hand", 0),
+		shooter_chips,
 		session_state.get("energy", 0),
 		session_state.get("max_energy", 0),
 		_get_target_affordance_text(),
 		_get_move_affordance_text()
 	])
-	card_action_hint_label.append_text(_get_card_affordance_text(session_state))
+	card_action_hint_label.append_text("%s\nSelected card can Slot, Burn for Chips, Hold, or Play." % _get_card_affordance_text(session_state))
 
 
 func _sync_hand_card_interaction() -> void:
@@ -4325,6 +6707,85 @@ func _sync_hand_card_interaction() -> void:
 		var card: Resource = deck_manager.call("get_card_at", index)
 		entries.append(_get_card_playability_entry(card, session_state))
 	hand_view.call("set_card_playability", entries)
+	_refresh_hand_action_status(entries, session_state)
+	_refresh_loadout_ui()
+
+
+func _refresh_hand_action_status(entries: Array[Dictionary], session_state: Dictionary) -> void:
+	if hand_action_status_label == null:
+		return
+
+	var global_reason := _get_global_card_lock_reason(session_state)
+	if not global_reason.is_empty():
+		if run_flow_state == RUN_FLOW_START:
+			hand_action_status_label.text = "NEXT: click Deal In. Cards unlock after the table is dealt."
+		else:
+			hand_action_status_label.text = "Cards locked: %s Next: %s" % [global_reason, _get_locked_cards_next_action(global_reason)]
+		hand_action_status_label.add_theme_color_override("font_color", Color(0.82, 0.76, 0.68))
+		return
+
+	var ready_count := 0
+	var blocked_reasons: Dictionary = {}
+	for entry in entries:
+		if bool(entry.get("playable", false)):
+			ready_count += 1
+			continue
+		var reason := String(entry.get("reason", "Card is locked."))
+		blocked_reasons[reason] = int(blocked_reasons.get(reason, 0)) + 1
+
+	if ready_count > 0:
+		var target := _get_selected_enemy_target()
+		var target_name := String(target.get("name", "enemy")) if not target.is_empty() else "enemy"
+		var target_role := _get_enemy_battle_role(target) if not target.is_empty() else "fighter"
+		if _is_first_table_coach_active() and bool(first_play_coach_steps.get("card", false)) and not bool(first_play_coach_steps.get("resolve", false)):
+			hand_action_status_label.text = "NEXT: click Resolve Turn. The enemy answers after your card."
+		elif _is_first_table_coach_active() and not bool(first_play_coach_steps.get("target", false)):
+			hand_action_status_label.text = "NEXT: TARGET who you attack: Skulker is a Knife Duelist, Shieldbearer is a Shield Guard. Then play a glowing card."
+		elif _is_first_table_coach_active() and not bool(first_play_coach_steps.get("card", false)):
+			hand_action_status_label.text = "NEXT: TARGET %s (%s). Play a glowing card, or click another enemy to switch." % [
+				target_name,
+				target_role
+			]
+		else:
+			hand_action_status_label.text = "NEXT: TARGET %s. Play 1 of %d glowing card%s, or click another enemy/MOVE first." % [
+				target_name,
+				ready_count,
+				"" if ready_count == 1 else "s"
+			]
+		hand_action_status_label.add_theme_color_override("font_color", Color(1.0, 0.86, 0.42))
+		return
+
+	var top_reason := "Pick a target or recover Energy."
+	var top_count := 0
+	for reason in blocked_reasons.keys():
+		var count := int(blocked_reasons[reason])
+		if count > top_count:
+			top_count = count
+			top_reason = String(reason)
+	hand_action_status_label.text = "Blocked: %s Next: %s" % [top_reason, _get_blocked_cards_next_action(top_reason)]
+	hand_action_status_label.add_theme_color_override("font_color", FEEDBACK_DAMAGE_COLOR)
+
+
+func _get_locked_cards_next_action(reason: String) -> String:
+	if reason.contains("Deal In"):
+		return "press Deal In."
+	if reason.contains("Choose rewards"):
+		return "pick or skip a reward."
+	if reason.contains("Open Next Table"):
+		return "press Open Next Table."
+	if reason.contains("Press Begin Turn"):
+		return "press Begin Turn."
+	return "follow the lit action button."
+
+
+func _get_blocked_cards_next_action(reason: String) -> String:
+	if reason.contains("Target enemy"):
+		return "click an enemy target card."
+	if reason.contains("Move cell"):
+		return "click a legal table cell."
+	if reason.contains("Energy"):
+		return "press Resolve Turn."
+	return "click target, then a lit card."
 
 
 func _get_card_playability_entry(card: Resource, session_state: Dictionary) -> Dictionary:
@@ -4354,7 +6815,7 @@ func _get_card_playability_entry(card: Resource, session_state: Dictionary) -> D
 
 func _get_global_card_lock_reason(session_state: Dictionary) -> String:
 	if run_flow_state == RUN_FLOW_START:
-		return "Open Opening Table first."
+		return "Deal In first."
 	if run_flow_state == RUN_FLOW_REWARD:
 		return "Choose rewards before playing more cards."
 	if run_flow_state == RUN_FLOW_NEXT_ENCOUNTER:
@@ -4408,7 +6869,7 @@ func _get_move_affordance_text() -> String:
 
 func _get_card_affordance_text(session_state: Dictionary) -> String:
 	if run_flow_state == RUN_FLOW_START:
-		return "Cards wait: press Open Opening Table before committing actions."
+		return "Cards wait: press Deal In before committing actions."
 	if run_flow_state == RUN_FLOW_REWARD:
 		return "Cards wait: choose rewards before the next table."
 	if run_flow_state == RUN_FLOW_NEXT_ENCOUNTER:
@@ -4553,16 +7014,303 @@ func _preview_card_grid_focus(card: Resource, context: Dictionary) -> void:
 	if combat_grid == null:
 		return
 
+	var source := _get_hand_card_view(previewed_hand_index)
+	var source_position := _get_canvas_item_global_center(source)
+	var target_position := _get_card_vfx_target_position(card, context, source)
+	if combat_vfx != null and source_position != Vector2.ZERO and target_position != Vector2.ZERO and combat_vfx.has_method("play_card_preview_arc"):
+		combat_vfx.call("play_card_preview_arc", source_position, target_position, _get_card_vfx_color(card))
+
 	if _is_attack_or_read_card(card):
 		var target_enemy_id: StringName = StringName(context.get("target_enemy_id", &""))
 		if not target_enemy_id.is_empty():
 			_flash_grid_unit(target_enemy_id, FEEDBACK_CARD_COLOR)
+			_preview_arena_card_intent(card, context)
 	elif _is_grid_cell_card(card):
 		var target_cell: Vector2i = context.get("target_cell", Vector2i(-1, -1))
 		if target_cell != Vector2i(-1, -1) and combat_grid.has_method("flash_cell"):
 			combat_grid.call("flash_cell", target_cell, FEEDBACK_CARD_COLOR)
+			_preview_arena_card_intent(card, context)
 	elif int(card.get("target_type")) == 1:
 		_flash_grid_unit(&"player", FEEDBACK_CARD_COLOR)
+		_preview_arena_card_intent(card, context)
+
+
+func _preview_arena_card_intent(card: Resource, context: Dictionary) -> void:
+	if arena_view == null or not arena_view.has_method("preview_card_intent"):
+		return
+	var style := _get_card_vfx_style(card)
+	var target_enemy_id: StringName = StringName(context.get("target_enemy_id", &""))
+	var target_cell: Vector2i = context.get("target_cell", Vector2i(-1, -1))
+	var target_id := target_enemy_id
+	if int(card.get("target_type")) == 1 or int(card.get("card_type")) == 6:
+		target_id = &"player"
+	arena_view.call("preview_card_intent", style, &"player", target_id, target_cell)
+
+
+func _sync_arena_units() -> void:
+	if arena_view == null or combat_grid == null:
+		return
+	if not arena_view.has_method("reset_units"):
+		return
+
+	var resolver_state: Dictionary = {}
+	if combat_resolver != null:
+		resolver_state = combat_resolver.call("get_state")
+	arena_view.call("reset_units", combat_grid.call("get_unit_position_snapshot"), resolver_state)
+
+
+func _sync_arena_combat_state(state: Dictionary) -> void:
+	if arena_view == null or combat_grid == null:
+		return
+	if arena_view.has_method("sync_units"):
+		arena_view.call("sync_units", combat_grid.call("get_unit_position_snapshot"))
+	if arena_view.has_method("sync_combat_state"):
+		arena_view.call("sync_combat_state", state)
+
+
+func _play_arena_card_beat(card: Resource, context: Dictionary) -> void:
+	if arena_view == null or not arena_view.has_method("play_card_beat"):
+		return
+
+	var style := _get_card_vfx_style(card)
+	var target_enemy_id: StringName = StringName(context.get("target_enemy_id", &""))
+	var target_cell: Vector2i = context.get("target_cell", Vector2i(-1, -1))
+	var target_id := target_enemy_id
+	if int(card.get("target_type")) == 1 or int(card.get("card_type")) == 6:
+		target_id = &"player"
+	arena_view.call("play_card_beat", style, &"player", target_id, target_cell)
+
+
+func _play_card_commit_vfx(card: Resource, context: Dictionary, source: CanvasItem, face_down: bool) -> void:
+	if combat_vfx == null:
+		return
+
+	var color := _get_card_vfx_color(card)
+	var target_position := _get_card_vfx_target_position(card, context, source)
+	var source_position := _get_canvas_item_global_center(source)
+	if source_position == Vector2.ZERO:
+		source_position = _get_canvas_item_global_center(card_action_hint_label)
+	if target_position == Vector2.ZERO:
+		target_position = source_position + Vector2(0, -82)
+
+	if _is_live_canvas_item(source) and combat_vfx.has_method("play_card_burst_on"):
+		combat_vfx.call("play_card_burst_on", source, color)
+	if source_position != Vector2.ZERO and target_position != Vector2.ZERO and combat_vfx.has_method("play_card_fly_between"):
+		combat_vfx.call("play_card_fly_between", source_position, target_position, color, _get_card_name(card), face_down)
+
+	if face_down:
+		_play_smoke_vfx(source if _is_live_canvas_item(source) else bluff_state_label)
+		return
+
+	if _card_exhausts(card):
+		_play_card_burn_vfx(source if _is_live_canvas_item(source) else bluff_state_label)
+
+	_play_arena_card_beat(card, context)
+
+	match _get_card_vfx_style(card):
+		&"attack":
+			if target_position != Vector2.ZERO and source_position != Vector2.ZERO and combat_vfx.has_method("play_slash_between"):
+				combat_vfx.call("play_slash_between", source_position, target_position, color)
+			if target_position != Vector2.ZERO and combat_vfx.has_method("play_burst_at"):
+				combat_vfx.call("play_burst_at", target_position, color, &"blood")
+			if target_position != Vector2.ZERO and combat_vfx.has_method("play_target_lock_at"):
+				combat_vfx.call("play_target_lock_at", target_position, color)
+		&"guard":
+			if target_position != Vector2.ZERO and combat_vfx.has_method("play_guard_pulse_at"):
+				combat_vfx.call("play_guard_pulse_at", target_position, color)
+		&"move":
+			if target_position != Vector2.ZERO and combat_vfx.has_method("play_burst_at"):
+				combat_vfx.call("play_burst_at", target_position, color, &"move")
+			if target_position != Vector2.ZERO and combat_vfx.has_method("play_ring_at"):
+				combat_vfx.call("play_ring_at", target_position, color, 30.0)
+		&"read":
+			_play_intent_flicker_vfx(intent_preview_label, color)
+			if target_position != Vector2.ZERO and combat_vfx.has_method("play_ring_at"):
+				combat_vfx.call("play_ring_at", target_position, color, 36.0)
+			if target_position != Vector2.ZERO and combat_vfx.has_method("play_target_lock_at"):
+				combat_vfx.call("play_target_lock_at", target_position, color)
+		&"trap":
+			if target_position != Vector2.ZERO and combat_vfx.has_method("play_burst_at"):
+				combat_vfx.call("play_burst_at", target_position, color, &"smoke")
+			if target_position != Vector2.ZERO and combat_vfx.has_method("play_ring_at"):
+				combat_vfx.call("play_ring_at", target_position, color, 32.0)
+		&"ritual":
+			_play_ritual_vfx(source if _is_live_canvas_item(source) else bluff_state_label)
+			_play_chip_vfx(bluff_state_label)
+		&"bluff":
+			_play_chip_vfx(bluff_state_label)
+
+
+func _play_unit_burst(unit_id: StringName, color: Color, style: StringName) -> void:
+	if combat_vfx == null or not combat_vfx.has_method("play_burst_at"):
+		return
+
+	var center := _get_unit_vfx_position(unit_id)
+	if center == Vector2.ZERO:
+		return
+	combat_vfx.call("play_burst_at", center, color, style)
+
+
+func _play_unit_or_cell_burst(unit_id: StringName, cell: Vector2i, color: Color, style: StringName) -> void:
+	if combat_vfx == null or not combat_vfx.has_method("play_burst_at"):
+		return
+
+	var center := _get_unit_vfx_position(unit_id)
+	if center == Vector2.ZERO:
+		center = _get_cell_vfx_position(cell)
+	if center != Vector2.ZERO:
+		combat_vfx.call("play_burst_at", center, color, style)
+
+
+func _play_guard_vfx(unit_id: StringName) -> void:
+	if combat_vfx == null or not combat_vfx.has_method("play_guard_pulse_at"):
+		return
+
+	var center := _get_unit_vfx_position(unit_id)
+	if center != Vector2.ZERO:
+		combat_vfx.call("play_guard_pulse_at", center, FEEDBACK_GUARD_COLOR)
+
+
+func _play_target_lock_vfx(unit_id: StringName, source: CanvasItem = null) -> void:
+	if combat_vfx == null:
+		return
+
+	if source == null and arena_view != null and arena_view.has_method("focus_unit"):
+		arena_view.call("focus_unit", unit_id)
+	if _is_live_canvas_item(source) and combat_vfx.has_method("play_target_lock_on"):
+		combat_vfx.call("play_target_lock_on", source, FEEDBACK_CARD_COLOR)
+
+	var center := _get_unit_vfx_position(unit_id)
+	if center != Vector2.ZERO and combat_vfx.has_method("play_target_lock_at"):
+		combat_vfx.call("play_target_lock_at", center, FEEDBACK_CARD_COLOR)
+	if center != Vector2.ZERO and _is_live_canvas_item(source) and combat_vfx.has_method("play_link_between_targets"):
+		combat_vfx.call("play_link_between_targets", source, center, FEEDBACK_CARD_COLOR)
+
+
+func _play_chip_vfx(target: CanvasItem) -> void:
+	if combat_vfx != null and combat_vfx.has_method("play_chip_burst_on") and _is_live_canvas_item(target):
+		combat_vfx.call("play_chip_burst_on", target)
+
+
+func _play_smoke_vfx(target: CanvasItem) -> void:
+	if combat_vfx != null and combat_vfx.has_method("play_curse_smoke_on") and _is_live_canvas_item(target):
+		combat_vfx.call("play_curse_smoke_on", target)
+
+
+func _play_ritual_vfx(target: CanvasItem) -> void:
+	if combat_vfx != null and combat_vfx.has_method("play_ritual_glow_on") and _is_live_canvas_item(target):
+		combat_vfx.call("play_ritual_glow_on", target)
+	else:
+		_play_smoke_vfx(target)
+
+
+func _play_card_burn_vfx(target: CanvasItem) -> void:
+	if combat_vfx != null and combat_vfx.has_method("play_card_burn_on") and _is_live_canvas_item(target):
+		combat_vfx.call("play_card_burn_on", target)
+
+
+func _play_intent_flicker_vfx(target: CanvasItem, color: Color) -> void:
+	if combat_vfx != null and combat_vfx.has_method("play_intent_flicker_on") and _is_live_canvas_item(target):
+		combat_vfx.call("play_intent_flicker_on", target, color)
+
+
+func _get_card_vfx_target_position(card: Resource, context: Dictionary, fallback: CanvasItem) -> Vector2:
+	if _is_attack_or_read_card(card):
+		var target_enemy_id: StringName = StringName(context.get("target_enemy_id", &""))
+		return _get_unit_vfx_position(target_enemy_id)
+
+	if _is_grid_cell_card(card):
+		var target_cell: Vector2i = context.get("target_cell", Vector2i(-1, -1))
+		return _get_cell_vfx_position(target_cell)
+
+	if int(card.get("target_type")) == 1 or int(card.get("card_type")) == 6:
+		return _get_unit_vfx_position(&"player")
+
+	return _get_canvas_item_global_center(fallback)
+
+
+func _get_card_vfx_style(card: Resource) -> StringName:
+	match int(card.get("card_type")):
+		0:
+			return &"attack"
+		1:
+			return &"guard"
+		2:
+			return &"move"
+		3:
+			return &"bluff"
+		4:
+			return &"read"
+		5:
+			return &"trap"
+		6:
+			return &"ritual"
+		_:
+			return &"card"
+
+
+func _get_card_vfx_color(card: Resource) -> Color:
+	match _get_card_vfx_style(card):
+		&"attack":
+			return FEEDBACK_DAMAGE_COLOR
+		&"guard":
+			return FEEDBACK_GUARD_COLOR
+		&"move":
+			return FEEDBACK_MOVE_COLOR
+		&"read":
+			return FEEDBACK_REVEAL_COLOR
+		&"trap":
+			return Color(0.74, 0.40, 0.86)
+		&"ritual":
+			return Color(0.92, 0.24, 0.20)
+		&"bluff":
+			return FEEDBACK_CARD_COLOR
+		_:
+			return FEEDBACK_CARD_COLOR
+
+
+func _card_exhausts(card: Resource) -> bool:
+	if card == null:
+		return false
+	var tags_value: Variant = card.get("tags")
+	if typeof(tags_value) != TYPE_ARRAY:
+		return false
+	return (tags_value as Array).has(&"exhaust")
+
+
+func _get_hand_card_view(hand_index: int) -> Control:
+	if hand_view == null or hand_index < 0 or hand_index >= hand_view.get_child_count():
+		return null
+
+	var child := hand_view.get_child(hand_index)
+	if child is Control:
+		return child as Control
+	return null
+
+
+func _get_unit_vfx_position(unit_id: StringName) -> Vector2:
+	if unit_id.is_empty() or combat_grid == null or not combat_grid.has_method("get_unit_global_center"):
+		return Vector2.ZERO
+	return combat_grid.call("get_unit_global_center", unit_id)
+
+
+func _get_cell_vfx_position(cell: Vector2i) -> Vector2:
+	if combat_grid == null or not combat_grid.has_method("get_cell_global_center"):
+		return Vector2.ZERO
+	return combat_grid.call("get_cell_global_center", cell)
+
+
+func _get_canvas_item_global_center(item: CanvasItem) -> Vector2:
+	if not _is_live_canvas_item(item):
+		return Vector2.ZERO
+	if item is Control:
+		var control: Control = item
+		return control.get_global_rect().get_center()
+	return item.get_global_transform_with_canvas().origin
+
+
+func _is_live_canvas_item(item: CanvasItem) -> bool:
+	return item != null and is_instance_valid(item) and item.is_inside_tree()
 
 
 func _reset_feedback_state() -> void:
@@ -4596,6 +7344,7 @@ func _push_feedback(message: String, color: Color = Color.WHITE, pulse_node: Nod
 
 	if feedback_banner_label != null:
 		feedback_banner_label.text = message
+		_style_feedback_banner(color)
 		_pulse_canvas_item(feedback_banner_label, color)
 
 	if combat_feedback_label != null:
@@ -4614,6 +7363,25 @@ func _refresh_feedback_label() -> void:
 	combat_feedback_label.append_text("Feedback Beats\n")
 	for message in feedback_history:
 		combat_feedback_label.append_text("- %s\n" % message)
+
+
+func _style_feedback_banner(color: Color) -> void:
+	if feedback_banner_label == null:
+		return
+
+	feedback_banner_label.add_theme_color_override("font_color", Color(1.0, 0.95, 0.82))
+	feedback_banner_label.add_theme_color_override("font_shadow_color", color.darkened(0.45))
+	feedback_banner_label.add_theme_constant_override("shadow_offset_x", 1)
+	feedback_banner_label.add_theme_constant_override("shadow_offset_y", 1)
+
+
+func _flash_canvas_item(item: CanvasItem, color: Color, duration: float = 0.2) -> void:
+	if item == null or not item.is_inside_tree():
+		return
+
+	item.modulate = color
+	var tween := create_tween()
+	tween.tween_property(item, "modulate", Color.WHITE, duration).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 
 
 func _pulse_canvas_item(item: CanvasItem, color: Color) -> void:
@@ -4682,20 +7450,32 @@ func _emit_actor_delta_feedback(previous_actor: Dictionary, actor: Dictionary, u
 		_push_feedback("%s -%d %s." % [label, hp_lost, hp_label], FEEDBACK_DAMAGE_COLOR, enemy_status_label)
 		_flash_grid_unit(unit_id, FEEDBACK_DAMAGE_COLOR)
 		_float_grid_text(unit_id, "-%d" % hp_lost, FEEDBACK_DAMAGE_COLOR)
+		_play_unit_burst(unit_id, FEEDBACK_DAMAGE_COLOR, &"blood")
+		if arena_view != null and arena_view.has_method("play_damage"):
+			arena_view.call("play_damage", unit_id, hp_lost)
 	elif guard_delta < 0:
 		_push_feedback("%s Guard -%d absorbed impact." % [label, abs(guard_delta)], FEEDBACK_GUARD_COLOR, enemy_status_label)
 		_flash_grid_unit(unit_id, FEEDBACK_GUARD_COLOR)
 		_float_grid_text(unit_id, "BLOCK %d" % abs(guard_delta), FEEDBACK_GUARD_COLOR)
+		_play_guard_vfx(unit_id)
+		if arena_view != null and arena_view.has_method("play_guard"):
+			arena_view.call("play_guard", unit_id, abs(guard_delta))
 
 	if guard_delta > 0:
 		_push_feedback("%s Guard +%d." % [label, guard_delta], FEEDBACK_GUARD_COLOR, enemy_status_label)
 		_flash_grid_unit(unit_id, FEEDBACK_GUARD_COLOR)
 		_float_grid_text(unit_id, "+%dG" % guard_delta, FEEDBACK_GUARD_COLOR)
+		_play_guard_vfx(unit_id)
+		if arena_view != null and arena_view.has_method("play_guard"):
+			arena_view.call("play_guard", unit_id, guard_delta)
 
 	if bool(previous_actor.get("alive", true)) and not bool(actor.get("alive", true)):
 		_push_feedback("%s defeated." % label, FEEDBACK_DAMAGE_COLOR, enemy_status_label)
 		_flash_grid_unit(unit_id, FEEDBACK_DAMAGE_COLOR)
 		_float_grid_text(unit_id, "KO", FEEDBACK_DAMAGE_COLOR)
+		_play_unit_burst(unit_id, Color(0.82, 0.78, 0.66), &"ash")
+		if arena_view != null and arena_view.has_method("play_defeat"):
+			arena_view.call("play_defeat", unit_id)
 
 
 func _capture_combat_feedback_state(state: Dictionary) -> Dictionary:
@@ -4832,6 +7612,7 @@ func _update_debug_visibility() -> void:
 		truth_title_label.visible = truth_visible
 	if debug_truth_label != null:
 		debug_truth_label.visible = truth_visible
+	_sync_live_text_density()
 	_sync_run_panel_visibility()
 
 
@@ -4854,11 +7635,19 @@ func _refresh_intent_call_options() -> void:
 
 	var options: Array = preview.get("options", [])
 	for option in options:
-		intent_call_option.add_item("%d%% %s" % [
-			option.get("percentage", 0),
-			option.get("intent_name", "Intent")
-		])
-		intent_call_option.set_item_metadata(intent_call_option.item_count - 1, option)
+		if typeof(option) != TYPE_DICTIONARY:
+			continue
+		var option_data: Dictionary = option
+		var intent_label := "%d%% %s" % [
+			option_data.get("percentage", 0),
+			option_data.get("intent_name", "Intent")
+		]
+		var icon_value: Texture2D = _load_runtime_art_texture(String(option_data.get("icon_path", "")))
+		if icon_value != null:
+			intent_call_option.add_icon_item(icon_value, intent_label)
+		else:
+			intent_call_option.add_item(intent_label)
+		intent_call_option.set_item_metadata(intent_call_option.item_count - 1, option_data)
 
 	if intent_call_option.item_count > 0:
 		intent_call_option.select(0)
@@ -4874,6 +7663,15 @@ func _get_card_cost(card: Resource) -> int:
 	if card == null:
 		return 0
 	return int(card.get("cost"))
+
+
+func _load_runtime_art_texture(path: String) -> Texture2D:
+	if DisplayServer.get_name() == "headless" or path.is_empty():
+		return null
+	var texture := load(path)
+	if texture is Texture2D:
+		return texture
+	return null
 
 
 func _get_card_name(card: Resource) -> String:

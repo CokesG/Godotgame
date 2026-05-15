@@ -64,14 +64,14 @@ func _verify_default_layout_order(combat_scene: Node) -> void:
 		_fail("Run panel should sit before the debug drawer.")
 		return
 
-	if not bool(combat_body.get("visible")) or not bool(deck_panel.get("visible")):
-		_fail("Board and hand should be visible in the default play path.")
+	if bool(combat_body.get("visible")) or bool(deck_panel.call("is_visible_in_tree")):
+		_fail("Opening screen should keep the board and hand hidden until Deal In is clicked.")
 		return
 	if bool(run_panel.get("visible")) or bool(debug_drawer.get("visible")) or bool(log_column.get("visible")):
 		_fail("Run tuning, debug drawer, and log column should start hidden.")
 		return
 	if not bool(start_button.get("visible")) or bool(start_button.get("disabled")):
-		_fail("Open Opening Table should be the single enabled first action.")
+		_fail("Deal In should be the single enabled first action.")
 		return
 	if bool(continue_button.get("visible")) or not bool(continue_button.get("disabled")):
 		_fail("Smart ContinueButton should not compete with the opening-table action.")
@@ -102,8 +102,8 @@ func _verify_live_play_path(combat_scene: Node) -> void:
 	if not bool(continue_button.get("visible")) or bool(continue_button.get("disabled")):
 		_fail("Smart action should become the live combat action.")
 		return
-	if String(continue_button.get("text")) != "Begin Turn":
-		_fail("Live combat action should begin the turn.")
+	if String(continue_button.get("text")) != "Resolve Turn":
+		_fail("Opening the table should deal straight into card play.")
 		return
 	if not bool(combat_body.get("visible")) or not bool(deck_panel.get("visible")):
 		_fail("Combat body and hand should remain visible after opening the table.")

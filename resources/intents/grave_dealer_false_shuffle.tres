@@ -4,6 +4,7 @@
 
 [resource]
 script = ExtResource("1")
+icon_path = "res://art/game/icons/intents/icon_intent_feint.png"
 id = &"grave_dealer_false_shuffle"
 display_name = "False Shuffle"
 public_text = "A fake tell toward the right lane."

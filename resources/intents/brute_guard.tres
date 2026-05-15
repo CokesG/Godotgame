@@ -4,6 +4,7 @@
 
 [resource]
 script = ExtResource("1")
+icon_path = "res://art/game/icons/intents/icon_intent_guard.png"
 id = &"brute_guard"
 display_name = "Brace"
 public_text = "Gain Guard and hold center."

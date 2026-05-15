@@ -7,6 +7,7 @@
 
 [resource]
 script = ExtResource("1")
+sprite_path = "res://art/game/enemies/enemy_brute.png"
 id = &"brute"
 display_name = "Brute"
 role = 5

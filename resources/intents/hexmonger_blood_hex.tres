@@ -4,6 +4,7 @@
 
 [resource]
 script = ExtResource("1")
+icon_path = "res://art/game/icons/intents/icon_intent_attack.png"
 id = &"hexmonger_blood_hex"
 display_name = "Blood Hex"
 public_text = "A curse that tracks your current position."

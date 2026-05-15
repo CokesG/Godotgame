@@ -1,6 +1,8 @@
 class_name CardView
 extends Button
 
+const DEAD_MANS_ANTE_SKIN_SCRIPT := preload("res://scripts/ui/DeadMansAnteSkin.gd")
+
 signal card_pressed(hand_index: int)
 signal card_hovered(hand_index: int)
 signal card_unhovered(hand_index: int)
@@ -10,12 +12,16 @@ var hand_index: int = -1
 var is_previewed: bool = false
 var is_playable: bool = true
 var disabled_reason: String = ""
+var hover_tween: Tween
+var feedback_tween: Tween
+var compact_mode: bool = false
 
 
 func _ready() -> void:
-	custom_minimum_size = Vector2(168, 188)
+	_apply_compact_metrics()
 	focus_mode = Control.FOCUS_NONE
 	autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	button_down.connect(_on_button_down)
 	pressed.connect(_on_pressed)
 	mouse_entered.connect(_on_mouse_entered)
 	mouse_exited.connect(_on_mouse_exited)
@@ -30,13 +36,31 @@ func set_card(card: Resource, index: int) -> void:
 	_refresh()
 
 
+func set_compact_mode(value: bool) -> void:
+	if compact_mode == value:
+		return
+	compact_mode = value
+	_apply_compact_metrics()
+	_refresh()
+
+
+func _on_button_down() -> void:
+	if is_playable:
+		play_feedback(Color(1.0, 0.78, 0.32))
+
+
 func _on_pressed() -> void:
+	if is_playable:
+		play_feedback(Color(1.0, 0.78, 0.32))
 	card_pressed.emit(hand_index)
 
 
 func set_previewed(value: bool) -> void:
+	if is_previewed == value:
+		return
 	is_previewed = value
 	_refresh()
+	_animate_card_focus(is_previewed and is_playable)
 
 
 func set_playability(value: bool, reason: String = "") -> void:
@@ -44,6 +68,8 @@ func set_playability(value: bool, reason: String = "") -> void:
 	disabled_reason = reason
 	disabled = not is_playable
 	_refresh()
+	if not is_playable:
+		_animate_card_focus(false)
 
 
 func _on_mouse_entered() -> void:
@@ -63,8 +89,10 @@ func _on_focus_exited() -> void:
 
 
 func _refresh() -> void:
+	_apply_compact_metrics()
 	if card_resource == null:
 		text = "Empty"
+		icon = null
 		return
 
 	var card_name := _get_card_name()
@@ -72,14 +100,27 @@ func _refresh() -> void:
 	var rules_text := _shorten_rules_text(String(card_resource.get("rules_text")))
 	var type_label := _get_card_type_label()
 	var target_label := _get_target_label()
-	text = "%s\nCost %d | %s\nTarget: %s\n%s\n%s" % [
-		card_name,
-		cost,
-		type_label,
-		target_label,
-		rules_text,
-		_get_tag_line()
-	]
+	if compact_mode:
+		text = "%s\nCost %d | %s\nTarget: %s\n%s" % [
+			card_name,
+			cost,
+			type_label,
+			target_label,
+			_shorten_rules_text(rules_text, 34)
+		]
+	else:
+		text = "%s\nCost %d | %s\nTarget: %s\n%s\n%s" % [
+			card_name,
+			cost,
+			type_label,
+			target_label,
+			rules_text,
+			_get_tag_line()
+		]
+	icon = _get_card_illustration_texture() if _should_load_runtime_art() else null
+	expand_icon = icon != null
+	icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vertical_icon_alignment = VERTICAL_ALIGNMENT_TOP
 	if is_playable:
 		tooltip_text = "Click to play %s during Player Commit. Target: %s%s" % [
 			card_name,
@@ -94,32 +135,45 @@ func _refresh() -> void:
 			_get_tag_tooltip()
 		]
 
-	var style := StyleBoxFlat.new()
-	style.corner_radius_top_left = 6
-	style.corner_radius_top_right = 6
-	style.corner_radius_bottom_left = 6
-	style.corner_radius_bottom_right = 6
-	style.border_width_left = 2
-	style.border_width_top = 2
-	style.border_width_right = 2
-	style.border_width_bottom = 2
-	style.bg_color = Color(0.25, 0.19, 0.12) if is_previewed else Color(0.15, 0.13, 0.105)
-	style.border_color = Color(1.0, 0.88, 0.48) if is_previewed else _get_card_type_color()
+	var card_color := _get_card_type_color()
+	var style := DEAD_MANS_ANTE_SKIN_SCRIPT.make_card_style(is_previewed, card_color, not is_playable, is_playable)
 	add_theme_stylebox_override("normal", style)
-	var hover_style := style.duplicate()
-	hover_style.bg_color = Color(0.24, 0.20, 0.15)
-	hover_style.border_color = Color(1.0, 0.86, 0.42)
-	add_theme_stylebox_override("hover", hover_style)
+	add_theme_stylebox_override("hover", DEAD_MANS_ANTE_SKIN_SCRIPT.make_card_style(true, Color(1.0, 0.86, 0.42), false, true))
 	add_theme_stylebox_override("pressed", style)
-	var disabled_style := style.duplicate()
-	disabled_style.bg_color = Color(0.08, 0.075, 0.07)
-	disabled_style.border_color = Color(0.30, 0.30, 0.32)
-	add_theme_stylebox_override("disabled", disabled_style)
-	add_theme_font_size_override("font_size", 14)
-	add_theme_color_override("font_color", Color(0.96, 0.91, 0.82))
+	add_theme_stylebox_override("disabled", DEAD_MANS_ANTE_SKIN_SCRIPT.make_card_style(false, card_color, true, false))
+	add_theme_font_size_override("font_size", 12 if compact_mode else 14)
+	add_theme_color_override("font_color", Color(1.0, 0.94, 0.74) if is_playable else Color(0.96, 0.91, 0.82))
 	add_theme_color_override("font_hover_color", Color(1.0, 0.94, 0.78))
 	add_theme_color_override("font_disabled_color", Color(0.62, 0.60, 0.56))
 	modulate = Color.WHITE if is_playable else Color(1.0, 1.0, 1.0, 0.66)
+
+
+func _apply_compact_metrics() -> void:
+	custom_minimum_size = Vector2(154, 154) if compact_mode else Vector2(190, 226)
+
+
+func play_feedback(color: Color) -> void:
+	if feedback_tween != null and feedback_tween.is_valid():
+		feedback_tween.kill()
+
+	var base_modulate := Color.WHITE if is_playable else Color(1.0, 1.0, 1.0, 0.66)
+	modulate = color
+	feedback_tween = create_tween()
+	feedback_tween.tween_property(self, "modulate", base_modulate, 0.26).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+
+
+func _animate_card_focus(active: bool) -> void:
+	if hover_tween != null and hover_tween.is_valid():
+		hover_tween.kill()
+
+	pivot_offset = size * 0.5 if size != Vector2.ZERO else custom_minimum_size * 0.5
+	z_index = 12 if active else 0
+	var target_scale := Vector2(1.13, 1.13) if active else Vector2.ONE
+	var target_rotation := -2.0 if active else 0.0
+	hover_tween = create_tween()
+	hover_tween.set_parallel(true)
+	hover_tween.tween_property(self, "scale", target_scale, 0.16).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	hover_tween.tween_property(self, "rotation_degrees", target_rotation, 0.16).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 
 
 func _get_card_name() -> String:
@@ -187,10 +241,25 @@ func _get_tag_line() -> String:
 	return "Tags: %s" % ", ".join(labels)
 
 
-func _shorten_rules_text(rules_text: String) -> String:
-	if rules_text.length() <= 58:
+func _get_card_illustration_texture() -> Texture2D:
+	if card_resource == null:
+		return null
+	if card_resource.has_method("get_illustration_texture"):
+		return card_resource.call("get_illustration_texture")
+	var legacy_value: Variant = card_resource.get("illustration_texture")
+	if legacy_value is Texture2D:
+		return legacy_value
+	return null
+
+
+func _should_load_runtime_art() -> bool:
+	return DisplayServer.get_name() != "headless"
+
+
+func _shorten_rules_text(rules_text: String, max_length: int = 58) -> String:
+	if rules_text.length() <= max_length:
 		return rules_text
-	return "%s..." % rules_text.substr(0, 55)
+	return "%s..." % rules_text.substr(0, max(0, max_length - 3))
 
 
 func _get_card_type_color() -> Color:

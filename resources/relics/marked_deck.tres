@@ -4,6 +4,7 @@
 
 [resource]
 script = ExtResource("1")
+icon_path = "res://art/game/relics/relic_marked_deck.png"
 id = &"marked_deck"
 display_name = "Marked Deck"
 rules_text = "Draw to 6 cards instead of 5."

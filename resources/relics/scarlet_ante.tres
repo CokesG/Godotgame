@@ -4,6 +4,7 @@
 
 [resource]
 script = ExtResource("1")
+icon_path = "res://art/game/relics/relic_scarlet_ante.png"
 id = &"scarlet_ante"
 display_name = "Scarlet Ante"
 rules_text = "Start each combat with +2 Nerve."

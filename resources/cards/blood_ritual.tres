@@ -4,6 +4,7 @@
 
 [resource]
 script = ExtResource("1")
+illustration_path = "res://art/game/cards/illustrations/card_blood_ritual.png"
 id = &"blood_ritual"
 display_name = "Blood Ritual"
 rules_text = "Gain 2 Nerve. Exhaust."

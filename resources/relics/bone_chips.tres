@@ -4,6 +4,7 @@
 
 [resource]
 script = ExtResource("1")
+icon_path = "res://art/game/relics/relic_bone_chips.png"
 id = &"bone_chips"
 display_name = "Bone Chips"
 rules_text = "Start each combat with 3 Guard."

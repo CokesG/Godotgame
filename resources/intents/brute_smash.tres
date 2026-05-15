@@ -4,6 +4,7 @@
 
 [resource]
 script = ExtResource("1")
+icon_path = "res://art/game/icons/intents/icon_intent_attack.png"
 id = &"brute_smash"
 display_name = "Skull Smash"
 public_text = "Heavy attack down the center lane."

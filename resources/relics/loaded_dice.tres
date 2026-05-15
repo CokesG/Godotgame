@@ -4,6 +4,7 @@
 
 [resource]
 script = ExtResource("1")
+icon_path = "res://art/game/relics/relic_loaded_dice.png"
 id = &"loaded_dice"
 display_name = "Loaded Dice"
 rules_text = "Start each combat with +1 max Energy."

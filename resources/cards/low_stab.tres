@@ -4,6 +4,7 @@
 
 [resource]
 script = ExtResource("1")
+illustration_path = "res://art/game/cards/illustrations/card_low_stab.png"
 id = &"low_stab"
 display_name = "Low Stab"
 rules_text = "Deal 2 damage. Free emergency attack."
