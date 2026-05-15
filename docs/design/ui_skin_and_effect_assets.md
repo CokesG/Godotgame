@@ -1,7 +1,7 @@
 # Dead Man's Ante - UI Skin And Effect Asset Plan
 
-Status: Phase 49 action-guide VFX pass wired
-Last updated: 2026-05-14
+Status: Phase 81 opening class showcase wired
+Last updated: 2026-05-15
 
 ## What Is Wired Now
 
@@ -40,6 +40,23 @@ Interaction rules:
 - The old `ActionCuePanel` still owns cue data for compact/reward states, but it stays hidden on the opening screen so it does not duplicate the hero action.
 
 No custom 3D models are needed for this opening pass. The 3D consequence layer starts after `Deal In`; the start screen should use the current table backdrop, color, route motion, button pulse, and short actionable copy to feel alive.
+
+## Phase 81 Opening Class Showcase
+
+The opening screen now sells the FPS/card fusion before the first click. It should read as a pre-fight identity pick, not a settings form.
+
+Runtime pieces:
+
+- `StartHeroClassPanel` shows three selectable fighter buttons before `Deal In`.
+- The selected fighter drives the opening run deck and bridge `hero_class` payload.
+- The spotlight image uses existing generated card art as temporary class identity art:
+  - `card_quick_slash.png` for Gambler-Knight / Duelist
+  - `card_marked_card.png` for Hex Sharpshooter / Controller
+  - `card_blood_ritual.png` for Blood Wager / Berserker
+- The hidden `StartHeroClassOption` remains as compatibility plumbing for tests and selector sync, but players should use the visual fighter cards.
+- Opening copy now says that cards become weapons, armor, reads, traps, and FPS abilities in the arena.
+
+Asset note for future agents: we do not yet have true hero portrait PNGs or class key art. Do not treat the current card-art spotlight as final character art. The next asset upgrade should generate or paint dedicated transparent/portrait crops for each fighter class, then keep the same selection flow.
 
 ## Phase 49 Action-Guide VFX
 

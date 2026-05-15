@@ -111,6 +111,8 @@ var reward_mods_label: Label
 var armory_plan_label: Label
 var start_hero_class_option: OptionButton
 var start_hero_class_summary_label: Label
+var start_hero_class_art: TextureRect
+var start_hero_class_loadout_label: Label
 var start_hero_class_card_buttons: Array[Button] = []
 var hero_class_option: OptionButton
 var hero_class_summary_label: Label
@@ -1779,6 +1781,26 @@ func _build_start_hero_class_selector(parent: VBoxContainer) -> void:
 	start_hero_class_summary_label.add_theme_color_override("font_color", Color(0.84, 0.96, 1.0))
 	layout.add_child(start_hero_class_summary_label)
 
+	var spotlight := HBoxContainer.new()
+	spotlight.name = "StartHeroClassSpotlight"
+	spotlight.add_theme_constant_override("separation", 10)
+	layout.add_child(spotlight)
+
+	start_hero_class_art = TextureRect.new()
+	start_hero_class_art.name = "StartHeroClassArt"
+	start_hero_class_art.custom_minimum_size = Vector2(190, 84)
+	start_hero_class_art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	start_hero_class_art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	spotlight.add_child(start_hero_class_art)
+
+	start_hero_class_loadout_label = Label.new()
+	start_hero_class_loadout_label.name = "StartHeroClassLoadout"
+	start_hero_class_loadout_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	start_hero_class_loadout_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	start_hero_class_loadout_label.add_theme_font_size_override("font_size", 13)
+	start_hero_class_loadout_label.add_theme_color_override("font_color", Color(0.96, 0.90, 0.72))
+	spotlight.add_child(start_hero_class_loadout_label)
+
 	var card_row := HBoxContainer.new()
 	card_row.name = "StartHeroClassCards"
 	card_row.add_theme_constant_override("separation", 8)
@@ -1804,75 +1826,20 @@ func _build_start_hero_class_card(entry: Dictionary, index: int) -> Button:
 	var class_id := String(entry.get("id", "gambler_knight"))
 	var button := Button.new()
 	button.name = "StartHeroClassCard%d" % index
-	button.text = ""
+	button.text = "%s\n%s\n%s" % [
+		String(entry.get("label", "Fighter")),
+		String(entry.get("role", "Role")).to_upper(),
+		String(entry.get("deck_focus", "Opening deck ready."))
+	]
 	button.focus_mode = Control.FOCUS_ALL
-	button.clip_text = false
-	button.custom_minimum_size = Vector2(0, 132)
+	button.clip_text = true
+	button.custom_minimum_size = Vector2(0, 78)
 	button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	button.set_meta("hero_class_id", class_id)
 	button.tooltip_text = "%s: %s" % [String(entry.get("label", "Fighter")), String(entry.get("summary", ""))]
 	button.pressed.connect(Callable(self, "_on_start_hero_class_card_pressed").bind(class_id))
-
-	var margin := MarginContainer.new()
-	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
-	margin.add_theme_constant_override("margin_left", 8)
-	margin.add_theme_constant_override("margin_top", 8)
-	margin.add_theme_constant_override("margin_right", 8)
-	margin.add_theme_constant_override("margin_bottom", 8)
-	button.add_child(margin)
-
-	var row := HBoxContainer.new()
-	row.name = "ClassCardContent"
-	row.add_theme_constant_override("separation", 8)
-	margin.add_child(row)
-
-	var art := TextureRect.new()
-	art.name = "ClassCardArt"
-	art.custom_minimum_size = Vector2(72, 112)
-	art.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
-	art.texture = DEAD_MANS_ANTE_SKIN_SCRIPT.load_texture(String(entry.get("art", "")))
-	row.add_child(art)
-
-	var copy := VBoxContainer.new()
-	copy.name = "ClassCardCopy"
-	copy.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	copy.add_theme_constant_override("separation", 2)
-	row.add_child(copy)
-
-	var title := Label.new()
-	title.name = "ClassCardTitle"
-	title.text = String(entry.get("label", "Fighter"))
-	title.add_theme_font_size_override("font_size", 15)
-	title.add_theme_color_override("font_color", Color(1.0, 0.92, 0.66))
-	title.clip_text = true
-	copy.add_child(title)
-
-	var role := Label.new()
-	role.name = "ClassCardRole"
-	role.text = String(entry.get("role", "Role")).to_upper()
-	role.add_theme_font_size_override("font_size", 11)
-	role.add_theme_color_override("font_color", _get_hero_class_accent(class_id))
-	copy.add_child(role)
-
-	var deck := Label.new()
-	deck.name = "ClassCardDeck"
-	deck.text = String(entry.get("deck_focus", "Opening deck ready."))
-	deck.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	deck.add_theme_font_size_override("font_size", 11)
-	deck.add_theme_color_override("font_color", Color(0.90, 0.88, 0.78))
-	copy.add_child(deck)
-
-	var arena := Label.new()
-	arena.name = "ClassCardArena"
-	arena.text = String(entry.get("arena_line", "FPS kit ready."))
-	arena.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	arena.add_theme_font_size_override("font_size", 10)
-	arena.add_theme_color_override("font_color", Color(0.70, 0.86, 0.92))
-	copy.add_child(arena)
-
-	_set_descendant_mouse_filter(button, Control.MOUSE_FILTER_IGNORE)
-	button.mouse_filter = Control.MOUSE_FILTER_STOP
+	button.alignment = HORIZONTAL_ALIGNMENT_CENTER
+	button.add_theme_font_size_override("font_size", 12)
 	_style_start_hero_class_button(button, entry, class_id == selected_hero_class_id)
 	return button
 
@@ -1936,6 +1903,15 @@ func _refresh_hero_class_selector() -> void:
 		hero_class_summary_label.text = _get_selected_hero_class_summary()
 	if start_hero_class_summary_label != null:
 		start_hero_class_summary_label.text = _get_selected_hero_class_summary()
+	var selected_entry := _get_hero_class_entry(selected_hero_class_id)
+	if start_hero_class_art != null:
+		start_hero_class_art.texture = DEAD_MANS_ANTE_SKIN_SCRIPT.load_texture(String(selected_entry.get("art", "")))
+	if start_hero_class_loadout_label != null:
+		start_hero_class_loadout_label.text = "%s\n%s\n%s" % [
+			String(selected_entry.get("label", "Fighter")),
+			String(selected_entry.get("deck_focus", "Opening deck ready.")),
+			String(selected_entry.get("arena_line", "FPS kit ready."))
+		]
 	for button in start_hero_class_card_buttons:
 		var class_id := String(button.get_meta("hero_class_id", "gambler_knight"))
 		_style_start_hero_class_button(button, _get_hero_class_entry(class_id), class_id == selected_hero_class_id)
