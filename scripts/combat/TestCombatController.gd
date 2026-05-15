@@ -47,6 +47,11 @@ const PHASE_ACTION_LABELS := TEST_COMBAT_COPY_SCRIPT.PHASE_ACTION_LABELS
 const PHASE_GUIDANCE := TEST_COMBAT_COPY_SCRIPT.PHASE_GUIDANCE
 const RECIPE_STEPS := TEST_COMBAT_COPY_SCRIPT.RECIPE_STEPS
 const RUN_INSPECTOR_FILTERS := TEST_COMBAT_COPY_SCRIPT.RUN_INSPECTOR_FILTERS
+const HERO_CLASS_OPTIONS := [
+	{"id": "gambler_knight", "label": "Gambler-Knight", "role": "Duelist", "summary": "+2 armor, card powers cool down faster."},
+	{"id": "hex_sharpshooter", "label": "Hex Sharpshooter", "role": "Controller", "summary": "Read and trap cards become your natural kit."},
+	{"id": "blood_wager", "label": "Blood Wager", "role": "Berserker", "summary": "Ritual and overclock cards become your natural kit."}
+]
 
 @onready var turn_manager: Node = $TurnManager
 
@@ -74,6 +79,9 @@ var hand_view: HBoxContainer
 var pile_counts_label: Label
 var resource_state_label: Label
 var shooter_economy_label: Label
+var objective_plan_label: Label
+var hero_class_option: OptionButton
+var hero_class_summary_label: Label
 var arena_payout_panel: PanelContainer
 var arena_payout_label: RichTextLabel
 var arena_payout_continue_button: Button
@@ -83,6 +91,7 @@ var hand_action_button_row: HBoxContainer
 var slot_selected_button: Button
 var burn_selected_button: Button
 var hold_selected_button: Button
+var recommend_loadout_button: Button
 var bridge_payload_button: Button
 var enter_arena_button: Button
 var run_header_label: RichTextLabel
@@ -210,6 +219,7 @@ var arena_carryover_ammo: int = 0
 var arena_weapon_damage_bonus: int = 0
 var held_hand_indices: Dictionary = {}
 var loadout_slots: Dictionary = {}
+var selected_hero_class_id := "gambler_knight"
 var selected_hand_index: int = -1
 var arena_bridge_payload: Dictionary = {}
 var arena_round_armed := false
@@ -1462,6 +1472,20 @@ func _build_ui() -> void:
 	shooter_economy_label.add_theme_color_override("font_color", Color(1.0, 0.86, 0.42))
 	deck_layout.add_child(shooter_economy_label)
 
+	objective_plan_label = Label.new()
+	objective_plan_label.name = "ObjectivePlanLabel"
+	objective_plan_label.text = "NEXT FPS OBJECTIVE: Hold Pot"
+	objective_plan_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	objective_plan_label.custom_minimum_size = Vector2(0, 44)
+	objective_plan_label.add_theme_font_size_override("font_size", 14)
+	objective_plan_label.add_theme_color_override("font_color", Color(0.76, 0.94, 1.0))
+	objective_plan_label.add_theme_color_override("font_shadow_color", Color(0.0, 0.0, 0.0, 0.70))
+	objective_plan_label.add_theme_constant_override("shadow_offset_x", 1)
+	objective_plan_label.add_theme_constant_override("shadow_offset_y", 1)
+	deck_layout.add_child(objective_plan_label)
+
+	_build_hero_class_selector(deck_layout)
+
 	arena_payout_panel = PanelContainer.new()
 	arena_payout_panel.name = "ArenaPayoutPanel"
 	arena_payout_panel.visible = false
@@ -1524,6 +1548,12 @@ func _build_ui() -> void:
 	hold_selected_button.text = "Hold"
 	hold_selected_button.pressed.connect(_on_hold_selected_card_pressed)
 	hand_action_button_row.add_child(hold_selected_button)
+
+	recommend_loadout_button = Button.new()
+	recommend_loadout_button.name = "RecommendLoadoutButton"
+	recommend_loadout_button.text = "Recommend Loadout"
+	recommend_loadout_button.pressed.connect(_on_recommend_loadout_pressed)
+	hand_action_button_row.add_child(recommend_loadout_button)
 
 	bridge_payload_button = Button.new()
 	bridge_payload_button.name = "CombatBridgePayloadButton"
@@ -1638,6 +1668,63 @@ func _build_ui() -> void:
 	run_manager.connect("log_requested", _on_log_requested)
 	run_manager.connect("state_changed", _on_run_state_changed)
 	_update_debug_visibility()
+
+
+func _build_hero_class_selector(parent: VBoxContainer) -> void:
+	var row := HBoxContainer.new()
+	row.name = "HeroClassSelector"
+	row.add_theme_constant_override("separation", 8)
+	parent.add_child(row)
+
+	var label := Label.new()
+	label.text = "CLASS"
+	label.custom_minimum_size = Vector2(48, 0)
+	label.add_theme_color_override("font_color", Color(0.70, 0.88, 0.90))
+	row.add_child(label)
+
+	hero_class_option = OptionButton.new()
+	hero_class_option.name = "HeroClassOption"
+	hero_class_option.custom_minimum_size = Vector2(190, 34)
+	for index in range(HERO_CLASS_OPTIONS.size()):
+		var entry: Dictionary = HERO_CLASS_OPTIONS[index]
+		hero_class_option.add_item("%s - %s" % [String(entry.get("label", "Class")), String(entry.get("role", "Role"))], index)
+		hero_class_option.set_item_metadata(index, String(entry.get("id", "gambler_knight")))
+	hero_class_option.item_selected.connect(_on_hero_class_selected)
+	row.add_child(hero_class_option)
+
+	hero_class_summary_label = Label.new()
+	hero_class_summary_label.name = "HeroClassSummary"
+	hero_class_summary_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hero_class_summary_label.add_theme_font_size_override("font_size", 12)
+	hero_class_summary_label.add_theme_color_override("font_color", Color(0.74, 0.92, 0.96))
+	row.add_child(hero_class_summary_label)
+	_refresh_hero_class_selector()
+
+
+func _on_hero_class_selected(index: int) -> void:
+	if hero_class_option == null:
+		return
+	var metadata: Variant = hero_class_option.get_item_metadata(index)
+	selected_hero_class_id = String(metadata) if metadata != null else "gambler_knight"
+	_refresh_hero_class_selector()
+	_refresh_loadout_ui()
+
+
+func _refresh_hero_class_selector() -> void:
+	if hero_class_option != null:
+		for index in range(hero_class_option.item_count):
+			if String(hero_class_option.get_item_metadata(index)) == selected_hero_class_id:
+				hero_class_option.select(index)
+				break
+	if hero_class_summary_label != null:
+		hero_class_summary_label.text = _get_selected_hero_class_summary()
+
+
+func _get_selected_hero_class_summary() -> String:
+	for entry in HERO_CLASS_OPTIONS:
+		if String(entry.get("id", "")) == selected_hero_class_id:
+			return "%s: %s" % [String(entry.get("role", "Role")), String(entry.get("summary", ""))]
+	return "Duelist: +2 armor, card powers cool down faster."
 
 
 func _apply_phase35_default_layout(
@@ -2109,6 +2196,38 @@ func _on_hold_selected_card_pressed() -> void:
 	_refresh_loadout_ui()
 
 
+func _on_recommend_loadout_pressed() -> void:
+	if arena_payout_pending:
+		_push_feedback("Collect the arena payout before changing the next hand.", FEEDBACK_CARD_COLOR, arena_payout_continue_button)
+		return
+	if deck_manager == null:
+		_push_feedback("Deck is not ready for loadout recommendations.", FEEDBACK_DAMAGE_COLOR, hand_action_status_label)
+		return
+	var target_mode := _get_recommended_objective_for_current_hand()
+	var slotted_lines: Array[String] = []
+	for slot_id in _get_recommended_slot_order_for_objective(target_mode):
+		if loadout_slots.has(slot_id):
+			continue
+		var hand_index := _find_recommended_hand_index_for_slot(slot_id, target_mode)
+		if hand_index < 0:
+			continue
+		var result := _slot_hand_card_at(hand_index, slot_id)
+		if not bool(result.get("ok", false)):
+			continue
+		var slotted_card: Resource = result.get("card", null)
+		slotted_lines.append("%s -> %s" % [
+			_get_card_name(slotted_card),
+			_get_loadout_slot_label(String(result.get("slot_id", slot_id)))
+		])
+		if _get_slotted_card_count() >= 3 and target_mode != "boss_gate":
+			break
+	if slotted_lines.is_empty():
+		_push_feedback("No affordable hand card fits the %s recommendation. Burn a card or draw before auto-slotting." % _get_objective_label(target_mode), FEEDBACK_DAMAGE_COLOR, shooter_economy_label)
+	else:
+		_push_feedback("Recommended %s loadout: %s." % [_get_objective_label(target_mode), _join_string_array(slotted_lines, ", ")], FEEDBACK_MOVE_COLOR, shooter_economy_label)
+	_refresh_loadout_ui()
+
+
 func _on_bridge_payload_pressed() -> void:
 	var payload := _build_combat_bridge_payload()
 	_append_log("Combat bridge payload: %s" % JSON.stringify(payload))
@@ -2243,10 +2362,16 @@ func _get_arena_payout_text(result: Dictionary) -> String:
 		"complete" if bool(result.get("objective_completed", false)) else ("failed" if bool(result.get("objective_failed", false)) else "partial"),
 		int(result.get("objective_score", 0))
 	]
-	return "%s\n%s\n%s\n%s Wave %d: %d kills, %.0f%% hit rate, %.1fs, %s." % [
+	var class_line := "Class: %s | Passive: %s | Ability uses: %d" % [
+		String(result.get("hero", "Gambler-Knight")),
+		String(result.get("class_passive", "Ante Guard")),
+		_count_ability_uses(result.get("ability_uses", {}))
+	]
+	return "%s\n%s\n%s\n%s\n%s Wave %d: %d kills, %.0f%% hit rate, %.1fs, %s." % [
 		headline,
 		economy_line,
 		effects_line,
+		class_line,
 		String(result.get("map_name", "Arena")),
 		int(result.get("wave", 1)),
 		int(result.get("kills", 0)),
@@ -2254,6 +2379,16 @@ func _get_arena_payout_text(result: Dictionary) -> String:
 		clear_time,
 		objective_line
 	]
+
+
+func _count_ability_uses(value: Variant) -> int:
+	if typeof(value) != TYPE_DICTIONARY:
+		return 0
+	var uses: Dictionary = value
+	var total := 0
+	for count in uses.values():
+		total += int(count)
+	return total
 
 
 func _on_arena_payout_continue_pressed() -> void:
@@ -2325,6 +2460,7 @@ func _build_arena_return_state() -> Dictionary:
 		"selected_hand_index": selected_hand_index,
 		"arena_bridge_payload": arena_bridge_payload.duplicate(true),
 		"arena_round_armed": arena_round_armed,
+		"selected_hero_class_id": selected_hero_class_id,
 		"loadout_slot_paths": _serialize_loadout_slots()
 	}
 
@@ -2346,6 +2482,7 @@ func _restore_arena_return_state(return_state: Dictionary) -> void:
 	selected_hand_index = int(return_state.get("selected_hand_index", selected_hand_index))
 	arena_bridge_payload = Dictionary(return_state.get("arena_bridge_payload", {})).duplicate(true)
 	arena_round_armed = bool(return_state.get("arena_round_armed", arena_round_armed))
+	selected_hero_class_id = String(return_state.get("selected_hero_class_id", selected_hero_class_id))
 	loadout_slots = _deserialize_loadout_slots(return_state.get("loadout_slot_paths", {}))
 	_apply_current_tactical_map()
 	if combat_grid != null and run_manager != null:
@@ -2353,6 +2490,7 @@ func _restore_arena_return_state(return_state: Dictionary) -> void:
 	_reset_combat_state()
 	_reset_enemy_intents()
 	_refresh_loadout_ui()
+	_refresh_hero_class_selector()
 	_refresh_action_controls()
 
 
@@ -2413,30 +2551,68 @@ func _slot_selected_card(forced_slot: String = "") -> bool:
 	if selected_hand_index < 0:
 		_push_feedback("Hover or click a card first, then Slot.", FEEDBACK_PHASE_COLOR, hand_action_status_label)
 		return false
-	var card: Resource = deck_manager.call("get_card_at", selected_hand_index) if deck_manager != null else null
-	if card == null:
-		_push_feedback("Selected card is no longer in hand.", FEEDBACK_DAMAGE_COLOR, hand_action_status_label)
-		selected_hand_index = -1
+	var result := _slot_hand_card_at(selected_hand_index, forced_slot)
+	if not bool(result.get("ok", false)):
+		match String(result.get("code", "")):
+			"missing":
+				_push_feedback("Selected card is no longer in hand.", FEEDBACK_DAMAGE_COLOR, hand_action_status_label)
+				selected_hand_index = -1
+			"chips":
+				_push_feedback("Need %d Chips to slot %s; you have %d." % [
+					int(result.get("cost", 0)),
+					String(result.get("card_name", "that card")),
+					shooter_chips
+				], FEEDBACK_DAMAGE_COLOR, shooter_economy_label)
+			"slot_failed":
+				_push_feedback("Could not slot that card; it may have moved already.", FEEDBACK_DAMAGE_COLOR, hand_action_status_label)
+				selected_hand_index = -1
+			_:
+				_push_feedback(String(result.get("reason", "Could not slot that card.")), FEEDBACK_DAMAGE_COLOR, hand_action_status_label)
+		_refresh_loadout_ui()
 		return false
-	var slot_id := forced_slot if not forced_slot.is_empty() else _get_recommended_loadout_slot(card)
-	var slot_cost := _get_loadout_slot_cost(card, slot_id)
-	if shooter_chips < slot_cost:
-		_push_feedback("Need %d Chips to slot %s; you have %d." % [slot_cost, _get_card_name(card), shooter_chips], FEEDBACK_DAMAGE_COLOR, shooter_economy_label)
-		return false
-	var slotted_card: Resource = deck_manager.call("slot_card_at", selected_hand_index)
-	if slotted_card == null:
-		_push_feedback("Could not slot that card; it may have moved already.", FEEDBACK_DAMAGE_COLOR, hand_action_status_label)
-		selected_hand_index = -1
-		return false
-	shooter_chips -= slot_cost
-	loadout_slots[slot_id] = slotted_card
-	held_hand_indices.erase(selected_hand_index)
-	arena_round_armed = false
-	arena_bridge_payload.clear()
-	selected_hand_index = min(selected_hand_index, int(deck_manager.call("get_hand_count")) - 1)
+	var slotted_card: Resource = result.get("card", null)
+	var slot_id := String(result.get("slot_id", forced_slot))
+	var slot_cost := int(result.get("cost", 0))
 	_push_feedback("Slotted %s into %s for %d Chips." % [_get_card_name(slotted_card), _get_loadout_slot_label(slot_id), slot_cost], FEEDBACK_CARD_COLOR, loadout_slot_buttons.get(slot_id, null))
 	_refresh_loadout_ui()
 	return true
+
+
+func _slot_hand_card_at(hand_index: int, forced_slot: String = "") -> Dictionary:
+	if arena_payout_pending:
+		return {"ok": false, "code": "payout", "reason": "Collect the arena payout before changing the next hand."}
+	if deck_manager == null:
+		return {"ok": false, "code": "deck", "reason": "Deck is not ready."}
+	if hand_index < 0:
+		return {"ok": false, "code": "index", "reason": "No hand card is selected."}
+	var card: Resource = deck_manager.call("get_card_at", hand_index)
+	if card == null:
+		return {"ok": false, "code": "missing", "reason": "Selected card is no longer in hand."}
+	var slot_id := forced_slot if not forced_slot.is_empty() else _get_recommended_loadout_slot(card)
+	var slot_cost := _get_loadout_slot_cost(card, slot_id)
+	if shooter_chips < slot_cost:
+		return {
+			"ok": false,
+			"code": "chips",
+			"reason": "Not enough Chips.",
+			"card_name": _get_card_name(card),
+			"cost": slot_cost
+		}
+	var slotted_card: Resource = deck_manager.call("slot_card_at", hand_index)
+	if slotted_card == null:
+		return {"ok": false, "code": "slot_failed", "reason": "Could not slot that card."}
+	shooter_chips -= slot_cost
+	loadout_slots[slot_id] = slotted_card
+	held_hand_indices.erase(hand_index)
+	arena_round_armed = false
+	arena_bridge_payload.clear()
+	selected_hand_index = min(hand_index, int(deck_manager.call("get_hand_count")) - 1)
+	return {
+		"ok": true,
+		"card": slotted_card,
+		"slot_id": slot_id,
+		"cost": slot_cost
+	}
 
 
 func _burn_selected_card() -> bool:
@@ -2647,16 +2823,26 @@ func _get_slotted_card_count() -> int:
 
 
 func _refresh_loadout_ui() -> void:
+	var preview_objective_mode := _get_preview_objective_mode()
 	if shooter_economy_label != null:
 		var arena_state := "PAYOUT READY" if arena_payout_pending else ("ARENA READY" if arena_round_armed else "PREP")
-		shooter_economy_label.text = "CHIPS %d | ARMOR %d | AMMO %d | SLOTTED %d/5 | %s | SELECTED %s" % [
+		shooter_economy_label.text = "CHIPS %d | ARMOR %d | AMMO %d | SLOTTED %d/5 | CLASS %s | %s | SELECTED %s" % [
 			shooter_chips,
 			_get_bridge_armor_value(),
 			_get_bridge_ammo_value(),
 			_get_slotted_card_count(),
+			selected_hero_class_id.replace("_", " ").to_upper(),
 			arena_state,
 			_get_selected_card_label()
 		]
+	if objective_plan_label != null:
+		objective_plan_label.text = "NEXT FPS OBJECTIVE: %s\n%s%s" % [
+			_get_objective_label(preview_objective_mode),
+			_get_objective_plan_text(preview_objective_mode),
+			_get_payout_bias_text()
+		]
+		objective_plan_label.tooltip_text = "The card table sends objective_mode=%s through the ArenaBridge payload." % preview_objective_mode
+	_refresh_hero_class_selector()
 	for slot_id in loadout_slot_buttons.keys():
 		var button: Button = loadout_slot_buttons[slot_id]
 		if loadout_slots.has(slot_id):
@@ -2674,10 +2860,21 @@ func _refresh_loadout_ui() -> void:
 		burn_selected_button.disabled = arena_payout_pending or selected_hand_index < 0
 	if hold_selected_button != null:
 		hold_selected_button.disabled = arena_payout_pending or selected_hand_index < 0
+	if recommend_loadout_button != null:
+		var hand_count := int(deck_manager.call("get_hand_count")) if deck_manager != null else 0
+		recommend_loadout_button.disabled = arena_payout_pending or hand_count <= 0 or _get_slotted_card_count() >= 5
+		var recommend_tooltip := "Auto-slot an affordable kit for %s from the current hand." % _get_objective_label(preview_objective_mode)
+		if arena_payout_pending:
+			recommend_tooltip = "Collect the arena payout first."
+		elif hand_count <= 0:
+			recommend_tooltip = "Draw cards before recommending a loadout."
+		_style_compact_button(recommend_loadout_button, not recommend_loadout_button.disabled, FEEDBACK_MOVE_COLOR, recommend_tooltip)
 	if enter_arena_button != null:
 		enter_arena_button.disabled = arena_payout_pending or _get_slotted_card_count() <= 0
 		enter_arena_button.tooltip_text = "Collect the arena payout first." if arena_payout_pending else "Slot at least one card, then enter the shooter arena with that loadout."
 		_style_compact_button(enter_arena_button, arena_round_armed or _get_slotted_card_count() > 0, FEEDBACK_MOVE_COLOR, enter_arena_button.tooltip_text)
+	_refresh_hand_loadout_recommendations(preview_objective_mode)
+	_refresh_selected_card_loadout_reason(preview_objective_mode)
 	_refresh_arena_payout_panel()
 
 
@@ -2736,6 +2933,7 @@ func _build_combat_bridge_payload() -> Dictionary:
 	}
 	return {
 		"weapon_card": String(loadout_slots.get("weapon", null).get("id")) if loadout_slots.get("weapon", null) is Resource else "",
+		"hero_class": selected_hero_class_id,
 		"ability_cards": ability_cards,
 		"passive_cards": passive_cards,
 		"wager_cards": wager_cards,
@@ -2771,11 +2969,296 @@ func _get_loadout_objective_mode() -> String:
 		return "boss_gate"
 	if has_read:
 		return "duel"
-	if has_guard:
-		return "defend"
 	if has_move:
 		return "extract"
+	if has_guard:
+		return "defend"
 	return "hold_pot"
+
+
+func _get_preview_objective_mode() -> String:
+	if _get_slotted_card_count() > 0:
+		return _get_loadout_objective_mode()
+	if selected_hand_index >= 0 and deck_manager != null:
+		var selected_card: Resource = deck_manager.call("get_card_at", selected_hand_index)
+		if selected_card != null:
+			return _get_objective_mode_for_card(selected_card)
+	return _get_recommended_objective_for_current_hand()
+
+
+func _get_recommended_objective_for_current_hand() -> String:
+	if _get_slotted_card_count() > 0:
+		return _get_loadout_objective_mode()
+	var scores := {
+		"hold_pot": _get_payout_objective_bias_score("hold_pot"),
+		"extract": _get_payout_objective_bias_score("extract"),
+		"duel": _get_payout_objective_bias_score("duel"),
+		"defend": _get_payout_objective_bias_score("defend"),
+		"boss_gate": _get_payout_objective_bias_score("boss_gate")
+	}
+	if deck_manager != null:
+		var hand_count := int(deck_manager.call("get_hand_count"))
+		for index in range(hand_count):
+			var card: Resource = deck_manager.call("get_card_at", index)
+			if card == null:
+				continue
+			var card_mode := _get_objective_mode_for_card(card)
+			scores[card_mode] = int(scores.get(card_mode, 0)) + _get_card_objective_weight(card)
+			if _get_card_vfx_style(card) == &"attack":
+				scores["hold_pot"] = int(scores.get("hold_pot", 0)) + 2
+	var best_mode := "hold_pot"
+	var best_score := -999
+	for mode in ["boss_gate", "duel", "extract", "defend", "hold_pot"]:
+		var score := int(scores.get(mode, 0))
+		if score > best_score:
+			best_mode = mode
+			best_score = score
+	return best_mode
+
+
+func _get_card_objective_weight(card: Resource) -> int:
+	match _get_card_vfx_style(card):
+		&"ritual":
+			return 8
+		&"read", &"trap":
+			return 6
+		&"move":
+			return 6
+		&"guard":
+			return 5
+		&"attack":
+			return 3
+		&"bluff":
+			return 2
+		_:
+			return 1
+
+
+func _get_payout_objective_bias_score(mode: String) -> int:
+	var score: int = 0
+	if arena_weapon_damage_bonus > 0 and (mode == "duel" or mode == "boss_gate"):
+		score += 2
+	if arena_carryover_armor > 0 and (mode == "defend" or mode == "hold_pot"):
+		score += 2
+	if arena_carryover_ammo > 0 and (mode == "extract" or mode == "duel"):
+		score += 1
+	return score
+
+
+func _get_objective_mode_for_card(card: Resource) -> String:
+	match _get_card_vfx_style(card):
+		&"move":
+			return "extract"
+		&"guard":
+			return "defend"
+		&"read", &"trap":
+			return "duel"
+		&"ritual":
+			return "boss_gate"
+		_:
+			return "hold_pot"
+
+
+func _get_objective_label(mode: String) -> String:
+	match mode:
+		"extract":
+			return "Extract"
+		"duel":
+			return "Duel"
+		"defend":
+			return "Defend"
+		"boss_gate":
+			return "Boss Gate"
+		_:
+			return "Hold Pot"
+
+
+func _get_objective_plan_text(mode: String) -> String:
+	match mode:
+		"extract":
+			return "Plan: slot movement, take the pot, then rotate to the exit before the wave collapses."
+		"duel":
+			return "Plan: bring weapon damage plus read/trap control to delete the marked target fast."
+		"defend":
+			return "Plan: bring guard and control cards, hold the marked lane, and cash a stable payout."
+		"boss_gate":
+			return "Plan: bring a weapon plus ritual/wager tech; burn the gate target before it overwhelms you."
+		_:
+			return "Plan: bring a reliable weapon and anchoring tools, then control the center pot."
+
+
+func _get_payout_bias_text() -> String:
+	var lines: Array[String] = []
+	if arena_weapon_damage_bonus > 0:
+		lines.append("+%d weapon damage favors Duel or Boss Gate" % arena_weapon_damage_bonus)
+	if arena_carryover_armor > 0:
+		lines.append("+%d armor favors Hold Pot or Defend" % arena_carryover_armor)
+	if arena_carryover_ammo > 0:
+		lines.append("+%d ammo favors Extract or Duel" % arena_carryover_ammo)
+	if lines.is_empty():
+		return ""
+	return "\nPAYOUT BIAS: %s" % _join_string_array(lines, " | ")
+
+
+func _refresh_hand_loadout_recommendations(target_mode: String) -> void:
+	if hand_view == null or deck_manager == null:
+		return
+	if not hand_view.has_method("set_card_recommendations"):
+		return
+	var entries: Array[Dictionary] = []
+	for index in range(hand_view.get_child_count()):
+		var card: Resource = deck_manager.call("get_card_at", index)
+		entries.append(_get_card_objective_recommendation(card, target_mode))
+	hand_view.call("set_card_recommendations", entries)
+
+
+func _refresh_selected_card_loadout_reason(target_mode: String) -> void:
+	if hand_action_status_label == null or deck_manager == null:
+		return
+	if run_flow_state != RUN_FLOW_COMBAT or arena_payout_pending or selected_hand_index < 0:
+		return
+	var card: Resource = deck_manager.call("get_card_at", selected_hand_index)
+	if card == null:
+		return
+	var recommendation := _get_card_objective_recommendation(card, target_mode)
+	var badge := String(recommendation.get("badge", "LOADOUT"))
+	var reason := String(recommendation.get("reason", "Fits the next arena kit."))
+	hand_action_status_label.text = "LOADOUT: %s - %s. %s" % [_get_card_name(card), badge, reason]
+	hand_action_status_label.add_theme_color_override("font_color", Color(0.76, 0.94, 1.0))
+
+
+func _get_card_objective_recommendation(card: Resource, target_mode: String = "") -> Dictionary:
+	if card == null:
+		return {"badge": "", "reason": "", "mode": "hold_pot", "score": 0}
+	var style := _get_card_vfx_style(card)
+	var natural_mode := _get_objective_mode_for_card(card)
+	var badge := "LOADOUT FLEX"
+	var reason := "Can fill a passive or backup slot if the kit needs one more card."
+	match style:
+		&"attack":
+			badge = "WEAPON CORE"
+			reason = "Turns into your arena gun, so it keeps every objective lethal."
+			if target_mode == "duel" or target_mode == "boss_gate":
+				badge = "DAMAGE CORE"
+		&"move":
+			badge = "GOOD FOR EXTRACT"
+			reason = "Movement helps grab the pot and reach the exit before the timer closes."
+		&"guard":
+			badge = "GOOD FOR DEFEND"
+			reason = "Guard becomes armor, buying time on hold and defend objectives."
+		&"read":
+			badge = "GOOD FOR DUEL"
+			reason = "Read tools expose priority targets and make duel objectives safer."
+		&"trap":
+			badge = "CHOKE CONTROL"
+			reason = "Trap control slows threats and pins duel or defend lanes."
+		&"ritual":
+			badge = "BOSS TECH"
+			reason = "Ritual wagers overclock boss-gate fights for a sharper payout."
+		&"bluff":
+			badge = "WAGER TOOL"
+			reason = "Bluff cards are best as wager/passive economy instead of primary damage."
+	if natural_mode == target_mode and style != &"attack":
+		badge = "PICK FOR %s" % _get_objective_label(target_mode).to_upper()
+	return {
+		"badge": badge,
+		"reason": reason,
+		"mode": natural_mode,
+		"score": _get_card_loadout_recommendation_score(card, target_mode, _get_recommended_loadout_slot(card))
+	}
+
+
+func _get_recommended_slot_order_for_objective(mode: String) -> Array[String]:
+	match mode:
+		"extract":
+			return ["weapon", "ability_1", "ability_2", "passive", "wager"]
+		"duel":
+			return ["weapon", "ability_1", "ability_2", "passive", "wager"]
+		"defend":
+			return ["weapon", "ability_1", "ability_2", "passive", "wager"]
+		"boss_gate":
+			return ["weapon", "wager", "ability_1", "ability_2", "passive"]
+		_:
+			return ["weapon", "ability_1", "ability_2", "passive", "wager"]
+
+
+func _find_recommended_hand_index_for_slot(slot_id: String, target_mode: String) -> int:
+	if deck_manager == null:
+		return -1
+	var best_index := -1
+	var best_score := -9999
+	var hand_count := int(deck_manager.call("get_hand_count"))
+	for index in range(hand_count):
+		var card: Resource = deck_manager.call("get_card_at", index)
+		if card == null:
+			continue
+		var slot_cost := _get_loadout_slot_cost(card, slot_id)
+		if slot_cost > shooter_chips:
+			continue
+		var score: int = _get_card_loadout_recommendation_score(card, target_mode, slot_id)
+		if score > best_score:
+			best_score = score
+			best_index = index
+	return best_index if best_score > -9000 else -1
+
+
+func _get_card_loadout_recommendation_score(card: Resource, target_mode: String, slot_id: String) -> int:
+	if card == null or not _card_fits_recommended_slot(card, slot_id):
+		return -9999
+	var style := _get_card_vfx_style(card)
+	var score: int = 10 + maxi(0, 4 - _get_card_cost(card))
+	if _get_objective_mode_for_card(card) == target_mode:
+		score += 30
+	match slot_id:
+		"weapon":
+			if style == &"attack":
+				score += 35
+		"ability_1", "ability_2":
+			score += 20
+		"wager":
+			score += 24 if style == &"ritual" else 12
+		"passive":
+			score += 6
+	match target_mode:
+		"extract":
+			if style == &"move":
+				score += 20
+			elif style == &"attack":
+				score += 8
+		"duel":
+			if style == &"read" or style == &"trap":
+				score += 20
+			elif style == &"attack":
+				score += 14
+		"defend":
+			if style == &"guard" or style == &"trap":
+				score += 20
+			elif style == &"attack":
+				score += 8
+		"boss_gate":
+			if style == &"ritual":
+				score += 24
+			elif style == &"attack":
+				score += 18
+		_:
+			if style == &"attack" or style == &"guard" or style == &"trap":
+				score += 12
+	return score
+
+
+func _card_fits_recommended_slot(card: Resource, slot_id: String) -> bool:
+	var style := _get_card_vfx_style(card)
+	match slot_id:
+		"weapon":
+			return style == &"attack"
+		"ability_1", "ability_2":
+			return style == &"move" or style == &"guard" or style == &"read" or style == &"trap"
+		"wager":
+			return style == &"ritual" or style == &"bluff"
+		"passive":
+			return true
+		_:
+			return true
 
 
 func _get_shooter_card_payload(card: Resource, slot_id: String) -> Dictionary:

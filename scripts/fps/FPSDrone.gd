@@ -281,11 +281,11 @@ func _build_body() -> void:
 
 	status_label = Label3D.new()
 	status_label.name = "StatusLabel"
-	status_label.position = Vector3(0.0, 2.36, 0.0)
+	status_label.position = Vector3(0.0, 2.26, 0.0)
 	status_label.text = _get_status_text()
-	status_label.font_size = 34
+	status_label.font_size = 18
 	status_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	status_label.outline_size = 8
+	status_label.outline_size = 4
 	status_label.outline_modulate = Color(0.02, 0.01, 0.01, 0.92)
 	status_label.modulate = Color(1.0, 0.86, 0.48)
 	add_child(status_label)
@@ -407,8 +407,8 @@ func _get_status_text() -> String:
 		tags.append("BAITED")
 	var suffix := ""
 	if not tags.is_empty():
-		suffix = "\n%s" % " / ".join(tags)
-	return "%s\n%s  HP %d/%d%s" % [display_name, _get_archetype_label(), health, max_health, suffix]
+		suffix = "  %s" % " / ".join(tags)
+	return "%s  %s  HP %d/%d%s" % [display_name, _get_archetype_label(), health, max_health, suffix]
 
 
 func _get_archetype_label() -> String:

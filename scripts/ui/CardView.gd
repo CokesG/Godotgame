@@ -15,6 +15,8 @@ var disabled_reason: String = ""
 var hover_tween: Tween
 var feedback_tween: Tween
 var compact_mode: bool = false
+var loadout_recommendation_badge: String = ""
+var loadout_recommendation_reason: String = ""
 
 
 func _ready() -> void:
@@ -72,6 +74,14 @@ func set_playability(value: bool, reason: String = "") -> void:
 		_animate_card_focus(false)
 
 
+func set_loadout_recommendation(badge: String, reason: String = "") -> void:
+	if loadout_recommendation_badge == badge and loadout_recommendation_reason == reason:
+		return
+	loadout_recommendation_badge = badge
+	loadout_recommendation_reason = reason
+	_refresh()
+
+
 func _on_mouse_entered() -> void:
 	card_hovered.emit(hand_index)
 
@@ -100,39 +110,43 @@ func _refresh() -> void:
 	var rules_text := _shorten_rules_text(String(card_resource.get("rules_text")))
 	var type_label := _get_card_type_label()
 	var target_label := _get_target_label()
+	var recommendation_line := _get_recommendation_line()
 	if compact_mode:
-		text = "%s\nCost %d | %s\nTarget: %s\n%s" % [
-			card_name,
-			cost,
-			type_label,
-			target_label,
-			_shorten_rules_text(rules_text, 34)
-		]
+		var compact_lines := PackedStringArray()
+		compact_lines.append(card_name)
+		if not recommendation_line.is_empty():
+			compact_lines.append(recommendation_line)
+		compact_lines.append("Cost %d | %s" % [cost, type_label])
+		compact_lines.append("Target: %s" % target_label)
+		compact_lines.append(_shorten_rules_text(rules_text, 34))
+		text = "\n".join(compact_lines)
 	else:
-		text = "%s\nCost %d | %s\nTarget: %s\n%s\n%s" % [
-			card_name,
-			cost,
-			type_label,
-			target_label,
-			rules_text,
-			_get_tag_line()
-		]
+		var full_lines := PackedStringArray()
+		full_lines.append(card_name)
+		if not recommendation_line.is_empty():
+			full_lines.append(recommendation_line)
+		full_lines.append("Cost %d | %s" % [cost, type_label])
+		full_lines.append("Target: %s" % target_label)
+		full_lines.append(rules_text)
+		full_lines.append(_get_tag_line())
+		text = "\n".join(full_lines)
 	icon = _get_card_illustration_texture() if _should_load_runtime_art() else null
 	expand_icon = icon != null
 	icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	vertical_icon_alignment = VERTICAL_ALIGNMENT_TOP
+	var recommendation_tooltip := _get_recommendation_tooltip()
 	if is_playable:
 		tooltip_text = "Click to play %s during Player Commit. Target: %s%s" % [
 			card_name,
 			target_label,
-			_get_tag_tooltip()
+			_get_tag_tooltip() + recommendation_tooltip
 		]
 	else:
 		tooltip_text = "Locked: %s | %s targets %s%s" % [
 			disabled_reason,
 			card_name,
 			target_label,
-			_get_tag_tooltip()
+			_get_tag_tooltip() + recommendation_tooltip
 		]
 
 	var card_color := _get_card_type_color()
@@ -239,6 +253,20 @@ func _get_tag_line() -> String:
 	if labels.is_empty():
 		return "Tags: None"
 	return "Tags: %s" % ", ".join(labels)
+
+
+func _get_recommendation_line() -> String:
+	if loadout_recommendation_badge.is_empty():
+		return ""
+	return "FPS: %s" % loadout_recommendation_badge
+
+
+func _get_recommendation_tooltip() -> String:
+	if loadout_recommendation_badge.is_empty() and loadout_recommendation_reason.is_empty():
+		return ""
+	if loadout_recommendation_reason.is_empty():
+		return " | Loadout: %s" % loadout_recommendation_badge
+	return " | Loadout: %s - %s" % [loadout_recommendation_badge, loadout_recommendation_reason]
 
 
 func _get_card_illustration_texture() -> Texture2D:

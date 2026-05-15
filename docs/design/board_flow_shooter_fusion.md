@@ -38,6 +38,8 @@ Live files:
 
 The return now preserves the card-run snapshot through `ArenaBridge`: current run node, run HP/reward state, deck piles, hand, discard, exhaust, slotted loadout cards, chips, and pending carryover bonuses. When the FPS scene returns, the card table restores that snapshot, resolves spent loadout cards into discard/exhaust, applies payout effects, draws the next hand, and unlocks normal card/loadout actions when `Start Next Hand` is pressed.
 
+The prep table now shows the next FPS objective before launch. `ObjectivePlanLabel` names the objective, explains the practical plan, and surfaces payout carryover bias such as bonus weapon damage, armor, or ammo. Cards in hand carry FPS recommendation badges (`WEAPON CORE`, `PICK FOR EXTRACT`, `GOOD FOR DEFEND`, `BOSS TECH`) plus tooltip/selected-card reasoning so the player can understand why a card belongs in the arena kit. `Recommend Loadout` auto-slots affordable cards toward the strongest objective in the current hand while still leaving manual slot/burn/hold decisions available.
+
 The dev hub also has phase launcher shortcuts:
 
 - `Card Prep With Sample Hand`: jumps to the card/loadout prep table.
@@ -345,10 +347,12 @@ Done in the prototype:
 9. Return FPS win/loss/objective fields so defeat can end the run and strong objective play can pay a bonus.
 10. Add live FPS objective modes for `Hold Pot`, `Extract`, `Duel`, `Defend`, and `Boss Gate`, with dev hub shortcuts for each.
 11. Let slotted card style recommend an FPS objective: movement pushes Extract, guard pushes Defend, read/trap pushes Duel, ritual pushes Boss Gate, and default loadouts hold the pot.
+12. Show objective-aware hand badges, selected-card reasoning, payout bias, and an auto-slot `Recommend Loadout` action on the prep table.
+13. Give FPS payout choices objective-authored names/effects so reward selection points the next loadout decision toward damage, armor, or ammo.
 
 Next implementation steps:
 
-1. Turn payout bonuses into authored reward cards/mods with art, names, and rarity.
+1. Promote authored payout bonuses into real reward cards/mods with art, names, rarity, and deck/run history entries.
 2. Add wound, card XP, card mutation, and upgrade events to the run history.
 3. Collapse or mirror the board into an in-FPS combat HUD with card ability icons and cooldowns.
 4. Add escort and multi-stage boss variants after the five first objective modes feel good.

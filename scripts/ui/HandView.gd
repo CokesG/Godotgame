@@ -100,6 +100,17 @@ func set_card_playability(entries: Array[Dictionary]) -> void:
 		child.call("set_playability", bool(entry.get("playable", false)), String(entry.get("reason", "Card is locked.")))
 
 
+func set_card_recommendations(entries: Array[Dictionary]) -> void:
+	for index in range(get_child_count()):
+		var child := get_child(index)
+		if not child.has_method("set_loadout_recommendation"):
+			continue
+		var entry: Dictionary = {}
+		if index < entries.size() and typeof(entries[index]) == TYPE_DICTIONARY:
+			entry = entries[index]
+		child.call("set_loadout_recommendation", String(entry.get("badge", "")), String(entry.get("reason", "")))
+
+
 func _on_card_pressed(hand_index: int) -> void:
 	card_clicked.emit(hand_index)
 

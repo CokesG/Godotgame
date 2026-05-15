@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://fps_visual_qa_check"]
+
+[ext_resource type="Script" path="res://tests/debug/fps_visual_qa_check.gd" id="1_fps_visual"]
+
+[node name="FPSVisualQACheck" type="Node"]
+script = ExtResource("1_fps_visual")
