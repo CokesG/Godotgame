@@ -27,6 +27,7 @@ const FPS_WEAPON_SCRIPT := preload("res://scripts/fps/FPSWeapon.gd")
 
 var game_mode: Node
 var health: int
+var armor: int = 0
 var head: Node3D
 var camera: Camera3D
 var collision_shape: CollisionShape3D
@@ -161,7 +162,12 @@ func _physics_process(delta: float) -> void:
 func take_damage(amount: int, source_position: Vector3 = Vector3.ZERO) -> void:
 	if dead:
 		return
-	health = maxi(0, health - amount)
+	var remaining := amount
+	if armor > 0:
+		var absorbed := mini(armor, remaining)
+		armor -= absorbed
+		remaining -= absorbed
+	health = maxi(0, health - remaining)
 	var away := global_position - source_position
 	away.y = 0.0
 	if away.length_squared() > 0.01:
@@ -187,6 +193,11 @@ func reset_for_arena(spawn_position: Vector3) -> void:
 		weapon.force_ready()
 	health_changed.emit(health, max_health)
 	_capture_mouse()
+
+
+func apply_bridge_survivability(extra_armor: int) -> void:
+	armor = maxi(0, extra_armor)
+	health_changed.emit(health, max_health)
 
 
 func add_camera_impulse(amount: Vector2, fov_amount: float = 0.0) -> void:

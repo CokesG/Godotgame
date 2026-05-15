@@ -149,6 +149,20 @@ func force_ready() -> void:
 	state_changed.emit(ammo, reserve, reloading)
 
 
+func configure_from_bridge(weapon_profile: Dictionary, total_ammo: int = -1) -> void:
+	if not weapon_profile.is_empty():
+		weapon_name = String(weapon_profile.get("name", weapon_name))
+		damage = int(weapon_profile.get("damage", damage))
+		critical_damage = maxi(damage + 10, int(round(float(damage) * 1.85)))
+		magazine_size = maxi(1, int(weapon_profile.get("magazine", magazine_size)))
+		var fire_rate := float(weapon_profile.get("fire_rate", 0.0))
+		if fire_rate > 0.0:
+			fire_interval = 1.0 / fire_rate
+	if total_ammo >= 0:
+		reserve_ammo = maxi(0, total_ammo - magazine_size)
+	force_ready()
+
+
 func add_sway(delta_pixels: Vector2) -> void:
 	sway_offset += delta_pixels * 0.0018
 	sway_offset = sway_offset.clamp(Vector2(-0.08, -0.08), Vector2(0.08, 0.08))

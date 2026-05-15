@@ -5,6 +5,16 @@ const FPS_PLAYER_SCRIPT := preload("res://scripts/fps/FPSPlayer.gd")
 const FPS_DRONE_SCRIPT := preload("res://scripts/fps/FPSDrone.gd")
 const TACTICAL_MAP_SCRIPT := preload("res://scripts/grid/TacticalMapDefinition.gd")
 
+const DEFAULT_BRIDGE_PAYLOAD := {
+	"weapon_card": "",
+	"ability_cards": [],
+	"passive_cards": [],
+	"wager_cards": [],
+	"loadout": [],
+	"economy": {"chips": 0, "armor": 0, "ammo": 24},
+	"reads": {"target_enemy": &"", "threat": "intent hidden"}
+}
+
 var player: Node
 var arena_root: Node3D
 var tactical_map_root: Node3D
@@ -16,6 +26,7 @@ var ammo_label: Label
 var reserve_label: Label
 var kill_label: Label
 var status_label: Label
+var loadout_label: Label
 var hit_marker: Control
 var damage_flash: ColorRect
 var restart_timer := 0.0
@@ -24,6 +35,9 @@ var wave_index := 1
 var wave_active := false
 var spawn_position := Vector3(0.0, 1.4, 10.5)
 var tactical_map: Dictionary = {}
+var active_bridge_payload: Dictionary = DEFAULT_BRIDGE_PAYLOAD.duplicate(true)
+var active_abilities: Array[Dictionary] = []
+var active_weapon_profile: Dictionary = {}
 
 var enemy_defs: Array[Dictionary] = [
 	{
@@ -76,6 +90,7 @@ func _ready() -> void:
 	_build_world()
 	_build_arena()
 	_build_player()
+	_consume_pending_arena_bridge_payload()
 	_build_ui()
 	_spawn_wave()
 	_refresh_ui()
@@ -124,6 +139,44 @@ func get_map_regions() -> Array[Dictionary]:
 				"world_position": _map_cell_to_world(cell)
 			})
 	return regions
+
+
+func apply_arena_bridge_payload(payload: Dictionary) -> void:
+	active_bridge_payload = DEFAULT_BRIDGE_PAYLOAD.duplicate(true)
+	active_bridge_payload.merge(payload.duplicate(true), true)
+	active_abilities.clear()
+	active_weapon_profile.clear()
+
+	var loadout: Array = active_bridge_payload.get("loadout", [])
+	for entry in loadout:
+		if typeof(entry) != TYPE_DICTIONARY:
+			continue
+		var slot: Dictionary = entry
+		if slot.has("weapon") and active_weapon_profile.is_empty():
+			active_weapon_profile = slot.get("weapon", {})
+		if slot.has("ability"):
+			active_abilities.append(slot)
+
+	var economy: Dictionary = active_bridge_payload.get("economy", {})
+	var total_ammo := int(economy.get("ammo", 24))
+	if player != null:
+		if player.weapon != null and player.weapon.has_method("configure_from_bridge"):
+			player.weapon.call("configure_from_bridge", active_weapon_profile, total_ammo)
+		if player.has_method("apply_bridge_survivability"):
+			player.call("apply_bridge_survivability", int(economy.get("armor", 0)))
+	_refresh_ui()
+
+
+func get_active_loadout_summary() -> Dictionary:
+	var economy: Dictionary = active_bridge_payload.get("economy", {})
+	return {
+		"weapon": String(active_weapon_profile.get("name", "House Sidearm")),
+		"abilities": active_abilities.size(),
+		"chips": int(economy.get("chips", 0)),
+		"armor": int(economy.get("armor", 0)),
+		"ammo": int(economy.get("ammo", 24)),
+		"target_enemy": active_bridge_payload.get("reads", {}).get("target_enemy", &"")
+	}
 
 
 func spawn_tracer(start_position: Vector3, end_position: Vector3, critical: bool = false) -> void:
@@ -456,6 +509,17 @@ func _build_ui() -> void:
 	status_label.add_theme_font_size_override("font_size", 18)
 	top_bar.add_child(status_label)
 
+	loadout_label = Label.new()
+	loadout_label.name = "LoadoutLabel"
+	loadout_label.anchor_left = 0.035
+	loadout_label.anchor_top = 0.135
+	loadout_label.anchor_right = 0.965
+	loadout_label.anchor_bottom = 0.19
+	loadout_label.add_theme_font_size_override("font_size", 15)
+	loadout_label.add_theme_color_override("font_color", Color(1.0, 0.84, 0.34))
+	loadout_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	root.add_child(loadout_label)
+
 	_build_crosshair(root)
 	_build_hit_marker(root)
 
@@ -561,6 +625,23 @@ func _refresh_ui() -> void:
 		kill_label.text = "%d/%d" % [kills, enemy_defs.size()]
 	if status_label != null and wave_active:
 		status_label.text = "WAVE %d" % wave_index
+	if loadout_label != null:
+		var summary := get_active_loadout_summary()
+		loadout_label.text = "%s | Ammo %d | Armor %d | Abilities %d | Chips %d" % [
+			summary.get("weapon", "House Sidearm"),
+			summary.get("ammo", 0),
+			summary.get("armor", 0),
+			summary.get("abilities", 0),
+			summary.get("chips", 0)
+		]
+
+
+func _consume_pending_arena_bridge_payload() -> void:
+	var bridge := get_node_or_null("/root/ArenaBridge")
+	if bridge != null and bridge.has_method("has_pending_payload") and bool(bridge.call("has_pending_payload")):
+		apply_arena_bridge_payload(bridge.call("take_payload"))
+	else:
+		apply_arena_bridge_payload(DEFAULT_BRIDGE_PAYLOAD)
 
 
 func _ensure_input_actions() -> void:

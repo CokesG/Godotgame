@@ -224,6 +224,43 @@ func test_combat_controller_exports_shooter_loadout_payload() -> void:
 	assert_true(int(economy.get("ammo", 0)) > 12, "Attack cards should increase arena ammo.")
 
 
+func test_arena_bridge_stores_and_hands_payload_to_fps() -> void:
+	var bridge_script: GDScript = ResourceLoader.load("res://scripts/combat/ArenaBridge.gd", "", ResourceLoader.CACHE_MODE_IGNORE)
+	assert_true(bridge_script is GDScript, "ArenaBridge autoload script should load.")
+	var bridge: Node = bridge_script.new()
+	var payload := {
+		"weapon_card": "quick_slash",
+		"loadout": [{"slot": "weapon", "id": "quick_slash", "weapon": {"name": "Ace Cutter Revolver", "damage": 28, "magazine": 6, "fire_rate": 3.2}}],
+		"economy": {"chips": 3, "armor": 4, "ammo": 30},
+		"reads": {"target_enemy": &"skulker", "threat": "Cut Purse 45%"}
+	}
+	bridge.call("set_payload", payload)
+	assert_true(bool(bridge.call("has_pending_payload")), "Bridge should report a pending arena payload.")
+	var taken: Dictionary = bridge.call("take_payload")
+	assert_eq(String(taken.get("weapon_card", "")), "quick_slash", "Bridge should hand the same weapon card to FPS.")
+	assert_false(bool(bridge.call("has_pending_payload")), "Taking the payload should clear the pending handoff.")
+
+
+func test_fps_prototype_consumes_bridge_payload_as_active_loadout() -> void:
+	var prototype_script: GDScript = ResourceLoader.load("res://scripts/fps/FPSPrototype.gd", "", ResourceLoader.CACHE_MODE_IGNORE)
+	var prototype: Node = prototype_script.new()
+	prototype.call("apply_arena_bridge_payload", {
+		"weapon_card": "quick_slash",
+		"ability_cards": ["sidestep"],
+		"loadout": [
+			{"slot": "weapon", "id": "quick_slash", "weapon": {"name": "Ace Cutter Revolver", "damage": 28, "magazine": 6, "fire_rate": 3.2}},
+			{"slot": "ability_1", "id": "sidestep", "ability": {"kind": "dash", "charges": 1}}
+		],
+		"economy": {"chips": 5, "armor": 7, "ammo": 36},
+		"reads": {"target_enemy": &"skulker", "threat": "Cut Purse 45%"}
+	})
+	var summary: Dictionary = prototype.call("get_active_loadout_summary")
+	assert_eq(String(summary.get("weapon", "")), "Ace Cutter Revolver", "FPS should expose the bridge weapon as active.")
+	assert_eq(int(summary.get("abilities", 0)), 1, "FPS should expose bridged ability count.")
+	assert_eq(int(summary.get("armor", 0)), 7, "FPS should expose bridged armor.")
+	assert_eq(int(summary.get("ammo", 0)), 36, "FPS should expose bridged ammo.")
+
+
 func test_tactical_map_changes_damage_and_cover() -> void:
 	var map_script: GDScript = ResourceLoader.load("res://scripts/grid/TacticalMapDefinition.gd", "", ResourceLoader.CACHE_MODE_IGNORE)
 	var map_data: Dictionary = map_script.get_default_map()

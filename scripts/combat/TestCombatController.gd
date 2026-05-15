@@ -2107,6 +2107,12 @@ func _on_enter_arena_pressed() -> void:
 	if arena_view != null and arena_view.has_method("focus_unit"):
 		arena_view.call("focus_unit", &"player")
 	_refresh_loadout_ui()
+	var bridge := get_node_or_null("/root/ArenaBridge")
+	if bridge != null and bridge.has_method("set_payload"):
+		bridge.call("set_payload", payload)
+	var tree := get_tree()
+	if tree != null:
+		tree.change_scene_to_file("res://scenes/fps/FPSPrototype.tscn")
 
 
 func _on_loadout_slot_pressed(slot_id: String) -> void:
