@@ -49,14 +49,29 @@ func _run_check() -> void:
 	var panel: Control = combat_scene.find_child("ArenaPayoutPanel", true, false)
 	var label: RichTextLabel = combat_scene.find_child("ArenaPayoutLabel", true, false)
 	var button: Button = combat_scene.find_child("ArenaPayoutContinueButton", true, false)
+	var table_row: Control = combat_scene.find_child("TableRow", true, false)
+	var deck_panel: Control = combat_scene.find_child("DeckPanel", true, false)
+	var continue_button: Button = combat_scene.find_child("ContinueButton", true, false)
 	if panel == null or label == null or button == null:
 		_fail("Returned card table should expose the arena payout panel, label, and continue button.")
 		return
 	if not panel.visible:
 		_fail("Arena payout panel should be visible after a pending FPS result.")
 		return
+	if table_row == null or table_row.visible:
+		_fail("Arena payout should hide the tactical board; no target/move choice exists until the reward is collected.")
+		return
+	if deck_panel == null or deck_panel.visible:
+		_fail("Arena payout should hide the deck/loadout controls so the only live decision is collecting the reward.")
+		return
+	if continue_button == null or continue_button.disabled or not String(continue_button.text).contains("Collect"):
+		_fail("The primary top action should be an enabled Collect Payout button during the return reward state.")
+		return
 	if not String(label.text).contains("Damage Payout") or not String(label.text).contains("+9 Chips"):
 		_fail("Arena payout label should summarize the selected reward and chip grant.")
+		return
+	if not String(label.text).contains("ARENA PAYOUT READY") or not String(label.text).contains("slot/burn/upgrade"):
+		_fail("Arena payout copy should explain that the next step is collecting the payout before rebuilding the next loadout.")
 		return
 	if not String(label.text).contains("Next arena weapon +3 damage") or not String(label.text).contains("Objective bonus +2 Chips"):
 		_fail("Arena payout label should summarize concrete payout effects.")
@@ -88,6 +103,12 @@ func _run_check() -> void:
 		return
 	if panel.visible:
 		_fail("Start Next Hand should hide the arena payout panel.")
+		return
+	if table_row != null and not table_row.visible:
+		_fail("Collecting payout should restore the tactical board for the next card/loadout decision.")
+		return
+	if deck_panel != null and not deck_panel.visible:
+		_fail("Collecting payout should restore deck/loadout controls for the next hand.")
 		return
 
 	print("PHASE69_ARENA_RETURN_CHECK: PASS")

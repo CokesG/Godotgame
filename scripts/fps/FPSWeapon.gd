@@ -33,6 +33,11 @@ var shot_index := 0
 var time_since_last_shot := 999.0
 var sway_offset := Vector2.ZERO
 var viewmodel_root: Node3D
+var rig_root: Node3D
+var weapon_model_root: Node3D
+var right_arm_root: Node3D
+var left_arm_root: Node3D
+var viewmodel_animator: AnimationPlayer
 var muzzle: Marker3D
 var shell_eject: Marker3D
 var magazine: MeshInstance3D
@@ -43,6 +48,7 @@ var ads_position := Vector3(0.0, -0.165, -0.78)
 var magazine_base_position := Vector3.ZERO
 var support_hand_base_position := Vector3.ZERO
 var support_hand_base_rotation := Vector3.ZERO
+var last_authored_ads_state := false
 var recoil_position := Vector3.ZERO
 var recoil_rotation := Vector3.ZERO
 var ads_blend := 0.0
@@ -171,6 +177,7 @@ func try_fire() -> bool:
 		game_mode.call("spawn_combat_text", end_point + Vector3(0.0, 0.35, 0.0), str(dealt_damage), critical, defeated)
 
 	_apply_recoil(critical)
+	_play_viewmodel_animation("fire", 0.02)
 	shot_index += 1
 	state_changed.emit(ammo, reserve, reloading)
 	fired.emit(from, end_point)
@@ -186,6 +193,7 @@ func try_reload() -> bool:
 	reload_timer = reload_time
 	recoil_position += Vector3(-0.03, -0.08, 0.08)
 	recoil_rotation += Vector3(deg_to_rad(-8.0), deg_to_rad(-4.0), deg_to_rad(12.0))
+	_play_viewmodel_animation("reload", 0.05)
 	state_changed.emit(ammo, reserve, reloading)
 	return true
 
@@ -245,7 +253,24 @@ func get_feel_tuning_snapshot() -> Dictionary:
 		"ads_recoil_scalar": _get_ads_recoil_scalar(),
 		"base_position": base_position,
 		"ads_position": ads_position,
-		"reload_time": reload_time
+		"reload_time": reload_time,
+		"authored_rig": get_viewmodel_rig_snapshot()
+	}
+
+
+func get_viewmodel_rig_snapshot() -> Dictionary:
+	var animations: Array[String] = []
+	if viewmodel_animator != null:
+		for animation_name in viewmodel_animator.get_animation_list():
+			animations.append(String(animation_name))
+	return {
+		"has_viewmodel_root": viewmodel_root != null,
+		"has_rig_root": rig_root != null,
+		"has_weapon_model_root": weapon_model_root != null,
+		"has_right_arm": right_arm_root != null,
+		"has_left_arm": left_arm_root != null,
+		"has_animation_player": viewmodel_animator != null,
+		"animations": animations
 	}
 
 
@@ -362,6 +387,12 @@ func _recover_viewmodel(delta: float) -> void:
 	var target_ads_blend := 0.0
 	if player != null and player.has_method("is_ads_active") and bool(player.call("is_ads_active")):
 		target_ads_blend = 1.0
+	if target_ads_blend >= 0.5 and not last_authored_ads_state:
+		_play_viewmodel_animation("ads_in", 0.04)
+		last_authored_ads_state = true
+	elif target_ads_blend < 0.5 and last_authored_ads_state:
+		_play_viewmodel_animation("ads_out", 0.04)
+		last_authored_ads_state = false
 	ads_blend = lerpf(ads_blend, target_ads_blend, clampf(delta * 14.0, 0.0, 1.0))
 
 	var bob := Vector3.ZERO
@@ -377,14 +408,14 @@ func _recover_viewmodel(delta: float) -> void:
 		var reload_rotation := Vector3(deg_to_rad(-10.0), deg_to_rad(5.0), deg_to_rad(-8.0)) * reload_curve
 		viewmodel_root.position = target_base + recoil_position * visual_recoil_scale + bob * sway_scale + Vector3(-sway_offset.x, sway_offset.y, 0.0) * sway_scale + reload_offset
 		viewmodel_root.rotation = recoil_rotation * visual_recoil_scale + Vector3(sway_offset.y * 0.7, sway_offset.x * 1.1, -sway_offset.x * 0.35) * sway_scale + reload_rotation
-	if magazine != null:
+	if magazine != null and viewmodel_animator == null:
 		var progress := _get_reload_progress()
 		var mag_out := sin(clampf(progress / 0.54, 0.0, 1.0) * PI)
 		var mag_seat := sin(clampf((progress - 0.40) / 0.60, 0.0, 1.0) * PI)
 		magazine.position = magazine_base_position + Vector3(0.0, -0.22 * mag_out - 0.055 * mag_seat, 0.06 * mag_out - 0.035 * mag_seat)
 		magazine.rotation.x = deg_to_rad(-22.0 * mag_out + 8.0 * mag_seat)
 		magazine.rotation.z = deg_to_rad(4.0 * mag_out)
-	if support_hand != null:
+	if support_hand != null and viewmodel_animator == null:
 		var progress := _get_reload_progress()
 		var grab_curve := sin(clampf(progress / 0.70, 0.0, 1.0) * PI)
 		var seat_curve := sin(clampf((progress - 0.35) / 0.65, 0.0, 1.0) * PI)
@@ -482,43 +513,191 @@ func _spawn_casing() -> void:
 
 
 func _build_viewmodel() -> void:
+	if viewmodel_root != null:
+		return
 	viewmodel_root = Node3D.new()
 	viewmodel_root.name = "ViewmodelRoot"
 	add_child(viewmodel_root)
+
+	rig_root = Node3D.new()
+	rig_root.name = "FirstPersonRig"
+	viewmodel_root.add_child(rig_root)
+
+	weapon_model_root = Node3D.new()
+	weapon_model_root.name = "WeaponModelRoot"
+	rig_root.add_child(weapon_model_root)
+
+	right_arm_root = Node3D.new()
+	right_arm_root.name = "RightArmRoot"
+	rig_root.add_child(right_arm_root)
+
+	left_arm_root = Node3D.new()
+	left_arm_root.name = "LeftArmRoot"
+	rig_root.add_child(left_arm_root)
 
 	var brass := _make_viewmodel_material(Color(0.96, 0.66, 0.28), 0.75, 0.22)
 	var iron := _make_viewmodel_material(Color(0.16, 0.18, 0.19), 0.35, 0.42)
 	var bone := _make_viewmodel_material(Color(0.88, 0.80, 0.64), 0.18, 0.68)
 	var grip := _make_viewmodel_material(Color(0.29, 0.12, 0.08), 0.05, 0.72)
 
-	_add_box(viewmodel_root, "Receiver", Vector3(0.0, 0.0, -0.035), Vector3(0.255, 0.145, 0.34), iron)
-	_add_box(viewmodel_root, "TopRail", Vector3(0.0, 0.084, -0.120), Vector3(0.225, 0.033, 0.50), brass)
-	_add_box(viewmodel_root, "Handguard", Vector3(0.0, -0.006, -0.365), Vector3(0.205, 0.118, 0.35), iron)
-	_add_box(viewmodel_root, "Barrel", Vector3(0.0, 0.014, -0.600), Vector3(0.066, 0.066, 0.40), iron)
-	_add_box(viewmodel_root, "MuzzleBlock", Vector3(0.0, 0.014, -0.835), Vector3(0.115, 0.092, 0.070), brass)
-	_add_box(viewmodel_root, "StockHint", Vector3(0.0, -0.010, 0.205), Vector3(0.18, 0.10, 0.20), grip, Vector3(deg_to_rad(3.0), 0.0, 0.0))
-	_add_box(viewmodel_root, "RearSightLeft", Vector3(-0.052, 0.146, 0.090), Vector3(0.025, 0.080, 0.026), iron)
-	_add_box(viewmodel_root, "RearSightRight", Vector3(0.052, 0.146, 0.090), Vector3(0.025, 0.080, 0.026), iron)
-	_add_box(viewmodel_root, "FrontSightPost", Vector3(0.0, 0.154, -0.680), Vector3(0.020, 0.098, 0.020), iron)
-	_add_box(viewmodel_root, "FrontSightBase", Vector3(0.0, 0.101, -0.680), Vector3(0.110, 0.030, 0.044), brass)
-	magazine = _add_box(viewmodel_root, "Magazine", Vector3(0.010, -0.168, -0.020), Vector3(0.135, 0.255, 0.118), iron, Vector3(deg_to_rad(-5.0), 0.0, deg_to_rad(-2.0)))
+	_add_box(weapon_model_root, "Receiver", Vector3(0.0, 0.0, -0.035), Vector3(0.255, 0.145, 0.34), iron)
+	_add_box(weapon_model_root, "TopRail", Vector3(0.0, 0.084, -0.120), Vector3(0.225, 0.033, 0.50), brass)
+	_add_box(weapon_model_root, "Handguard", Vector3(0.0, -0.006, -0.365), Vector3(0.205, 0.118, 0.35), iron)
+	_add_box(weapon_model_root, "Barrel", Vector3(0.0, 0.014, -0.600), Vector3(0.066, 0.066, 0.40), iron)
+	_add_box(weapon_model_root, "MuzzleBlock", Vector3(0.0, 0.014, -0.835), Vector3(0.115, 0.092, 0.070), brass)
+	_add_box(weapon_model_root, "StockHint", Vector3(0.0, -0.010, 0.205), Vector3(0.18, 0.10, 0.20), grip, Vector3(deg_to_rad(3.0), 0.0, 0.0))
+	_add_box(weapon_model_root, "RearSightLeft", Vector3(-0.052, 0.146, 0.090), Vector3(0.025, 0.080, 0.026), iron)
+	_add_box(weapon_model_root, "RearSightRight", Vector3(0.052, 0.146, 0.090), Vector3(0.025, 0.080, 0.026), iron)
+	_add_box(weapon_model_root, "FrontSightPost", Vector3(0.0, 0.154, -0.680), Vector3(0.020, 0.098, 0.020), iron)
+	_add_box(weapon_model_root, "FrontSightBase", Vector3(0.0, 0.101, -0.680), Vector3(0.110, 0.030, 0.044), brass)
+	magazine = _add_box(weapon_model_root, "Magazine", Vector3(0.010, -0.168, -0.020), Vector3(0.135, 0.255, 0.118), iron, Vector3(deg_to_rad(-5.0), 0.0, deg_to_rad(-2.0)))
 	magazine_base_position = magazine.position
-	_add_box(viewmodel_root, "Grip", Vector3(0.078, -0.172, 0.084), Vector3(0.098, 0.248, 0.108), grip, Vector3(0.0, 0.0, deg_to_rad(-10.0)))
-	_add_box(viewmodel_root, "Guard", Vector3(-0.092, -0.064, 0.038), Vector3(0.055, 0.095, 0.09), bone)
-	firing_hand = _add_box(viewmodel_root, "FiringHand", Vector3(0.205, -0.168, -0.060), Vector3(0.145, 0.096, 0.180), bone, Vector3(0.0, deg_to_rad(-3.0), 0.0))
-	support_hand = _add_box(viewmodel_root, "SupportHand", Vector3(-0.145, -0.117, -0.360), Vector3(0.155, 0.090, 0.205), bone, Vector3(0.0, deg_to_rad(5.0), deg_to_rad(-6.0)))
+	_add_box(weapon_model_root, "Grip", Vector3(0.078, -0.172, 0.084), Vector3(0.098, 0.248, 0.108), grip, Vector3(0.0, 0.0, deg_to_rad(-10.0)))
+	_add_box(weapon_model_root, "Guard", Vector3(-0.092, -0.064, 0.038), Vector3(0.055, 0.095, 0.09), bone)
+	_add_box(right_arm_root, "RightForearm", Vector3(0.265, -0.196, 0.055), Vector3(0.112, 0.095, 0.330), bone, Vector3(deg_to_rad(2.0), deg_to_rad(-8.0), deg_to_rad(-12.0)))
+	_add_box(left_arm_root, "LeftForearm", Vector3(-0.205, -0.152, -0.205), Vector3(0.118, 0.092, 0.360), bone, Vector3(deg_to_rad(-4.0), deg_to_rad(12.0), deg_to_rad(9.0)))
+	firing_hand = _add_box(right_arm_root, "FiringHand", Vector3(0.205, -0.168, -0.060), Vector3(0.145, 0.096, 0.180), bone, Vector3(0.0, deg_to_rad(-3.0), 0.0))
+	support_hand = _add_box(left_arm_root, "SupportHand", Vector3(-0.145, -0.117, -0.360), Vector3(0.155, 0.090, 0.205), bone, Vector3(0.0, deg_to_rad(5.0), deg_to_rad(-6.0)))
 	support_hand_base_position = support_hand.position
 	support_hand_base_rotation = support_hand.rotation
 
 	muzzle = Marker3D.new()
 	muzzle.name = "Muzzle"
 	muzzle.position = Vector3(0.0, 0.014, -0.890)
-	viewmodel_root.add_child(muzzle)
+	weapon_model_root.add_child(muzzle)
 
 	shell_eject = Marker3D.new()
 	shell_eject.name = "ShellEject"
 	shell_eject.position = Vector3(0.178, 0.080, -0.085)
-	viewmodel_root.add_child(shell_eject)
+	weapon_model_root.add_child(shell_eject)
+
+	_install_viewmodel_animation_player()
+
+
+func _install_viewmodel_animation_player() -> void:
+	viewmodel_animator = AnimationPlayer.new()
+	viewmodel_animator.name = "ViewmodelAnimator"
+	viewmodel_animator.playback_default_blend_time = 0.03
+	viewmodel_root.add_child(viewmodel_animator)
+
+	var library := AnimationLibrary.new()
+	library.add_animation("fire", _make_fire_animation())
+	library.add_animation("reload", _make_reload_animation())
+	library.add_animation("ads_in", _make_ads_in_animation())
+	library.add_animation("ads_out", _make_ads_out_animation())
+	viewmodel_animator.add_animation_library("", library)
+
+
+func _make_fire_animation() -> Animation:
+	var anim := Animation.new()
+	anim.length = 0.12
+	anim.step = 0.01
+	_add_value_track(anim, "FirstPersonRig/WeaponModelRoot:position", [
+		{"time": 0.0, "value": Vector3.ZERO},
+		{"time": 0.035, "value": Vector3(0.0, 0.016, 0.070)},
+		{"time": 0.12, "value": Vector3.ZERO}
+	])
+	_add_value_track(anim, "FirstPersonRig/RightArmRoot:position", [
+		{"time": 0.0, "value": Vector3.ZERO},
+		{"time": 0.040, "value": Vector3(0.0, -0.008, 0.036)},
+		{"time": 0.12, "value": Vector3.ZERO}
+	])
+	_add_value_track(anim, "FirstPersonRig/LeftArmRoot:position", [
+		{"time": 0.0, "value": Vector3.ZERO},
+		{"time": 0.040, "value": Vector3(0.0, -0.006, 0.026)},
+		{"time": 0.12, "value": Vector3.ZERO}
+	])
+	return anim
+
+
+func _make_reload_animation() -> Animation:
+	var anim := Animation.new()
+	anim.length = reload_time
+	anim.step = 0.02
+	_add_value_track(anim, "FirstPersonRig/WeaponModelRoot:position", [
+		{"time": 0.0, "value": Vector3.ZERO},
+		{"time": 0.20, "value": Vector3(0.065, -0.085, 0.065)},
+		{"time": 0.86, "value": Vector3(0.030, -0.095, 0.045)},
+		{"time": reload_time, "value": Vector3.ZERO}
+	])
+	_add_value_track(anim, "FirstPersonRig/WeaponModelRoot/Magazine:position", [
+		{"time": 0.0, "value": magazine_base_position},
+		{"time": 0.30, "value": magazine_base_position + Vector3(0.000, -0.255, 0.075)},
+		{"time": 0.64, "value": magazine_base_position + Vector3(-0.065, -0.325, 0.140)},
+		{"time": 1.08, "value": magazine_base_position + Vector3(0.015, -0.070, -0.045)},
+		{"time": reload_time, "value": magazine_base_position}
+	])
+	_add_value_track(anim, "FirstPersonRig/LeftArmRoot:position", [
+		{"time": 0.0, "value": Vector3.ZERO},
+		{"time": 0.22, "value": Vector3(0.105, -0.105, 0.230)},
+		{"time": 0.62, "value": Vector3(0.150, -0.160, 0.330)},
+		{"time": 1.08, "value": Vector3(0.045, -0.060, 0.080)},
+		{"time": reload_time, "value": Vector3.ZERO}
+	])
+	_add_value_track(anim, "FirstPersonRig/RightArmRoot:position", [
+		{"time": 0.0, "value": Vector3.ZERO},
+		{"time": 0.18, "value": Vector3(0.020, -0.035, 0.055)},
+		{"time": 0.92, "value": Vector3(0.005, -0.020, 0.035)},
+		{"time": reload_time, "value": Vector3.ZERO}
+	])
+	return anim
+
+
+func _make_ads_in_animation() -> Animation:
+	var anim := Animation.new()
+	anim.length = 0.18
+	anim.step = 0.01
+	_add_value_track(anim, "FirstPersonRig/WeaponModelRoot:position", [
+		{"time": 0.0, "value": Vector3(0.018, -0.015, 0.0)},
+		{"time": 0.10, "value": Vector3(-0.006, 0.004, -0.012)},
+		{"time": 0.18, "value": Vector3.ZERO}
+	])
+	_add_value_track(anim, "FirstPersonRig/RightArmRoot:position", [
+		{"time": 0.0, "value": Vector3.ZERO},
+		{"time": 0.18, "value": Vector3(0.0, 0.012, -0.018)}
+	])
+	_add_value_track(anim, "FirstPersonRig/LeftArmRoot:position", [
+		{"time": 0.0, "value": Vector3.ZERO},
+		{"time": 0.18, "value": Vector3(0.0, 0.010, -0.014)}
+	])
+	return anim
+
+
+func _make_ads_out_animation() -> Animation:
+	var anim := Animation.new()
+	anim.length = 0.14
+	anim.step = 0.01
+	_add_value_track(anim, "FirstPersonRig/WeaponModelRoot:position", [
+		{"time": 0.0, "value": Vector3.ZERO},
+		{"time": 0.06, "value": Vector3(0.008, -0.006, 0.012)},
+		{"time": 0.14, "value": Vector3.ZERO}
+	])
+	_add_value_track(anim, "FirstPersonRig/RightArmRoot:position", [
+		{"time": 0.0, "value": Vector3(0.0, 0.012, -0.018)},
+		{"time": 0.14, "value": Vector3.ZERO}
+	])
+	_add_value_track(anim, "FirstPersonRig/LeftArmRoot:position", [
+		{"time": 0.0, "value": Vector3(0.0, 0.010, -0.014)},
+		{"time": 0.14, "value": Vector3.ZERO}
+	])
+	return anim
+
+
+func _add_value_track(anim: Animation, track_path: String, keyframes: Array) -> void:
+	var track := anim.add_track(Animation.TYPE_VALUE)
+	anim.track_set_path(track, NodePath(track_path))
+	anim.track_set_interpolation_type(track, Animation.INTERPOLATION_CUBIC)
+	for keyframe in keyframes:
+		var key: Dictionary = keyframe
+		anim.track_insert_key(track, float(key.get("time", 0.0)), key.get("value", Vector3.ZERO))
+
+
+func _play_viewmodel_animation(animation_name: String, blend: float = 0.03) -> void:
+	if viewmodel_animator == null or not viewmodel_animator.has_animation(animation_name):
+		return
+	if viewmodel_animator.is_playing() and String(viewmodel_animator.current_animation) == "reload" and animation_name.begins_with("ads_"):
+		return
+	viewmodel_animator.play(animation_name, blend)
 
 
 func _add_box(parent: Node3D, node_name: String, pos: Vector3, size: Vector3, material: Material, rot: Vector3 = Vector3.ZERO) -> MeshInstance3D:

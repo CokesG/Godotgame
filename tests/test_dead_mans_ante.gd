@@ -263,11 +263,18 @@ func test_fps_settings_crosshair_and_ability_contracts() -> void:
 func test_fps_weapon_overclock_and_enemy_archetypes() -> void:
 	var weapon_script: GDScript = ResourceLoader.load("res://scripts/fps/FPSWeapon.gd", "", ResourceLoader.CACHE_MODE_IGNORE)
 	var weapon: Node = weapon_script.new()
+	weapon.call("_build_viewmodel")
 	assert_true((weapon.call("_get_recoil_pattern_value") as Vector2).y > 0.0, "The first AR should expose a deterministic recoil pattern.")
 	assert_true(float(weapon.call("_get_hipfire_spread_multiplier")) > 2.0, "Hip-fire should be much looser than ADS for the first AR.")
 	var feel_snapshot: Dictionary = weapon.call("get_feel_tuning_snapshot")
 	assert_true(float(feel_snapshot.get("hipfire_spread_multiplier", 0.0)) >= 3.0, "The AR tuning snapshot should preserve close-range hipfire spread separation.")
 	assert_true((feel_snapshot.get("ads_position", Vector3.ZERO) as Vector3).z > (feel_snapshot.get("base_position", Vector3.ZERO) as Vector3).z, "ADS should pull the weapon toward the sights instead of leaving hipfire framing.")
+	var rig_snapshot: Dictionary = weapon.call("get_viewmodel_rig_snapshot")
+	assert_true(bool(rig_snapshot.get("has_rig_root", false)), "FPSWeapon should build a named first-person rig root for authored viewmodel animation.")
+	assert_true(bool(rig_snapshot.get("has_animation_player", false)), "FPSWeapon should own an AnimationPlayer for authored fire/reload/ADS clips.")
+	assert_true((rig_snapshot.get("animations", []) as Array).has("fire"), "FPSWeapon rig should include an authored fire animation.")
+	assert_true((rig_snapshot.get("animations", []) as Array).has("reload"), "FPSWeapon rig should include an authored reload animation.")
+	assert_true((rig_snapshot.get("animations", []) as Array).has("ads_in"), "FPSWeapon rig should include an authored ADS-in animation.")
 	weapon.call("apply_temporary_overclock", 4.0, 0.78, 1.2)
 	assert_true(float(weapon.get("overclock_timer")) > 0.0, "Weapon overclock should arm a timed fire-rate/damage modifier.")
 	weapon.set("magazine_size", 12)
@@ -533,6 +540,11 @@ func test_arena_payout_records_reward_mods_and_progression() -> void:
 	var mods: Array = controller.get("active_reward_mods")
 	assert_eq(mods.size(), 1, "Arena payout should create a persistent reward mod.")
 	assert_eq(String((mods[0] as Dictionary).get("label", "")), "Runner Edge", "Reward mod should preserve the authored reward label.")
+	var artifacts: Array = controller.call("_get_reward_artifact_snapshots")
+	assert_eq(artifacts.size(), 1, "Arena reward mods should surface as inspectable artifacts.")
+	assert_eq(String((artifacts[0] as Dictionary).get("icon", "")), "DMG", "Damage rewards should render with a readable artifact icon.")
+	assert_eq(String((artifacts[0] as Dictionary).get("rarity", "")), "Uncommon", "Artifact cards should preserve rarity for their frame styling.")
+	assert_true(String(controller.call("_get_reward_artifact_detail_text", 0)).contains("Runner Edge"), "Artifact inspection copy should name the selected reward.")
 	assert_true(int(controller.get("arena_card_xp_pool")) >= 9, "Arena payout should bank Card XP from kills, objectives, and ability use.")
 	assert_eq(int(controller.get("arena_wounds_total")), 1, "Arena payout should track wounds from the FPS result.")
 	assert_true(String("\n".join(effects)).contains("Mod acquired"), "Payout effects should announce the new mod.")
@@ -647,6 +659,24 @@ func test_tactical_map_changes_damage_and_cover() -> void:
 		"map_context": map_script.build_context(map_data, Vector2i(0, 2))
 	})
 	assert_eq(int(resolver.call("get_state").get("player", {}).get("hp", -1)), 24, "Back Cover should reduce the lane hit by 2.")
+
+
+func test_command_table_cells_explain_fps_bridge() -> void:
+	var map_script: GDScript = ResourceLoader.load("res://scripts/grid/TacticalMapDefinition.gd", "", ResourceLoader.CACHE_MODE_IGNORE)
+	var map_data: Dictionary = map_script.get_default_map()
+	var grid_script: GDScript = ResourceLoader.load("res://scripts/grid/CombatGrid.gd", "", ResourceLoader.CACHE_MODE_IGNORE)
+	var grid: Control = grid_script.new()
+	grid.set("map_data", map_data)
+	assert_true(String(grid.call("format_cell", Vector2i(1, 1))).contains("POT"), "Board callouts should use map language instead of raw coordinates.")
+	grid.queue_free()
+
+	var cell_script: GDScript = ResourceLoader.load("res://scripts/grid/GridCellView.gd", "", ResourceLoader.CACHE_MODE_IGNORE)
+	var cell: Button = cell_script.new()
+	cell.call("configure", Vector2i(1, 1))
+	cell.call("configure_map_feature", map_script.get_cell_feature(map_data, Vector2i(1, 1)))
+	assert_true(String(cell.text).contains("POT"), "Center cell should visibly show the Center Pot callout.")
+	assert_true(String(cell.tooltip_text).contains("FPS link"), "Board cells should explain how table callouts feed the shooter.")
+	cell.free()
 
 
 func test_resolver_rage_suspicion_and_bait_mechanics() -> void:

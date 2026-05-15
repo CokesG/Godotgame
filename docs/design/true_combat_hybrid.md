@@ -76,11 +76,12 @@ Current FPS ability contract:
 - Card XP can now be spent directly from prep with `Upgrade` and `Mutate` actions on the selected hand card. Upgrades persist by card id, boost card-table damage/Guard through resolver context, and export into FPS weapon/ability payloads as damage, armor, cooldown, duration, radius, dash strength, or wager reward changes.
 - Mutations currently follow card style: attacks become `Deadeye`, guard cards `Bulwark`, movement `Fleet`, reads `Marked`, traps `Snare`, and ritual/bluff cards `Wager`. These are prototype mechanics first and final naming can still move.
 - Wounds now apply pressure to the next loop: they tax payout chips, reduce next-hand draw, and reduce bridged armor before the next arena. The bridge payload exposes those numbers as `progression.wound_penalties`.
+- The 2D board now behaves like the command surface for the FPS map: cells show `POT`, `COV`, `ANG`, `FLK`, etc. with shooter roles, movement choices are labeled as routes, and card preview explains both the FPS loadout role and the active table callout/bonus.
 - FPS enemies now carry visible combat roles, status tags, attack windup rings, shield plates for guards, and incoming projectiles for ranged shots instead of invisible instant hits.
 - The FPS arena now has authored staging pieces: energy rails, spawn portals, an objective chip pot, cover silhouettes, wall signage, short-lived impact decals, framed HUD panels, and objective-mode props such as extract gates, defend barriers, duel marks, hold stakes, and the boss gate so the battlefield reads as a competitive table-ritual combat space before custom art arrives.
 - The dev hub includes shortcuts for raw FPS sandbox, seeded FPS loadout, card prep, all five objective modes, seeded return payout, and seeded defeat return so this loop can be tested without replaying the whole run.
 - FPS reward selection now builds an arena result with map name, objective mode/label/completion, wave, kills, hit rate, damage, selected reward, objective score, wounds, chips awarded, and next-hand draw count, then returns to `TestCombat` through `ArenaBridge`.
-- `TestCombat` consumes pending arena results on load, restores the pre-FPS run/deck/loadout snapshot, shows `ArenaPayoutPanel`, applies chip and non-chip payout effects, blocks normal card actions until `Start Next Hand`, and leaves the player on the next prep hand.
+- `TestCombat` consumes pending arena results on load, restores the pre-FPS run/deck/loadout snapshot, shows `ArenaPayoutPanel`, applies chip and non-chip payout effects, hides the tactical board/deck controls while payout is pending, blocks normal card actions until `Collect Payout`, and then leaves the player on the next prep hand.
 - `ArenaBridge`, `DeckManager`, and `RunManager` expose snapshot/restore hooks so the table can preserve exact deck piles, loadout piles, run node, rewards, relics, Blood, carryover payouts, and defeat state across the arena scene swap.
 - Current non-chip payout effects are practical prototype hooks: objective-authored damage rewards boost the next bridged weapon, armor rewards carry armor into the next arena, and ammo rewards carry reserve ammo into the next arena. Those carryovers now become visible arena reward mods, bias the next table recommendation, and bank Card XP/wound progression.
 - FPS death returns a defeat result instead of only restarting; the card run can mark that as a lost table/run.
@@ -144,6 +145,8 @@ Next wiring step:
 - flank/choke cells make movement and enemy roles easier to read
 
 This is how the prototype borrows shooter map thinking without losing card-game clarity. The map should make positioning feel authored and tactical, while `CombatGrid`, card targeting, and `CombatResolver` remain the source of gameplay truth.
+
+The current board presentation rule is: avoid developer coordinates during normal play. Use callouts and lane roles in UI (`POT MID`, `COV SMOKE`, `ANG RAIL`) while keeping the underlying 3x3 grid as the compact rules source.
 
 ## Design Rule
 

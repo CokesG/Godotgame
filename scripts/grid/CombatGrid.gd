@@ -41,6 +41,8 @@ var valid_move_cells: Array[Vector2i] = []
 var floating_text_layer: Control
 var board_background: TextureRect
 var grid_frame: VBoxContainer
+var board_summary_label: Label
+var lane_legend_label: Label
 var focus_unit_id: StringName = &""
 var focus_cell: Vector2i = Vector2i(-1, -1)
 var compact_mode: bool = false
@@ -83,8 +85,8 @@ func reset_grid(enemy_spawns: Array = []) -> void:
 			String(spawn.get("label", "Enemy"))
 		)
 	_refresh_cells()
-	_update_status("%s Select the Gambler-Knight, then choose an adjacent green cell." % TACTICAL_MAP_SCRIPT.get_feature_summary(map_data))
-	log_requested.emit("Grid reset on %s: player at (1,2), enemies on the top row." % get_map_name())
+	_update_status("%s This table is the FPS route map: pick a Target or MOVE callout, then cards become the weapon, armor, utility, or objective plan." % TACTICAL_MAP_SCRIPT.get_feature_summary(map_data))
+	log_requested.emit("Grid reset on %s: player at %s, enemies staged across the threat row." % [get_map_name(), format_cell(get_unit_position(PLAYER_ID))])
 
 
 func configure_map(new_map_data: Dictionary) -> void:
@@ -93,7 +95,11 @@ func configure_map(new_map_data: Dictionary) -> void:
 	_apply_map_features_to_cells()
 	var title := find_child("TableTitle", true, false)
 	if title is Label:
-		(title as Label).text = "Arena Board - %s" % get_map_name()
+		(title as Label).text = _get_board_title_text()
+	if board_summary_label != null:
+		board_summary_label.text = _get_board_summary_text()
+	if lane_legend_label != null:
+		lane_legend_label.text = _get_lane_legend_text()
 	_refresh_cells()
 
 
@@ -314,6 +320,14 @@ func get_empty_adjacent_cells_for(unit_id: StringName) -> Array[Vector2i]:
 
 
 func format_cell(cell: Vector2i) -> String:
+	if is_cell_in_bounds(cell):
+		var feature := get_cell_feature(cell)
+		var short_label := String(feature.get("short_label", ""))
+		var lane_label := _get_lane_short_label(String(feature.get("lane_name", "")))
+		if not short_label.is_empty() and not lane_label.is_empty():
+			return "%s %s" % [short_label, lane_label]
+		if not short_label.is_empty():
+			return short_label
 	return "(%d,%d)" % [cell.x, cell.y]
 
 
@@ -340,7 +354,7 @@ func set_focus_unit(unit_id: StringName) -> void:
 	focus_unit_id = unit_id
 	focus_cell = Vector2i(-1, -1)
 	_refresh_cells()
-	_update_status("Active target: %s at %s." % [get_unit_label(unit_id), format_cell(get_unit_position(unit_id))])
+	_update_status("Active target: %s at %s. Attack/read cards turn this callout into the FPS duel or weapon pressure lane." % [get_unit_label(unit_id), format_cell(get_unit_position(unit_id))])
 
 
 func set_focus_cell(cell: Vector2i) -> void:
@@ -351,7 +365,7 @@ func set_focus_cell(cell: Vector2i) -> void:
 	focus_unit_id = &""
 	focus_cell = cell
 	_refresh_cells()
-	_update_status("Active move target: %s." % format_cell(cell))
+	_update_status("Active move target: %s. Movement/trap cards use this same route when the loadout enters FPS." % format_cell(cell))
 
 
 func clear_focus() -> void:
@@ -373,6 +387,10 @@ func set_compact_mode(value: bool) -> void:
 			(cell as Control).custom_minimum_size = Vector2(136, 76) if compact_mode else Vector2(164, 116)
 	if status_label != null:
 		status_label.visible = not compact_mode
+	if board_summary_label != null:
+		board_summary_label.visible = not compact_mode
+	if lane_legend_label != null:
+		lane_legend_label.visible = not compact_mode
 	var title := find_child("TableTitle", true, false)
 	if title is Label:
 		(title as Label).add_theme_font_size_override("font_size", 18 if compact_mode else 20)
@@ -440,7 +458,7 @@ func show_floating_text_at_cell(cell: Vector2i, message: String, color: Color) -
 func _build_ui() -> void:
 	size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	size_flags_vertical = Control.SIZE_EXPAND_FILL
-	custom_minimum_size = Vector2(660, 356)
+	custom_minimum_size = Vector2(700, 382)
 	_build_board_background()
 
 	grid_frame = VBoxContainer.new()
@@ -451,10 +469,23 @@ func _build_ui() -> void:
 
 	var title := Label.new()
 	title.name = "TableTitle"
-	title.text = "Arena Board - %s" % get_map_name()
+	title.text = _get_board_title_text()
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.add_theme_font_size_override("font_size", 18)
+	title.add_theme_font_size_override("font_size", 20)
+	title.add_theme_color_override("font_color", Color(1.0, 0.92, 0.68))
+	title.add_theme_color_override("font_outline_color", Color(0.02, 0.015, 0.012))
+	title.add_theme_constant_override("outline_size", 3)
 	grid_frame.add_child(title)
+
+	board_summary_label = Label.new()
+	board_summary_label.name = "TableBridgeSummary"
+	board_summary_label.text = _get_board_summary_text()
+	board_summary_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	board_summary_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	board_summary_label.custom_minimum_size = Vector2(620, 0)
+	board_summary_label.add_theme_font_size_override("font_size", 13)
+	board_summary_label.add_theme_color_override("font_color", Color(0.84, 0.90, 0.94))
+	grid_frame.add_child(board_summary_label)
 
 	grid_container = GridContainer.new()
 	grid_container.name = "Cells"
@@ -475,9 +506,22 @@ func _build_ui() -> void:
 			cells_by_position[grid_position] = cell
 			grid_container.add_child(cell)
 
+	lane_legend_label = Label.new()
+	lane_legend_label.name = "LaneLegend"
+	lane_legend_label.text = _get_lane_legend_text()
+	lane_legend_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	lane_legend_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	lane_legend_label.custom_minimum_size = Vector2(620, 0)
+	lane_legend_label.add_theme_font_size_override("font_size", 12)
+	lane_legend_label.add_theme_color_override("font_color", Color(0.78, 0.72, 0.62))
+	grid_frame.add_child(lane_legend_label)
+
 	status_label = Label.new()
 	status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	status_label.custom_minimum_size = Vector2(520, 0)
+	status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	status_label.add_theme_font_size_override("font_size", 13)
+	status_label.add_theme_color_override("font_color", Color(0.90, 0.86, 0.76))
 	grid_frame.add_child(status_label)
 
 	_get_floating_text_layer()
@@ -595,7 +639,7 @@ func _select_unit(unit_id: StringName) -> void:
 	selected_unit_id = unit_id
 	valid_move_cells = get_valid_moves_for(unit_id)
 	_refresh_cells()
-	_update_status("%s selected. Valid moves are highlighted green." % get_unit_label(unit_id))
+	_update_status("%s selected. Green MOVE callouts are the next FPS route choices." % get_unit_label(unit_id))
 	log_requested.emit("%s selected at %s." % [get_unit_label(unit_id), format_cell(get_unit_position(unit_id))])
 
 
@@ -603,7 +647,7 @@ func _clear_selection() -> void:
 	selected_unit_id = &""
 	valid_move_cells.clear()
 	_refresh_cells()
-	_update_status("Click an enemy card or enemy pawn to target. Green MOVE spaces are legal movement destinations.")
+	_update_status("Click an enemy card or pawn to target, or pick a green MOVE callout for route/utility cards.")
 
 
 func _refresh_cells() -> void:
@@ -668,3 +712,27 @@ func _update_status(message: String) -> void:
 
 func _on_cell_pressed(cell: Vector2i) -> void:
 	select_cell(cell)
+
+
+func _get_board_title_text() -> String:
+	return "Crossfire Command Table - %s" % get_map_name()
+
+
+func _get_board_summary_text() -> String:
+	return "Cards choose the FPS kit here: attacks become weapons, guard becomes armor, movement picks routes, reads/traps shape duels, and ritual/bluff cards push the wager objective."
+
+
+func _get_lane_legend_text() -> String:
+	return "Smoke Lane = cover/control | Ante Mid = pot/objective | Long Rail = angles/duels"
+
+
+func _get_lane_short_label(lane_name: String) -> String:
+	match lane_name:
+		"Smoke Lane":
+			return "SMOKE"
+		"Ante Mid":
+			return "MID"
+		"Long Rail":
+			return "RAIL"
+		_:
+			return lane_name.to_upper().replace(" LANE", "")

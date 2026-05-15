@@ -1,6 +1,6 @@
 # Tactical Crossfire Map
 
-Status: Phase 83 armory/objective pressure note
+Status: Phase 84 command-table bridge note
 Last updated: 2026-05-15
 
 ## Goal
@@ -45,6 +45,8 @@ Primary files:
 
 The map is data-first. `CombatGrid` shows the labels and exposes `get_map_context()`. `Arena3DView` renders cover blocks, the center pot ring, angle markers, flank markers, and choke posts. `CombatResolver` reads the same map context for small tactical modifiers.
 
+The board UI now uses the same language as the shooter branch. `CombatGrid.format_cell()` returns authored callouts like `POT MID`, `COV SMOKE`, and `ANG RAIL` instead of raw coordinates for normal in-bounds cells. `GridCellView` renders the feature short label plus shooter role, and each cell tooltip names the FPS link: cover exports mitigation, angles export weapon/duel pressure, flank cells feed routes/traps, and the pot is the center objective/payout anchor.
+
 The FPS branch reads the same map data through `FPSPrototype.get_map_summary()` and `get_map_regions()`. It renders region markers and wall labels in the live arena so the shooter blockout says the same thing as the card board: Smoke Lane, Ante Mid, Long Rail, Center Pot, cover, flank, and angle.
 
 The FPS branch now has five objective modes layered onto the same map:
@@ -57,7 +59,7 @@ The FPS branch now has five objective modes layered onto the same map:
 
 The objective mode is carried in the arena bridge payload as `objective_mode`, and the FPS arena returns `objective_label`, `objective_completed`, `objective_failed`, `objective_events`, and `objective_score` with the payout result.
 
-On the card table, the same objective contract is now visible before launch: the loadout prep panel previews the next objective plan, hand cards show objective badges/reasons, and payout carryovers can bias whether the next recommendation leans damage, armor, or ammo. Arena reward mods now persist that bias with rarity tags, Card XP, wound tracking, and card-upgrade state.
+On the card table, the same objective contract is now visible before launch: the loadout prep panel previews the next objective plan, hand cards show objective badges/reasons, card hover preview shows how the selected card bridges into FPS, and payout carryovers can bias whether the next recommendation leans damage, armor, or ammo. Arena reward mods now persist that bias with rarity tags, Card XP, wound tracking, and card-upgrade state.
 
 Card XP is now an armory currency in the prep layer:
 

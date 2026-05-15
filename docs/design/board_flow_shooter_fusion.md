@@ -1,6 +1,6 @@
 # Dead Man's Ante - Board Flow / Shooter Fusion
 
-Status: Phase 83 armory/wound loop contract
+Status: Phase 84 command-table/FPS bridge contract
 Last updated: 2026-05-15
 
 ## North Star
@@ -36,9 +36,13 @@ Live files:
 - `res://scripts/combat/ArenaBridge.gd`: autoload handoff for card-to-FPS payloads and FPS-to-card results.
 - `res://tests/debug/Phase69ArenaReturnCheck.tscn`: focused check for the persisted return payout path.
 
-The return now preserves the card-run snapshot through `ArenaBridge`: current run node, run HP/reward state, deck piles, hand, discard, exhaust, slotted loadout cards, chips, and pending carryover bonuses. When the FPS scene returns, the card table restores that snapshot, resolves spent loadout cards into discard/exhaust, applies payout effects, draws the next hand, and unlocks normal card/loadout actions when `Start Next Hand` is pressed.
+The return now preserves the card-run snapshot through `ArenaBridge`: current run node, run HP/reward state, deck piles, hand, discard, exhaust, slotted loadout cards, chips, and pending carryover bonuses. When the FPS scene returns, the card table restores that snapshot, resolves spent loadout cards into discard/exhaust, applies payout effects, draws the next hand, and unlocks normal card/loadout actions when `Collect Payout` is pressed.
+
+Arena return is a reward state, not a board-targeting state. While an FPS payout is pending, the Crossfire command table and deck/loadout controls should hide so the player sees one dominant post-wave panel: what they earned, what changed, and the single next click. The board only returns after payout collection, when there is again a real prep/loadout decision to make.
 
 The prep table now shows the next FPS objective before launch. `ObjectivePlanLabel` names the objective, explains the practical plan, and surfaces payout carryover bias such as bonus weapon damage, armor, or ammo. Cards in hand carry FPS recommendation badges (`WEAPON CORE`, `PICK FOR EXTRACT`, `GOOD FOR DEFEND`, `BOSS TECH`) plus tooltip/selected-card reasoning so the player can understand why a card belongs in the arena kit. `Recommend Loadout` auto-slots affordable cards toward the strongest objective in the current hand while still leaving manual slot/burn/hold decisions available.
+
+The visible board is now the `Crossfire Command Table`, not a separate debug grid. `CombatGrid.format_cell()` returns map callouts such as `POT MID` or `COV SMOKE`; cells show the authored feature plus its shooter role (`COVER`, `ANGLE`, `FLANK`, `POT`), and tooltips explain the FPS link. Card hover preview now includes both `FPS Bridge` and `Table` lines so a player can see how an attack becomes the weapon, a move becomes route utility, a guard becomes armor, and reads/traps/rituals shape the next arena objective.
 
 Arena rewards now become visible run mods. The card table tracks active reward mods, rarity, Card XP, wounds, and card upgrades, writes arena mod decisions into run reward history, and shows an `ARMORY RECOMMENDS` line with the predicted kit and chip cost. Reward mods bias future objective recommendations, so choosing `Runner Edge`, `Fortified Guard`, or `Boss Tech` changes what the next hand wants to become.
 
@@ -382,14 +386,15 @@ Done in the prototype:
 19. Spend Card XP on selected-card upgrades/mutations and export those changes into table resolver context plus FPS weapon/ability payloads.
 20. Make wounds alter the next loop through chip tax, draw penalty, and armor penalty.
 21. Add first-pass objective pressure: Hold Pot contest, Extract timer, stronger Defend drain, empowered Duel target, and harder Boss Gate champion.
+22. Make the 3x3 board speak shared shooter-map language: lane callouts, route labels, FPS bridge previews, and board-cell tooltips now all point at the same Crossfire arena contract.
 
 Next implementation steps:
 
-1. Turn arena reward mods into inspectable cards/artifacts with icons, art, rarity frames, and mutation choices.
-2. Replace text-glyph HUD icons with generated or hand-painted card-power icon textures.
-3. Give each class a unique passive that changes scoring or card economy, not only starting deck/HUD/VFX identity.
-4. Add escort and multi-stage boss variants after the five first objective modes feel good.
-5. Build a dedicated armory screen once upgrade branches become real choices instead of single selected-card actions.
+1. Replace text-glyph HUD/table icons with generated or hand-painted card-power and map-callout icon textures.
+2. Give each class a unique passive that changes scoring or card economy, not only starting deck/HUD/VFX identity.
+3. Add escort and multi-stage boss variants after the five first objective modes feel good.
+4. Build a dedicated armory screen once upgrade branches become real choices instead of single selected-card actions.
+5. Prototype a second map that changes one tactical axis, then verify the board/FPS callout bridge still reads cleanly.
 
 ## Design Rule
 

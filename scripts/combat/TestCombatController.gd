@@ -108,6 +108,8 @@ var resource_state_label: Label
 var shooter_economy_label: Label
 var objective_plan_label: Label
 var reward_mods_label: Label
+var reward_artifact_row: HBoxContainer
+var reward_artifact_detail_label: RichTextLabel
 var armory_plan_label: Label
 var start_hero_class_option: OptionButton
 var start_hero_class_summary_label: Label
@@ -266,6 +268,7 @@ var active_reward_mods: Array = []
 var card_upgrade_mods: Dictionary = {}
 var arena_card_xp_pool: int = 0
 var arena_wounds_total: int = 0
+var selected_reward_artifact_index: int = 0
 var feedback_history: Array[String] = []
 var run_ceremony_history: Array[String] = []
 var table_rule_effect_history: Array[String] = []
@@ -1151,6 +1154,34 @@ func _build_ui() -> void:
 	battlefield_focus_label.add_theme_color_override("font_color", Color(1.0, 0.86, 0.34))
 	body.add_child(battlefield_focus_label)
 
+	arena_payout_panel = PanelContainer.new()
+	arena_payout_panel.name = "ArenaPayoutPanel"
+	arena_payout_panel.visible = false
+	arena_payout_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	arena_payout_panel.custom_minimum_size = Vector2(0, 318)
+	body.add_child(arena_payout_panel)
+
+	var arena_payout_layout := VBoxContainer.new()
+	arena_payout_layout.name = "ArenaPayoutLayout"
+	arena_payout_layout.add_theme_constant_override("separation", 10)
+	arena_payout_panel.add_child(arena_payout_layout)
+
+	arena_payout_label = RichTextLabel.new()
+	arena_payout_label.name = "ArenaPayoutLabel"
+	arena_payout_label.bbcode_enabled = true
+	arena_payout_label.fit_content = true
+	arena_payout_label.scroll_active = false
+	arena_payout_label.custom_minimum_size = Vector2(0, 190)
+	arena_payout_label.add_theme_font_size_override("normal_font_size", 17)
+	arena_payout_layout.add_child(arena_payout_label)
+
+	arena_payout_continue_button = Button.new()
+	arena_payout_continue_button.name = "ArenaPayoutContinueButton"
+	arena_payout_continue_button.text = "Collect Payout"
+	arena_payout_continue_button.custom_minimum_size = Vector2(0, 58)
+	arena_payout_continue_button.pressed.connect(_on_arena_payout_continue_pressed)
+	arena_payout_layout.add_child(arena_payout_continue_button)
+
 	var table_row := HBoxContainer.new()
 	table_row.name = "TableRow"
 	table_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1535,31 +1566,8 @@ func _build_ui() -> void:
 	reward_mods_label.add_theme_color_override("font_color", Color(1.0, 0.78, 0.42))
 	deck_layout.add_child(reward_mods_label)
 
+	_build_reward_artifact_panel(deck_layout)
 	_build_hero_class_selector(deck_layout)
-
-	arena_payout_panel = PanelContainer.new()
-	arena_payout_panel.name = "ArenaPayoutPanel"
-	arena_payout_panel.visible = false
-	deck_layout.add_child(arena_payout_panel)
-
-	var arena_payout_layout := VBoxContainer.new()
-	arena_payout_layout.name = "ArenaPayoutLayout"
-	arena_payout_layout.add_theme_constant_override("separation", 6)
-	arena_payout_panel.add_child(arena_payout_layout)
-
-	arena_payout_label = RichTextLabel.new()
-	arena_payout_label.name = "ArenaPayoutLabel"
-	arena_payout_label.bbcode_enabled = true
-	arena_payout_label.fit_content = true
-	arena_payout_label.scroll_active = false
-	arena_payout_label.custom_minimum_size = Vector2(0, 86)
-	arena_payout_layout.add_child(arena_payout_label)
-
-	arena_payout_continue_button = Button.new()
-	arena_payout_continue_button.name = "ArenaPayoutContinueButton"
-	arena_payout_continue_button.text = "Start Next Hand"
-	arena_payout_continue_button.pressed.connect(_on_arena_payout_continue_pressed)
-	arena_payout_layout.add_child(arena_payout_continue_button)
 
 	loadout_slot_row = HBoxContainer.new()
 	loadout_slot_row.name = "LoadoutSlotRow"
@@ -1652,7 +1660,7 @@ func _build_ui() -> void:
 	card_target_preview_label.bbcode_enabled = false
 	card_target_preview_label.fit_content = true
 	card_target_preview_label.scroll_active = false
-	card_target_preview_label.custom_minimum_size = Vector2(0, 72)
+	card_target_preview_label.custom_minimum_size = Vector2(0, 100)
 	deck_layout.add_child(card_target_preview_label)
 
 	var hand_scroll := ScrollContainer.new()
@@ -1932,6 +1940,42 @@ func _refresh_hero_class_selector() -> void:
 		_style_start_hero_class_button(button, _get_hero_class_entry(class_id), class_id == selected_hero_class_id)
 
 
+func _build_reward_artifact_panel(parent: VBoxContainer) -> void:
+	var panel := PanelContainer.new()
+	panel.name = "ArenaRewardArtifacts"
+	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_style_play_panel(panel, Color(0.064, 0.050, 0.033, 0.84), Color(1.0, 0.60, 0.24, 0.72), "cue")
+	parent.add_child(panel)
+
+	var layout := VBoxContainer.new()
+	layout.name = "ArenaRewardArtifactLayout"
+	layout.add_theme_constant_override("separation", 5)
+	panel.add_child(layout)
+
+	var title := Label.new()
+	title.name = "ArenaRewardArtifactsTitle"
+	title.text = "ARENA ARTIFACTS"
+	title.add_theme_font_size_override("font_size", 13)
+	title.add_theme_color_override("font_color", Color(1.0, 0.82, 0.42))
+	layout.add_child(title)
+
+	reward_artifact_row = HBoxContainer.new()
+	reward_artifact_row.name = "RewardArtifactRow"
+	reward_artifact_row.add_theme_constant_override("separation", 6)
+	layout.add_child(reward_artifact_row)
+
+	reward_artifact_detail_label = RichTextLabel.new()
+	reward_artifact_detail_label.name = "RewardArtifactDetail"
+	reward_artifact_detail_label.bbcode_enabled = true
+	reward_artifact_detail_label.fit_content = true
+	reward_artifact_detail_label.scroll_active = false
+	reward_artifact_detail_label.custom_minimum_size = Vector2(0, 64)
+	reward_artifact_detail_label.add_theme_font_size_override("normal_font_size", 12)
+	reward_artifact_detail_label.add_theme_color_override("default_color", Color(0.90, 0.92, 0.93))
+	layout.add_child(reward_artifact_detail_label)
+	_refresh_reward_artifact_cards()
+
+
 func _style_start_hero_class_button(button: Button, entry: Dictionary, active: bool) -> void:
 	if button == null:
 		return
@@ -2091,7 +2135,7 @@ func _apply_phase35_default_layout(
 	first_play_path_label.custom_minimum_size = Vector2(0, 50)
 	first_play_step_row.custom_minimum_size = Vector2(0, 34)
 	card_action_hint_label.custom_minimum_size = Vector2(0, 48)
-	card_target_preview_label.custom_minimum_size = Vector2(0, 46)
+	card_target_preview_label.custom_minimum_size = Vector2(0, 74)
 	action_cue_panel.custom_minimum_size = Vector2(0, 72)
 	if first_play_coach_panel != null:
 		first_play_coach_panel.custom_minimum_size = Vector2(0, 38)
@@ -2222,6 +2266,9 @@ func _on_log_requested(message: String) -> void:
 func _on_next_phase_pressed() -> void:
 	if run_flow_state == RUN_FLOW_START:
 		_on_start_run_pressed()
+		return
+	if arena_payout_pending:
+		_on_arena_payout_continue_pressed()
 		return
 	if run_flow_state == RUN_FLOW_NEXT_ENCOUNTER:
 		_on_next_encounter_pressed()
@@ -2614,7 +2661,7 @@ func _refresh_arena_payout_panel() -> void:
 		arena_payout_label.text = _get_arena_payout_text(pending_arena_result)
 	if arena_payout_continue_button != null:
 		arena_payout_continue_button.disabled = not arena_payout_pending
-		arena_payout_continue_button.text = "View Run Results" if _arena_result_ends_run() else "Start Next Hand"
+		arena_payout_continue_button.text = "VIEW RUN RESULTS" if _arena_result_ends_run() else "COLLECT PAYOUT - BUILD NEXT HAND"
 		_style_compact_button(arena_payout_continue_button, arena_payout_pending, FEEDBACK_CARD_COLOR, "Collect the FPS arena payout and unlock the next prep hand.")
 
 
@@ -2651,7 +2698,9 @@ func _get_arena_payout_text(result: Dictionary) -> String:
 		String(result.get("class_passive", "Ante Guard")),
 		_count_ability_uses(result.get("ability_uses", {}))
 	]
-	return "%s\n%s\n%s\n%s\n%s\n%s Wave %d: %d kills, %.0f%% hit rate, %.1fs, %s." % [
+	var next_line := "Next: collect this payout, then slot/burn/upgrade the new hand for the next FPS arena."
+	return "[center][font_size=26][b]ARENA PAYOUT READY[/b][/font_size]\n%s[/center]\n\n[b]%s[/b]\n%s\n%s\n%s\n%s\n%s Wave %d: %d kills, %.0f%% hit rate, %.1fs, %s." % [
+		next_line,
 		headline,
 		economy_line,
 		effects_line,
@@ -3592,6 +3641,7 @@ func _refresh_loadout_ui() -> void:
 		objective_plan_label.tooltip_text = "The card table sends objective_mode=%s through the ArenaBridge payload." % preview_objective_mode
 	if reward_mods_label != null:
 		reward_mods_label.text = _get_reward_mods_label_text()
+	_refresh_reward_artifact_cards()
 	if armory_plan_label != null:
 		armory_plan_label.text = _get_armory_plan_text(preview_objective_mode)
 	_refresh_hero_class_selector()
@@ -3901,6 +3951,178 @@ func _get_reward_mods_label_text() -> String:
 		arena_wounds_total,
 		suffix
 	]
+
+
+func _refresh_reward_artifact_cards() -> void:
+	if reward_artifact_row == null or reward_artifact_detail_label == null:
+		return
+	for child in reward_artifact_row.get_children():
+		child.queue_free()
+	var artifacts := _get_reward_artifact_snapshots()
+	if artifacts.is_empty():
+		selected_reward_artifact_index = 0
+		var empty_card := Button.new()
+		empty_card.name = "RewardArtifactEmpty"
+		empty_card.text = "NO ARTIFACTS\nCLEAR ARENA"
+		empty_card.disabled = true
+		empty_card.focus_mode = Control.FOCUS_NONE
+		empty_card.custom_minimum_size = Vector2(128, 58)
+		empty_card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		reward_artifact_row.add_child(empty_card)
+		_style_reward_artifact_button(empty_card, Color(0.48, 0.48, 0.50), Color(0.32, 0.30, 0.26), false)
+		reward_artifact_detail_label.text = "Arena reward mods become inspectable artifacts here after FPS payouts. Spend Card XP below to upgrade or mutate hand cards."
+		return
+	selected_reward_artifact_index = clampi(selected_reward_artifact_index, 0, artifacts.size() - 1)
+	for index in range(artifacts.size()):
+		var artifact: Dictionary = artifacts[index]
+		var card_button := Button.new()
+		card_button.name = "RewardArtifactCard%d" % index
+		card_button.text = "%s\n%s\n%s" % [
+			String(artifact.get("icon", "MOD")),
+			_truncate_reward_artifact_label(String(artifact.get("label", "Arena Mod")), 16).to_upper(),
+			String(artifact.get("rarity", "Common")).to_upper()
+		]
+		card_button.focus_mode = Control.FOCUS_NONE
+		card_button.clip_text = true
+		card_button.custom_minimum_size = Vector2(124, 66)
+		card_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		card_button.set_meta("artifact_index", index)
+		card_button.pressed.connect(_on_reward_artifact_pressed.bind(index))
+		var bias_modes: Array[String] = artifact.get("bias_modes", [])
+		card_button.tooltip_text = "%s %s: %s Bias: %s" % [
+			String(artifact.get("rarity", "Common")),
+			String(artifact.get("label", "Arena Mod")),
+			String(artifact.get("summary", "")),
+			_join_string_array(bias_modes, ", ") if not bias_modes.is_empty() else "none"
+		]
+		reward_artifact_row.add_child(card_button)
+		_style_reward_artifact_button(
+			card_button,
+			artifact.get("frame_color", Color(0.70, 0.70, 0.72)),
+			artifact.get("kind_color", FEEDBACK_CARD_COLOR),
+			index == selected_reward_artifact_index
+		)
+	reward_artifact_detail_label.text = _get_reward_artifact_detail_text(selected_reward_artifact_index)
+
+
+func _get_reward_artifact_snapshots() -> Array[Dictionary]:
+	var artifacts: Array[Dictionary] = []
+	for index in range(active_reward_mods.size()):
+		var mod: Dictionary = active_reward_mods[index]
+		var kind := String(mod.get("kind", "chips"))
+		var rarity := String(mod.get("rarity", "Common"))
+		artifacts.append({
+			"id": String(mod.get("id", "artifact_%d" % index)),
+			"index": index,
+			"label": String(mod.get("label", "Arena Mod")),
+			"kind": kind,
+			"amount": int(mod.get("amount", 0)),
+			"rarity": rarity,
+			"icon": _get_reward_artifact_icon(kind),
+			"frame_color": _get_reward_artifact_frame_color(rarity),
+			"kind_color": _get_reward_artifact_kind_color(kind),
+			"objective_label": String(mod.get("objective_label", _get_objective_label(String(mod.get("objective_mode", "hold_pot"))))),
+			"bias_modes": _string_array_from_variant(mod.get("bias_modes", [])),
+			"summary": String(mod.get("summary", _get_reward_mod_summary(String(mod.get("label", "Arena Mod")), kind, int(mod.get("amount", 0))))),
+			"card_xp": int(mod.get("card_xp", 0)),
+			"wounds": int(mod.get("wounds", 0)),
+			"source": String(mod.get("source", "fps_arena"))
+		})
+	return artifacts
+
+
+func _get_reward_artifact_detail_text(index: int) -> String:
+	var artifacts := _get_reward_artifact_snapshots()
+	if artifacts.is_empty():
+		return "No arena artifacts yet."
+	index = clampi(index, 0, artifacts.size() - 1)
+	var artifact: Dictionary = artifacts[index]
+	var bias_modes: Array[String] = artifact.get("bias_modes", [])
+	var bias_text := _join_string_array(bias_modes, ", ") if not bias_modes.is_empty() else "none"
+	return "[b]%s %s[/b]  %s\n%s\nBias: %s | Card XP earned: %d | Wounds carried: %d" % [
+		String(artifact.get("rarity", "Common")).to_upper(),
+		_safe_bbcode_text(String(artifact.get("label", "Arena Mod"))),
+		String(artifact.get("icon", "MOD")),
+		_safe_bbcode_text(String(artifact.get("summary", ""))),
+		_safe_bbcode_text(bias_text.to_upper()),
+		int(artifact.get("card_xp", 0)),
+		int(artifact.get("wounds", 0))
+	]
+
+
+func _on_reward_artifact_pressed(index: int) -> void:
+	selected_reward_artifact_index = index
+	_refresh_reward_artifact_cards()
+	var artifacts := _get_reward_artifact_snapshots()
+	if not artifacts.is_empty():
+		var artifact: Dictionary = artifacts[clampi(index, 0, artifacts.size() - 1)]
+		_push_feedback("Inspected %s artifact: %s." % [String(artifact.get("rarity", "Common")), String(artifact.get("label", "Arena Mod"))], artifact.get("frame_color", FEEDBACK_CARD_COLOR), reward_artifact_row)
+
+
+func _style_reward_artifact_button(button: Button, frame_color: Color, kind_color: Color, active: bool) -> void:
+	var normal := StyleBoxFlat.new()
+	normal.bg_color = Color(kind_color.r * 0.16, kind_color.g * 0.14, kind_color.b * 0.12, 0.62 if active else 0.38)
+	normal.border_color = Color(frame_color.r, frame_color.g, frame_color.b, 1.0 if active else 0.62)
+	normal.set_border_width_all(3 if active else 2)
+	normal.set_corner_radius_all(8)
+	normal.content_margin_left = 8
+	normal.content_margin_top = 7
+	normal.content_margin_right = 8
+	normal.content_margin_bottom = 7
+	button.add_theme_stylebox_override("normal", normal)
+	var hover := normal.duplicate() as StyleBoxFlat
+	hover.bg_color = Color(kind_color.r * 0.24, kind_color.g * 0.20, kind_color.b * 0.16, 0.78)
+	hover.border_color = frame_color
+	hover.set_border_width_all(3)
+	button.add_theme_stylebox_override("hover", hover)
+	button.add_theme_stylebox_override("pressed", hover)
+	button.add_theme_stylebox_override("focus", hover)
+	button.add_theme_color_override("font_color", Color(0.98, 0.96, 0.90))
+	button.add_theme_font_size_override("font_size", 12)
+
+
+func _get_reward_artifact_icon(kind: String) -> String:
+	match kind:
+		"damage":
+			return "DMG"
+		"armor":
+			return "ARM"
+		"ammo":
+			return "AMM"
+		_:
+			return "MOD"
+
+
+func _get_reward_artifact_frame_color(rarity: String) -> Color:
+	match rarity.to_lower():
+		"rare":
+			return Color(1.0, 0.72, 0.18)
+		"uncommon":
+			return Color(0.36, 0.92, 0.72)
+		_:
+			return Color(0.72, 0.76, 0.80)
+
+
+func _get_reward_artifact_kind_color(kind: String) -> Color:
+	match kind:
+		"damage":
+			return FEEDBACK_DAMAGE_COLOR
+		"armor":
+			return FEEDBACK_GUARD_COLOR
+		"ammo":
+			return FEEDBACK_MOVE_COLOR
+		_:
+			return FEEDBACK_CARD_COLOR
+
+
+func _truncate_reward_artifact_label(label: String, max_len: int) -> String:
+	if label.length() <= max_len:
+		return label
+	return "%s." % label.substr(0, maxi(1, max_len - 1))
+
+
+func _safe_bbcode_text(text: String) -> String:
+	return text.replace("[", "(").replace("]", ")")
 
 
 func _get_armory_plan_text(target_mode: String) -> String:
@@ -5431,7 +5653,7 @@ func _refresh_action_controls() -> void:
 	var shell_blocks_combat := run_flow_state != RUN_FLOW_COMBAT
 	var payout_blocks_combat := arena_payout_pending
 
-	next_phase_button.disabled = shell_blocks_combat or payout_blocks_combat or not can_debug_adjust
+	next_phase_button.disabled = shell_blocks_combat or (not payout_blocks_combat and not can_debug_adjust)
 	next_phase_button.visible = run_flow_state == RUN_FLOW_COMBAT
 	if run_flow_state == RUN_FLOW_START:
 		next_phase_button.text = "Deal In"
@@ -5447,7 +5669,7 @@ func _refresh_action_controls() -> void:
 		next_phase_button.text = "Choose Reward"
 	else:
 		next_phase_button.text = "Combat Over" if not can_debug_adjust else String(PHASE_ACTION_LABELS.get(phase_key, "Continue"))
-	_refresh_primary_action_emphasis(shell_blocks_combat or payout_blocks_combat, can_debug_adjust and not payout_blocks_combat, phase_key)
+	_refresh_primary_action_emphasis(shell_blocks_combat, payout_blocks_combat or can_debug_adjust, phase_key)
 	reset_grid_button.disabled = payout_blocks_combat or not can_debug_adjust
 	draw_button.disabled = payout_blocks_combat or not can_debug_adjust
 	discard_hand_button.disabled = payout_blocks_combat or not can_debug_adjust
@@ -5661,6 +5883,16 @@ func _refresh_battlefield_focus() -> void:
 	battlefield_focus_label.visible = true
 	if battlefield_callout_label != null:
 		battlefield_callout_label.visible = true
+	if arena_payout_pending:
+		battlefield_focus_label.text = "ARENA PAYOUT READY  |  COLLECT REWARD  |  BUILD NEXT LOADOUT"
+		battlefield_focus_label.tooltip_text = "The FPS wave is finished. Collect the payout first; the tactical board is hidden because there is no target decision right now."
+		battlefield_focus_label.add_theme_color_override("font_color", FEEDBACK_CARD_COLOR)
+		if battlefield_callout_label != null:
+			battlefield_callout_label.text = "Collect payout to unlock the new hand, then slot/burn/upgrade cards for the next FPS arena."
+			battlefield_callout_label.add_theme_color_override("font_color", FEEDBACK_CARD_COLOR)
+		if opponent_title_label != null:
+			opponent_title_label.text = "Arena Payout"
+		return
 	var target := _get_selected_enemy_target()
 	var target_name := String(target.get("name", "Enemy")) if not target.is_empty() else "none"
 	var target_role := _get_enemy_battle_role(target) if not target.is_empty() else "Enemy fighter"
@@ -5826,6 +6058,8 @@ func _on_juicy_button_pressed(button: Button) -> void:
 func _get_continue_button_hint(phase_key: String) -> String:
 	if run_flow_state == RUN_FLOW_START:
 		return "Deal In is the only live action."
+	if arena_payout_pending:
+		return "Collect the arena payout, then build the next hand."
 	if run_flow_state == RUN_FLOW_REWARD:
 		return "Choose or skip the reward before combat continues."
 	if run_flow_state == RUN_FLOW_NEXT_ENCOUNTER:
@@ -7313,7 +7547,7 @@ func _refresh_targeting_options() -> void:
 	for cell in move_cells:
 		if typeof(cell) != TYPE_VECTOR2I:
 			continue
-		movement_cell_option.add_item("Move: %s" % combat_grid.call("format_cell", cell))
+		movement_cell_option.add_item("Route: %s" % combat_grid.call("format_cell", cell))
 		movement_cell_option.set_item_metadata(movement_cell_option.item_count - 1, cell)
 		if cell == selected_cell:
 			movement_cell_option.select(movement_cell_option.item_count - 1)
@@ -7837,6 +8071,7 @@ func _get_active_first_play_step_indices(session_state: Dictionary, _run_state: 
 
 func _sync_live_text_density() -> void:
 	var compact_live := run_flow_state == RUN_FLOW_COMBAT and not debug_controls_visible
+	var payout_stage := run_flow_state == RUN_FLOW_COMBAT and arena_payout_pending
 	var title_plate := find_child("TitlePlaque", true, false)
 	if title_plate is Control:
 		(title_plate as Control).visible = not compact_live
@@ -7847,7 +8082,7 @@ func _sync_live_text_density() -> void:
 		(body as Control).visible = run_flow_state == RUN_FLOW_COMBAT
 	var deck_panel_node := find_child("DeckPanel", true, false)
 	if deck_panel_node is Control:
-		(deck_panel_node as Control).visible = run_flow_state == RUN_FLOW_COMBAT
+		(deck_panel_node as Control).visible = run_flow_state == RUN_FLOW_COMBAT and not payout_stage
 	var start_class_panel := find_child("StartHeroClassPanel", true, false)
 	if start_class_panel is Control:
 		(start_class_panel as Control).visible = run_flow_state == RUN_FLOW_START
@@ -7949,11 +8184,14 @@ func _sync_live_text_density() -> void:
 	if shooter_economy_label != null:
 		shooter_economy_label.visible = run_flow_state == RUN_FLOW_COMBAT
 	if arena_payout_panel != null:
-		arena_payout_panel.visible = run_flow_state == RUN_FLOW_COMBAT and arena_payout_pending
+		arena_payout_panel.visible = payout_stage
+	var table_row := find_child("TableRow", true, false)
+	if table_row is Control:
+		(table_row as Control).visible = run_flow_state == RUN_FLOW_COMBAT and not payout_stage
 	if loadout_slot_row != null:
-		loadout_slot_row.visible = run_flow_state == RUN_FLOW_COMBAT
+		loadout_slot_row.visible = run_flow_state == RUN_FLOW_COMBAT and not payout_stage
 	if hand_action_button_row != null:
-		hand_action_button_row.visible = run_flow_state == RUN_FLOW_COMBAT
+		hand_action_button_row.visible = run_flow_state == RUN_FLOW_COMBAT and not payout_stage
 	if combat_feedback_label != null:
 		combat_feedback_label.visible = show_expanded_combat_detail
 
@@ -8674,7 +8912,9 @@ func _refresh_card_target_preview() -> void:
 		_get_preview_card_type_label(card)
 	])
 	card_target_preview_label.append_text("Target: %s\n" % _get_card_preview_target_text(card, context))
-	card_target_preview_label.append_text("Expected: %s" % _get_card_preview_effect_text(card, context))
+	card_target_preview_label.append_text("Expected: %s\n" % _get_card_preview_effect_text(card, context))
+	card_target_preview_label.append_text("FPS Bridge: %s\n" % _get_card_fps_bridge_text(card, context))
+	card_target_preview_label.append_text("Table: %s" % _get_card_table_bridge_text(card, context))
 	_preview_card_grid_focus(card, context)
 	_sync_target_focus()
 
@@ -8766,6 +9006,87 @@ func _get_card_preview_effect_text(card: Resource, context: Dictionary) -> Strin
 			return "Gain 5 Guard and 1 Nerve."
 		_:
 			return "Resolver effect not previewed yet."
+
+
+func _get_card_fps_bridge_text(card: Resource, _context: Dictionary) -> String:
+	var style := _get_card_vfx_style(card)
+	var mode := _get_objective_mode_for_card(card)
+	var objective := _get_objective_label(mode)
+	var loadout_role := _get_card_bridge_role_label(card)
+	var upgrade_summary := _get_card_upgrade_summary(card)
+	match style:
+		&"attack":
+			return "%s becomes the arena weapon; best pressure is %s. %s" % [loadout_role, objective, upgrade_summary]
+		&"move":
+			return "%s becomes dash/route utility; it pushes %s and escape timing. %s" % [loadout_role, objective, upgrade_summary]
+		&"guard":
+			return "%s becomes armor/sustain; it stabilizes %s fights. %s" % [loadout_role, objective, upgrade_summary]
+		&"read":
+			return "%s becomes reveal/mark utility; it opens %s picks. %s" % [loadout_role, objective, upgrade_summary]
+		&"trap":
+			return "%s becomes snare/choke utility; it locks %s lanes. %s" % [loadout_role, objective, upgrade_summary]
+		&"ritual":
+			return "%s becomes overclock/wager tech; it spikes %s payout risk. %s" % [loadout_role, objective, upgrade_summary]
+		&"bluff":
+			return "%s becomes wager/passive economy; it bends %s rewards. %s" % [loadout_role, objective, upgrade_summary]
+		_:
+			return "%s exports into the FPS loadout for %s. %s" % [loadout_role, objective, upgrade_summary]
+
+
+func _get_card_table_bridge_text(card: Resource, context: Dictionary) -> String:
+	var map_context: Dictionary = context.get("map_context", {})
+	var player_feature: Dictionary = map_context.get("player_feature", {})
+	var target_feature: Dictionary = map_context.get("target_feature", {})
+	var callouts: Array[String] = []
+	var player_label := String(player_feature.get("short_label", ""))
+	var target_label := String(target_feature.get("short_label", ""))
+	if not player_label.is_empty():
+		callouts.append("from %s" % player_label)
+	if not target_label.is_empty() and target_label != player_label:
+		callouts.append("to %s" % target_label)
+	var bonus_text := _get_card_table_bonus_text(card, player_feature, target_feature)
+	if callouts.is_empty():
+		callouts.append("uses the active Crossfire callout")
+	if not bonus_text.is_empty():
+		callouts.append(bonus_text)
+	return _join_string_array(callouts, " | ")
+
+
+func _get_card_bridge_role_label(card: Resource) -> String:
+	match _get_card_vfx_style(card):
+		&"attack":
+			return "Weapon slot"
+		&"move":
+			return "Mobility slot"
+		&"guard":
+			return "Armor slot"
+		&"read":
+			return "Intel slot"
+		&"trap":
+			return "Control slot"
+		&"ritual":
+			return "Wager slot"
+		&"bluff":
+			return "Passive slot"
+		_:
+			return "Flex slot"
+
+
+func _get_card_table_bonus_text(card: Resource, player_feature: Dictionary, target_feature: Dictionary) -> String:
+	var style := _get_card_vfx_style(card)
+	if style == &"attack":
+		var damage_bonus := int(player_feature.get("card_damage_bonus", 0))
+		if damage_bonus > 0:
+			return "+%d table damage from %s" % [damage_bonus, String(player_feature.get("label", "map"))]
+	if style == &"guard":
+		var cover_bonus := int(player_feature.get("incoming_damage_mitigation", 0))
+		if cover_bonus > 0:
+			return "%d lane mitigation from %s" % [cover_bonus, String(player_feature.get("label", "cover"))]
+	if style == &"trap" and not target_feature.is_empty():
+		return "trap pressure lands on %s" % String(target_feature.get("label", "target cell"))
+	if style == &"move" and not target_feature.is_empty():
+		return "route commits to %s" % String(target_feature.get("label", "move cell"))
+	return ""
 
 
 func _preview_card_grid_focus(card: Resource, context: Dictionary) -> void:
