@@ -30,6 +30,13 @@ func _verify_menu_scene() -> void:
 		_fail("Main menu should expose Tactical Map Viewer.")
 	if menu.find_child("CrossfireMapPreview", true, false) == null:
 		_fail("Main menu should show the Crossfire map preview.")
+	var phase_buttons := menu.find_children("*", "Button", true, false)
+	var has_payout_check := false
+	for button in phase_buttons:
+		if String((button as Button).text).contains("Arena Return Payout"):
+			has_payout_check = true
+	if not has_payout_check:
+		_fail("Main menu should expose the arena return payout check.")
 	menu.queue_free()
 
 

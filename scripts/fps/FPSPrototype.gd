@@ -21,6 +21,9 @@ const DEFAULT_AIM_SETTINGS := {
 	"mouse_sensitivity": 0.00155,
 	"fov": 74.0,
 	"sprint_fov_add": 5.0,
+	"ads_fov": 56.0,
+	"ads_sensitivity_scale": 0.62,
+	"ads_toggle": false,
 	"invert_y": false
 }
 const DEFAULT_CROSSHAIR_SETTINGS := {
@@ -959,13 +962,19 @@ func _build_settings_panel(root: Control) -> void:
 	aim_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	aim_hint.add_theme_font_size_override("font_size", 13)
 	aim_tab.add_child(aim_hint)
-	_add_slider_row(aim_tab, "Sensitivity", 0.00045, 0.0045, 0.00005, float(aim_settings.get("mouse_sensitivity", 0.00155)), func(value: float) -> void:
+	_add_setting_section(aim_tab, "Mouse")
+	_add_slider_row(aim_tab, "Look Sensitivity", 0.00045, 0.0045, 0.00005, float(aim_settings.get("mouse_sensitivity", 0.00155)), func(value: float) -> void:
 		aim_settings["mouse_sensitivity"] = value
 		_apply_player_settings()
 		_save_player_settings()
 	)
-	_add_slider_row(aim_tab, "Field of View", 65.0, 100.0, 1.0, float(aim_settings.get("fov", 74.0)), func(value: float) -> void:
-		aim_settings["fov"] = value
+	var ads_sensitivity_changed := func(value: float) -> void:
+		aim_settings["ads_sensitivity_scale"] = value
+		_apply_player_settings()
+		_save_player_settings()
+	_add_slider_row(aim_tab, "ADS Sens Multiplier", 0.20, 1.0, 0.01, float(aim_settings.get("ads_sensitivity_scale", 0.62)), ads_sensitivity_changed, "x")
+	_add_checkbox_row(aim_tab, "Toggle ADS", bool(aim_settings.get("ads_toggle", false)), func(enabled: bool) -> void:
+		aim_settings["ads_toggle"] = enabled
 		_apply_player_settings()
 		_save_player_settings()
 	)
@@ -974,6 +983,25 @@ func _build_settings_panel(root: Control) -> void:
 		_apply_player_settings()
 		_save_player_settings()
 	)
+	_add_setting_section(aim_tab, "Field of View")
+	var hip_fov_changed := func(value: float) -> void:
+		aim_settings["fov"] = value
+		var ads_value := float(aim_settings.get("ads_fov", 56.0))
+		if ads_value >= value:
+			aim_settings["ads_fov"] = maxf(35.0, value - 4.0)
+		_apply_player_settings()
+		_save_player_settings()
+	_add_slider_row(aim_tab, "Hip-fire FOV", 65.0, 105.0, 1.0, float(aim_settings.get("fov", 74.0)), hip_fov_changed, "deg")
+	var sprint_fov_changed := func(value: float) -> void:
+		aim_settings["sprint_fov_add"] = value
+		_apply_player_settings()
+		_save_player_settings()
+	_add_slider_row(aim_tab, "Sprint FOV Boost", 0.0, 12.0, 1.0, float(aim_settings.get("sprint_fov_add", 5.0)), sprint_fov_changed, "deg")
+	var ads_fov_changed := func(value: float) -> void:
+		aim_settings["ads_fov"] = minf(value, float(aim_settings.get("fov", 74.0)) - 4.0)
+		_apply_player_settings()
+		_save_player_settings()
+	_add_slider_row(aim_tab, "ADS FOV", 35.0, 90.0, 1.0, float(aim_settings.get("ads_fov", 56.0)), ads_fov_changed, "deg")
 
 	var preview := Control.new()
 	preview.name = "CrosshairPreview"
@@ -1145,13 +1173,13 @@ func _build_reward_panel(root: Control) -> void:
 		row.add_child(button)
 
 
-func _add_slider_row(parent: VBoxContainer, label_text: String, min_value: float, max_value: float, step: float, value: float, callback: Callable) -> void:
+func _add_slider_row(parent: VBoxContainer, label_text: String, min_value: float, max_value: float, step: float, value: float, callback: Callable, value_suffix: String = "") -> void:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 10)
 	parent.add_child(row)
 	var label := Label.new()
 	label.text = label_text
-	label.custom_minimum_size = Vector2(120, 0)
+	label.custom_minimum_size = Vector2(160, 0)
 	row.add_child(label)
 	var slider := HSlider.new()
 	slider.min_value = min_value
@@ -1164,10 +1192,11 @@ func _add_slider_row(parent: VBoxContainer, label_text: String, min_value: float
 	)
 	row.add_child(slider)
 	var value_label := Label.new()
-	value_label.custom_minimum_size = Vector2(58, 0)
-	value_label.text = _format_setting_value(value)
+	value_label.custom_minimum_size = Vector2(74, 0)
+	value_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	value_label.text = _format_setting_value(value, value_suffix)
 	slider.value_changed.connect(func(new_value: float) -> void:
-		value_label.text = _format_setting_value(new_value)
+		value_label.text = _format_setting_value(new_value, value_suffix)
 	)
 	row.add_child(value_label)
 
@@ -1180,6 +1209,14 @@ func _add_checkbox_row(parent: VBoxContainer, label_text: String, enabled: bool,
 		callback.call(new_value)
 	)
 	parent.add_child(checkbox)
+
+
+func _add_setting_section(parent: VBoxContainer, title_text: String) -> void:
+	var title := Label.new()
+	title.text = title_text
+	title.add_theme_font_size_override("font_size", 18)
+	title.add_theme_color_override("font_color", Color(0.78, 0.94, 1.0))
+	parent.add_child(title)
 
 
 func _add_keybind_group(parent: VBoxContainer, title_text: String, group: String) -> void:
@@ -1227,7 +1264,13 @@ func _add_keybind_row(parent: VBoxContainer, binding: Dictionary) -> void:
 	keybind_buttons[action] = {"button": button, "label": current, "warning": warning}
 
 
-func _format_setting_value(value: float) -> String:
+func _format_setting_value(value: float, suffix: String = "") -> String:
+	if suffix == "deg":
+		return "%d deg" % int(roundf(value))
+	if suffix == "x":
+		return "%.2fx" % value
+	if suffix == "%":
+		return "%d%%" % int(roundf(value * 100.0))
 	if value < 0.01:
 		return "%.4f" % value
 	return "%.1f" % value
@@ -1244,6 +1287,7 @@ func _get_rebindable_actions() -> Array[Dictionary]:
 		{"action": &"fps_crouch", "label": "Crouch", "group": "movement", "default_key": KEY_CTRL, "default_joy_button": JOY_BUTTON_RIGHT_STICK},
 		{"action": &"fps_reload", "label": "Reload", "group": "combat", "default_key": KEY_R, "default_joy_button": JOY_BUTTON_X},
 		{"action": &"fps_fire", "label": "Fire", "group": "combat", "default_mouse": MOUSE_BUTTON_LEFT, "default_joy_axis": JOY_AXIS_TRIGGER_RIGHT, "default_joy_axis_value": 1.0},
+		{"action": &"fps_ads", "label": "Aim Down Sights", "group": "combat", "default_mouse": MOUSE_BUTTON_RIGHT, "default_joy_axis": JOY_AXIS_TRIGGER_LEFT, "default_joy_axis_value": 1.0},
 		{"action": &"fps_quick_restart", "label": "Restart Encounter", "group": "system", "default_key": KEY_F5, "default_joy_button": JOY_BUTTON_START},
 		{"action": &"fps_ability_1", "label": "Ability 1", "group": "ability", "default_key": KEY_Q, "default_joy_button": JOY_BUTTON_LEFT_SHOULDER},
 		{"action": &"fps_ability_2", "label": "Ability 2", "group": "ability", "default_key": KEY_E, "default_joy_button": JOY_BUTTON_RIGHT_SHOULDER},
@@ -1683,6 +1727,9 @@ func _load_player_settings() -> void:
 	aim_settings["mouse_sensitivity"] = float(config.get_value("aim", "mouse_sensitivity", aim_settings.get("mouse_sensitivity", 0.00155)))
 	aim_settings["fov"] = float(config.get_value("aim", "fov", aim_settings.get("fov", 74.0)))
 	aim_settings["sprint_fov_add"] = float(config.get_value("aim", "sprint_fov_add", aim_settings.get("sprint_fov_add", 5.0)))
+	aim_settings["ads_fov"] = float(config.get_value("aim", "ads_fov", aim_settings.get("ads_fov", 56.0)))
+	aim_settings["ads_sensitivity_scale"] = float(config.get_value("aim", "ads_sensitivity_scale", aim_settings.get("ads_sensitivity_scale", 0.62)))
+	aim_settings["ads_toggle"] = bool(config.get_value("aim", "ads_toggle", aim_settings.get("ads_toggle", false)))
 	aim_settings["invert_y"] = bool(config.get_value("aim", "invert_y", aim_settings.get("invert_y", false)))
 	crosshair_settings["gap"] = float(config.get_value("crosshair", "gap", crosshair_settings.get("gap", 7.0)))
 	crosshair_settings["length"] = float(config.get_value("crosshair", "length", crosshair_settings.get("length", 8.0)))
@@ -1706,6 +1753,9 @@ func _save_player_settings() -> void:
 	config.set_value("aim", "mouse_sensitivity", aim_settings.get("mouse_sensitivity", 0.00155))
 	config.set_value("aim", "fov", aim_settings.get("fov", 74.0))
 	config.set_value("aim", "sprint_fov_add", aim_settings.get("sprint_fov_add", 5.0))
+	config.set_value("aim", "ads_fov", aim_settings.get("ads_fov", 56.0))
+	config.set_value("aim", "ads_sensitivity_scale", aim_settings.get("ads_sensitivity_scale", 0.62))
+	config.set_value("aim", "ads_toggle", aim_settings.get("ads_toggle", false))
 	config.set_value("aim", "invert_y", aim_settings.get("invert_y", false))
 	config.set_value("crosshair", "color", _get_crosshair_color())
 	config.set_value("crosshair", "gap", crosshair_settings.get("gap", 7.0))

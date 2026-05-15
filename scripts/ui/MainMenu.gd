@@ -8,6 +8,7 @@ const TACTICAL_MAP_SCRIPT := preload("res://scripts/grid/TacticalMapDefinition.g
 
 const PHASE_CHECKS := [
 	{"label": "FPS Smoke Check", "scene": "res://tests/debug/FPSPrototypeCheck.tscn"},
+	{"label": "Arena Return Payout Check", "scene": "res://tests/debug/Phase69ArenaReturnCheck.tscn"},
 	{"label": "Map Rules Check", "scene": "res://tests/debug/Phase61TacticalMapCheck.tscn"},
 	{"label": "Card Gameplay Check", "scene": "res://tests/debug/Phase45GameplayMechanicsCheck.tscn"},
 	{"label": "Responsive UI Check", "scene": "res://tests/debug/Phase44ResponsivenessGuidanceCheck.tscn"}

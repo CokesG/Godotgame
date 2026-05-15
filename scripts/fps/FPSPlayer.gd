@@ -20,6 +20,10 @@ const FPS_WEAPON_SCRIPT := preload("res://scripts/fps/FPSWeapon.gd")
 @export var mouse_sensitivity := 0.00155
 @export var base_fov := 74.0
 @export var sprint_fov_add := 5.0
+@export var ads_fov := 56.0
+@export var ads_sensitivity_scale := 0.62
+@export var ads_toggle := false
+@export var ads_transition_speed := 12.0
 @export var standing_height := 1.82
 @export var crouching_height := 1.16
 @export var standing_eye_height := 1.61
@@ -54,6 +58,7 @@ var last_spawn_position := Vector3.ZERO
 var highest_horizontal_speed := 9.2
 var input_enabled := true
 var invert_y := false
+var ads_active := false
 
 
 func _ready() -> void:
@@ -92,6 +97,17 @@ func _input(event: InputEvent) -> void:
 	if dead:
 		return
 
+	if event.is_action_pressed("fps_ads"):
+		if event is InputEventMouseButton and not mouse_captured:
+			_capture_mouse()
+		ads_active = not ads_active if ads_toggle else true
+		get_viewport().set_input_as_handled()
+		return
+	if event.is_action_released("fps_ads") and not ads_toggle:
+		ads_active = false
+		get_viewport().set_input_as_handled()
+		return
+
 	if event is InputEventMouseButton and event.is_action_pressed("fps_fire") and not mouse_captured:
 		_capture_mouse()
 
@@ -106,16 +122,18 @@ func _input(event: InputEvent) -> void:
 
 func _physics_process(delta: float) -> void:
 	if dead or not input_enabled:
+		ads_active = false
 		velocity.x = move_toward(velocity.x, 0.0, ground_friction * delta)
 		velocity.z = move_toward(velocity.z, 0.0, ground_friction * delta)
 		velocity.y -= gravity * delta
 		move_and_slide()
-		_update_camera(delta, Vector2.ZERO, false, false)
+		_update_camera(delta, Vector2.ZERO, false, false, false)
 		return
 
 	var input_vec := Input.get_vector("fps_move_left", "fps_move_right", "fps_move_forward", "fps_move_back")
 	var wants_crouch := Input.is_action_pressed("fps_crouch")
-	var wants_sprint := Input.is_action_pressed("fps_sprint") and input_vec.y < -0.2 and not wants_crouch
+	var wants_ads := is_ads_active()
+	var wants_sprint := Input.is_action_pressed("fps_sprint") and input_vec.y < -0.2 and not wants_crouch and not wants_ads
 	var grounded := is_on_floor()
 
 	if Input.is_action_just_pressed("fps_jump"):
@@ -164,7 +182,7 @@ func _physics_process(delta: float) -> void:
 	move_and_slide()
 
 	_update_stance(delta, wants_crouch)
-	_update_camera(delta, input_vec, wants_sprint, wants_crouch)
+	_update_camera(delta, input_vec, wants_sprint, wants_crouch, wants_ads)
 	was_on_floor = is_on_floor()
 
 
@@ -194,6 +212,7 @@ func reset_for_arena(spawn_position: Vector3) -> void:
 	velocity = Vector3.ZERO
 	health = max_health
 	dead = false
+	ads_active = false
 	pitch = 0.0
 	recoil_offset = Vector2.ZERO
 	landing_kick = 0.0
@@ -225,11 +244,16 @@ func dash_forward(strength: float = 11.0) -> void:
 
 func apply_aim_settings(settings: Dictionary) -> void:
 	mouse_sensitivity = float(settings.get("mouse_sensitivity", mouse_sensitivity))
-	base_fov = float(settings.get("fov", base_fov))
-	sprint_fov_add = float(settings.get("sprint_fov_add", sprint_fov_add))
+	base_fov = clampf(float(settings.get("fov", base_fov)), 65.0, 105.0)
+	sprint_fov_add = clampf(float(settings.get("sprint_fov_add", sprint_fov_add)), 0.0, 12.0)
+	ads_fov = clampf(float(settings.get("ads_fov", ads_fov)), 35.0, 95.0)
+	if ads_fov >= base_fov:
+		ads_fov = maxf(35.0, base_fov - 4.0)
+	ads_sensitivity_scale = clampf(float(settings.get("ads_sensitivity_scale", ads_sensitivity_scale)), 0.20, 1.0)
+	ads_toggle = bool(settings.get("ads_toggle", ads_toggle))
 	invert_y = bool(settings.get("invert_y", invert_y))
 	if camera != null:
-		camera.fov = base_fov
+		camera.fov = _get_target_fov(false, 0.0, is_ads_active())
 
 
 func set_gameplay_input_enabled(enabled: bool) -> void:
@@ -237,7 +261,20 @@ func set_gameplay_input_enabled(enabled: bool) -> void:
 	if enabled:
 		_capture_mouse()
 	else:
+		ads_active = false
 		_release_mouse()
+
+
+func set_ads_state(active: bool) -> void:
+	ads_active = active
+
+
+func is_ads_active() -> bool:
+	return input_enabled and not dead and ads_active
+
+
+func get_ads_spread_multiplier() -> float:
+	return 0.56 if is_ads_active() else 1.0
 
 
 func add_camera_impulse(amount: Vector2, fov_amount: float = 0.0) -> void:
@@ -321,7 +358,7 @@ func _update_stance(delta: float, wants_crouch: bool) -> void:
 	head.position.y = current_eye_height
 
 
-func _update_camera(delta: float, input_vec: Vector2, wants_sprint: bool, wants_crouch: bool) -> void:
+func _update_camera(delta: float, input_vec: Vector2, wants_sprint: bool, wants_crouch: bool, wants_ads: bool) -> void:
 	var horizontal_speed := get_horizontal_speed()
 	var grounded := is_on_floor()
 	if grounded and horizontal_speed > 0.18:
@@ -350,11 +387,15 @@ func _update_camera(delta: float, input_vec: Vector2, wants_sprint: bool, wants_
 	head.rotation.z = -input_vec.x * 0.018 - recoil_offset.y * 0.35
 	camera.rotation.y = recoil_offset.y
 
-	var target_fov := base_fov
-	if wants_sprint and horizontal_speed > walk_speed:
-		target_fov = base_fov + sprint_fov_add
-	target_fov += fov_impulse
+	var target_fov := _get_target_fov(wants_sprint, horizontal_speed, wants_ads)
 	camera.fov = lerpf(camera.fov, target_fov, clampf(delta * 8.0, 0.0, 1.0))
+
+
+func _get_target_fov(wants_sprint: bool, horizontal_speed: float = 0.0, wants_ads: bool = false) -> float:
+	var target_fov := ads_fov if wants_ads else base_fov
+	if not wants_ads and wants_sprint and horizontal_speed > walk_speed:
+		target_fov = base_fov + sprint_fov_add
+	return target_fov + fov_impulse
 
 
 func _capture_mouse() -> void:
@@ -370,9 +411,10 @@ func _release_mouse() -> void:
 
 
 func _apply_mouse_look(relative_motion: Vector2) -> void:
-	rotate_y(-relative_motion.x * mouse_sensitivity)
+	var active_sensitivity := mouse_sensitivity * (ads_sensitivity_scale if is_ads_active() else 1.0)
+	rotate_y(-relative_motion.x * active_sensitivity)
 	var y_sign := 1.0 if invert_y else -1.0
-	pitch = clampf(pitch + relative_motion.y * mouse_sensitivity * y_sign, deg_to_rad(-86.0), deg_to_rad(86.0))
+	pitch = clampf(pitch + relative_motion.y * active_sensitivity * y_sign, deg_to_rad(-86.0), deg_to_rad(86.0))
 	if weapon != null:
 		weapon.add_sway(relative_motion)
 

@@ -254,6 +254,7 @@ func _ready() -> void:
 	_connect_turn_manager()
 	log_label.clear()
 	_reset_run_slice()
+	_consume_pending_arena_result()
 
 
 func _process(_delta: float) -> void:
@@ -1457,6 +1458,30 @@ func _build_ui() -> void:
 	shooter_economy_label.add_theme_color_override("font_color", Color(1.0, 0.86, 0.42))
 	deck_layout.add_child(shooter_economy_label)
 
+	arena_payout_panel = PanelContainer.new()
+	arena_payout_panel.name = "ArenaPayoutPanel"
+	arena_payout_panel.visible = false
+	deck_layout.add_child(arena_payout_panel)
+
+	var arena_payout_layout := VBoxContainer.new()
+	arena_payout_layout.name = "ArenaPayoutLayout"
+	arena_payout_layout.add_theme_constant_override("separation", 6)
+	arena_payout_panel.add_child(arena_payout_layout)
+
+	arena_payout_label = RichTextLabel.new()
+	arena_payout_label.name = "ArenaPayoutLabel"
+	arena_payout_label.bbcode_enabled = true
+	arena_payout_label.fit_content = true
+	arena_payout_label.scroll_active = false
+	arena_payout_label.custom_minimum_size = Vector2(0, 86)
+	arena_payout_layout.add_child(arena_payout_label)
+
+	arena_payout_continue_button = Button.new()
+	arena_payout_continue_button.name = "ArenaPayoutContinueButton"
+	arena_payout_continue_button.text = "Start Next Hand"
+	arena_payout_continue_button.pressed.connect(_on_arena_payout_continue_pressed)
+	arena_payout_layout.add_child(arena_payout_continue_button)
+
 	loadout_slot_row = HBoxContainer.new()
 	loadout_slot_row.name = "LoadoutSlotRow"
 	loadout_slot_row.add_theme_constant_override("separation", 6)
@@ -1680,6 +1705,8 @@ func _apply_phase35_default_layout(
 		_style_play_panel(first_play_coach_panel as PanelContainer, Color(0.070, 0.052, 0.036), Color(0.92, 0.64, 0.24), "cue")
 	if deck_panel is PanelContainer:
 		_style_play_panel(deck_panel as PanelContainer, Color(0.070, 0.050, 0.038), Color(0.78, 0.54, 0.24), "hand")
+	if arena_payout_panel != null:
+		_style_play_panel(arena_payout_panel, Color(0.090, 0.064, 0.040, 0.96), FEEDBACK_CARD_COLOR, "cue")
 	if run_ceremony_panel != null:
 		_style_play_panel(run_ceremony_panel, Color(0.070, 0.052, 0.046), Color(0.68, 0.48, 0.22))
 	if encounter_approach_panel != null:
@@ -2067,6 +2094,9 @@ func _on_burn_selected_card_pressed() -> void:
 
 
 func _on_hold_selected_card_pressed() -> void:
+	if arena_payout_pending:
+		_push_feedback("Collect the arena payout before changing the next hand.", FEEDBACK_CARD_COLOR, arena_payout_continue_button)
+		return
 	if selected_hand_index < 0:
 		_push_feedback("Hover or click a card first, then Hold.", FEEDBACK_PHASE_COLOR, hand_action_status_label)
 		return
@@ -2086,6 +2116,9 @@ func _on_bridge_payload_pressed() -> void:
 
 
 func _on_enter_arena_pressed() -> void:
+	if arena_payout_pending:
+		_push_feedback("Collect the arena payout before entering another fight.", FEEDBACK_CARD_COLOR, arena_payout_continue_button)
+		return
 	var payload := _build_combat_bridge_payload()
 	if _get_slotted_card_count() <= 0:
 		_push_feedback("Slot at least one card before entering the arena.", FEEDBACK_DAMAGE_COLOR, shooter_economy_label)
@@ -2114,10 +2147,97 @@ func _on_enter_arena_pressed() -> void:
 	_refresh_loadout_ui()
 	var bridge := get_node_or_null("/root/ArenaBridge")
 	if bridge != null and bridge.has_method("set_payload"):
-		bridge.call("set_payload", payload)
+		bridge.call("set_payload", payload, "res://scenes/combat/TestCombat.tscn")
 	var tree := get_tree()
 	if tree != null:
 		tree.change_scene_to_file("res://scenes/fps/FPSPrototype.tscn")
+
+
+func _consume_pending_arena_result() -> void:
+	var bridge := get_node_or_null("/root/ArenaBridge")
+	if bridge == null:
+		return
+	if not bridge.has_method("has_pending_result") or not bool(bridge.call("has_pending_result")):
+		return
+	if not bridge.has_method("take_result"):
+		return
+	var result: Dictionary = bridge.call("take_result")
+	_apply_arena_result(result)
+
+
+func _apply_arena_result(result: Dictionary) -> void:
+	if result.is_empty():
+		return
+	pending_arena_result = result.duplicate(true)
+	arena_payout_pending = true
+	shooter_chips += int(result.get("chips_awarded", 0))
+	loadout_slots.clear()
+	held_hand_indices.clear()
+	arena_bridge_payload.clear()
+	arena_round_armed = false
+	selected_hand_index = -1
+	if deck_manager != null:
+		if bool(deck_manager.call("has_committed_card")):
+			deck_manager.call("resolve_committed_card")
+		deck_manager.call("discard_hand")
+		var next_draw := int(result.get("cards_to_draw", combat_session.get("hand_target")))
+		deck_manager.call("draw_cards", maxi(0, next_draw))
+	_set_run_flow_state(RUN_FLOW_COMBAT)
+	_append_log("ARENA PAYOUT: %s" % JSON.stringify(result))
+	_refresh_arena_payout_panel()
+	_refresh_loadout_ui()
+	_refresh_action_controls()
+	if battlefield_callout_label != null:
+		battlefield_callout_label.text = "ARENA PAYOUT: collect the reward, then build the next hand into another loadout."
+		_pulse_canvas_item(battlefield_callout_label, FEEDBACK_CARD_COLOR)
+
+
+func _refresh_arena_payout_panel() -> void:
+	if arena_payout_panel == null:
+		return
+	arena_payout_panel.visible = arena_payout_pending and run_flow_state == RUN_FLOW_COMBAT
+	if arena_payout_label != null:
+		arena_payout_label.text = _get_arena_payout_text(pending_arena_result)
+	if arena_payout_continue_button != null:
+		arena_payout_continue_button.disabled = not arena_payout_pending
+		_style_compact_button(arena_payout_continue_button, arena_payout_pending, FEEDBACK_CARD_COLOR, "Collect the FPS arena payout and unlock the next prep hand.")
+
+
+func _get_arena_payout_text(result: Dictionary) -> String:
+	if result.is_empty():
+		return ""
+	var reward: Dictionary = result.get("selected_reward", {})
+	var reward_label := String(reward.get("label", "Arena Payout"))
+	var reward_amount := int(reward.get("amount", 0))
+	var reward_kind := String(reward.get("kind", "reward")).capitalize()
+	var reward_line := "%s +%d" % [reward_kind, reward_amount] if reward_amount > 0 else reward_kind
+	var hit_rate := float(result.get("hit_rate", 0.0)) * 100.0
+	var clear_time := float(result.get("clear_time", 0.0))
+	var chips := int(result.get("chips_awarded", 0))
+	var cards_to_draw := int(result.get("cards_to_draw", combat_session.get("hand_target")))
+	return "[b]%s[/b]\n+%d Chips | %s | Draw %d next-hand cards\n%s Wave %d: %d kills, %.0f%% hit rate, %.1fs, %d damage taken." % [
+		reward_label,
+		chips,
+		reward_line,
+		cards_to_draw,
+		String(result.get("map_name", "Arena")),
+		int(result.get("wave", 1)),
+		int(result.get("kills", 0)),
+		hit_rate,
+		clear_time,
+		int(result.get("damage_taken", 0))
+	]
+
+
+func _on_arena_payout_continue_pressed() -> void:
+	if not arena_payout_pending:
+		return
+	arena_payout_pending = false
+	pending_arena_result.clear()
+	_refresh_arena_payout_panel()
+	_refresh_loadout_ui()
+	_refresh_action_controls()
+	_push_feedback("Payout collected. Build this hand into the next arena loadout.", FEEDBACK_CARD_COLOR, shooter_economy_label)
 
 
 func _on_loadout_slot_pressed(slot_id: String) -> void:
@@ -2129,6 +2249,9 @@ func _on_loadout_slot_pressed(slot_id: String) -> void:
 
 
 func _slot_selected_card(forced_slot: String = "") -> bool:
+	if arena_payout_pending:
+		_push_feedback("Collect the arena payout before changing the next hand.", FEEDBACK_CARD_COLOR, arena_payout_continue_button)
+		return false
 	if selected_hand_index < 0:
 		_push_feedback("Hover or click a card first, then Slot.", FEEDBACK_PHASE_COLOR, hand_action_status_label)
 		return false
@@ -2159,6 +2282,9 @@ func _slot_selected_card(forced_slot: String = "") -> bool:
 
 
 func _burn_selected_card() -> bool:
+	if arena_payout_pending:
+		_push_feedback("Collect the arena payout before burning next-hand cards.", FEEDBACK_CARD_COLOR, arena_payout_continue_button)
+		return false
 	if selected_hand_index < 0:
 		_push_feedback("Hover or click a card first, then Burn.", FEEDBACK_PHASE_COLOR, hand_action_status_label)
 		return false
@@ -2364,7 +2490,7 @@ func _get_slotted_card_count() -> int:
 
 func _refresh_loadout_ui() -> void:
 	if shooter_economy_label != null:
-		var arena_state := "ARENA READY" if arena_round_armed else "PREP"
+		var arena_state := "PAYOUT READY" if arena_payout_pending else ("ARENA READY" if arena_round_armed else "PREP")
 		shooter_economy_label.text = "CHIPS %d | ARMOR %d | AMMO %d | SLOTTED %d/5 | %s | SELECTED %s" % [
 			shooter_chips,
 			_get_bridge_armor_value(),
@@ -2385,15 +2511,16 @@ func _refresh_loadout_ui() -> void:
 			button.tooltip_text = "Select a card, then click this slot or Slot Selected."
 			_style_compact_button(button, false, Color(0.50, 0.46, 0.38), button.tooltip_text)
 	if slot_selected_button != null:
-		slot_selected_button.disabled = selected_hand_index < 0
+		slot_selected_button.disabled = arena_payout_pending or selected_hand_index < 0
 	if burn_selected_button != null:
-		burn_selected_button.disabled = selected_hand_index < 0
+		burn_selected_button.disabled = arena_payout_pending or selected_hand_index < 0
 	if hold_selected_button != null:
-		hold_selected_button.disabled = selected_hand_index < 0
+		hold_selected_button.disabled = arena_payout_pending or selected_hand_index < 0
 	if enter_arena_button != null:
-		enter_arena_button.disabled = _get_slotted_card_count() <= 0
-		enter_arena_button.tooltip_text = "Slot at least one card, then enter the shooter arena with that loadout."
+		enter_arena_button.disabled = arena_payout_pending or _get_slotted_card_count() <= 0
+		enter_arena_button.tooltip_text = "Collect the arena payout first." if arena_payout_pending else "Slot at least one card, then enter the shooter arena with that loadout."
 		_style_compact_button(enter_arena_button, arena_round_armed or _get_slotted_card_count() > 0, FEEDBACK_MOVE_COLOR, enter_arena_button.tooltip_text)
+	_refresh_arena_payout_panel()
 
 
 func _get_selected_card_label() -> String:
@@ -2632,6 +2759,8 @@ func _on_piles_changed(counts: Dictionary) -> void:
 func _reset_run_slice() -> void:
 	_set_run_flow_state(RUN_FLOW_START)
 	_reset_first_play_coach()
+	pending_arena_result.clear()
+	arena_payout_pending = false
 	run_ceremony_history.clear()
 	selected_run_path_index = -1
 	last_run_path_current_index = -1
@@ -2659,6 +2788,8 @@ func _reset_playable_combat() -> void:
 	shooter_chips = 7
 	loadout_slots.clear()
 	held_hand_indices.clear()
+	arena_bridge_payload.clear()
+	arena_round_armed = false
 	selected_hand_index = -1
 	_apply_relic_modifiers()
 	combat_session.call("reset_session")
@@ -3698,11 +3829,14 @@ func _refresh_action_controls() -> void:
 	var waiting_for_reward := bool(run_state.get("waiting_for_reward", false))
 	var run_outcome := String(run_state.get("run_outcome", "running"))
 	var shell_blocks_combat := run_flow_state != RUN_FLOW_COMBAT
+	var payout_blocks_combat := arena_payout_pending
 
-	next_phase_button.disabled = shell_blocks_combat or not can_debug_adjust
+	next_phase_button.disabled = shell_blocks_combat or payout_blocks_combat or not can_debug_adjust
 	next_phase_button.visible = run_flow_state == RUN_FLOW_COMBAT
 	if run_flow_state == RUN_FLOW_START:
 		next_phase_button.text = "Deal In"
+	elif arena_payout_pending:
+		next_phase_button.text = "Collect Payout"
 	elif run_flow_state == RUN_FLOW_NEXT_ENCOUNTER:
 		next_phase_button.text = "Open Next Table"
 	elif run_outcome == "victory":
@@ -3713,21 +3847,21 @@ func _refresh_action_controls() -> void:
 		next_phase_button.text = "Choose Reward"
 	else:
 		next_phase_button.text = "Combat Over" if not can_debug_adjust else String(PHASE_ACTION_LABELS.get(phase_key, "Continue"))
-	_refresh_primary_action_emphasis(shell_blocks_combat, can_debug_adjust, phase_key)
-	reset_grid_button.disabled = not can_debug_adjust
-	draw_button.disabled = not can_debug_adjust
-	discard_hand_button.disabled = not can_debug_adjust
-	reset_deck_button.disabled = not can_debug_adjust
-	roll_intents_button.disabled = not can_debug_adjust
-	reveal_intents_button.disabled = not can_reveal or reveal_resolved_this_phase
+	_refresh_primary_action_emphasis(shell_blocks_combat or payout_blocks_combat, can_debug_adjust and not payout_blocks_combat, phase_key)
+	reset_grid_button.disabled = payout_blocks_combat or not can_debug_adjust
+	draw_button.disabled = payout_blocks_combat or not can_debug_adjust
+	discard_hand_button.disabled = payout_blocks_combat or not can_debug_adjust
+	reset_deck_button.disabled = payout_blocks_combat or not can_debug_adjust
+	roll_intents_button.disabled = payout_blocks_combat or not can_debug_adjust
+	reveal_intents_button.disabled = payout_blocks_combat or not can_reveal or reveal_resolved_this_phase
 	run_playtests_button.disabled = run_manager == null
 	export_summary_button.disabled = run_manager == null
 
-	commit_first_card_button.disabled = shell_blocks_combat or not can_play or has_committed
-	set_call_button.disabled = shell_blocks_combat or not can_bluff
-	raise_button.disabled = shell_blocks_combat or not can_bluff or not has_committed
-	fold_button.disabled = shell_blocks_combat or not can_bluff or not has_committed
-	reset_bluff_button.disabled = shell_blocks_combat or not can_debug_adjust
+	commit_first_card_button.disabled = shell_blocks_combat or payout_blocks_combat or not can_play or has_committed
+	set_call_button.disabled = shell_blocks_combat or payout_blocks_combat or not can_bluff
+	raise_button.disabled = shell_blocks_combat or payout_blocks_combat or not can_bluff or not has_committed
+	fold_button.disabled = shell_blocks_combat or payout_blocks_combat or not can_bluff or not has_committed
+	reset_bluff_button.disabled = shell_blocks_combat or payout_blocks_combat or not can_debug_adjust
 	_refresh_guidance()
 	if run_manager != null:
 		_refresh_run_panel(run_state)
@@ -3836,6 +3970,14 @@ func _get_action_guide_snapshot(session_state: Dictionary, run_state: Dictionary
 				"detail": "Start another run",
 				"color": FEEDBACK_REVEAL_COLOR
 			}
+
+	if arena_payout_pending:
+		return {
+			"target": arena_payout_continue_button,
+			"label": "COLLECT",
+			"detail": "Arena payout",
+			"color": FEEDBACK_CARD_COLOR
+		}
 
 	if bool(session_state.get("combat_over", false)):
 		if bool(run_state.get("waiting_for_reward", false)):
@@ -6196,6 +6338,8 @@ func _sync_live_text_density() -> void:
 		card_target_preview_label.visible = show_expanded_combat_detail
 	if shooter_economy_label != null:
 		shooter_economy_label.visible = run_flow_state == RUN_FLOW_COMBAT
+	if arena_payout_panel != null:
+		arena_payout_panel.visible = run_flow_state == RUN_FLOW_COMBAT and arena_payout_pending
 	if loadout_slot_row != null:
 		loadout_slot_row.visible = run_flow_state == RUN_FLOW_COMBAT
 	if hand_action_button_row != null:
@@ -6771,6 +6915,8 @@ func _get_locked_cards_next_action(reason: String) -> String:
 		return "press Deal In."
 	if reason.contains("Choose rewards"):
 		return "pick or skip a reward."
+	if reason.contains("arena payout"):
+		return "press Start Next Hand."
 	if reason.contains("Open Next Table"):
 		return "press Open Next Table."
 	if reason.contains("Press Begin Turn"):
@@ -6822,6 +6968,8 @@ func _get_global_card_lock_reason(session_state: Dictionary) -> String:
 		return "Open Next Table to deal a new hand."
 	if run_flow_state == RUN_FLOW_RESULTS:
 		return "The run is over until New Run."
+	if arena_payout_pending:
+		return "Collect the arena payout first."
 	if bool(session_state.get("combat_over", false)):
 		return "Combat is over."
 

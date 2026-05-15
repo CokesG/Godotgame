@@ -20,6 +20,24 @@ Reference feel:
 - `Hearthstone`: clean cards, obvious costs, target clarity, hand/deck drama.
 - `Dead Man's Ante`: poker risk, cursed table, chips, blood, tells, random hands, bluffing, wagering.
 
+## Current Implementation
+
+The prototype now has the first playable version of that loop:
+
+```text
+Deal In / card prep -> Slot Selected / Burn -> Enter Arena -> FPS wave payout -> card table payout screen -> Start Next Hand
+```
+
+Live files:
+
+- `res://scenes/ui/MainMenu.tscn`: dev hub with direct access to full game, board/loadout table, shooter arena, tactical map viewer, and debug checks.
+- `res://scenes/combat/TestCombat.tscn`: card table, chip economy, loadout slots, bridge payload preview, `Enter Arena`, and the return payout screen.
+- `res://scenes/fps/FPSPrototype.tscn`: shooter arena that consumes the card loadout, runs the FPS fight, and returns a result when the player picks a reward.
+- `res://scripts/combat/ArenaBridge.gd`: autoload handoff for card-to-FPS payloads and FPS-to-card results.
+- `res://tests/debug/Phase69ArenaReturnCheck.tscn`: focused check for the return payout path.
+
+The current return is intentionally lean: when the FPS scene returns, the card table rebuilds into a fresh next-hand prep state, applies the chip award, shows the payout panel, then unlocks normal card/loadout actions when `Start Next Hand` is pressed. A later persistence pass should serialize exact deck piles, current run node, spent loadout cards, wounds, upgrades, and relic effects across the scene swap.
+
 ## What The Board Is Now
 
 The board is the command table before and around a fight.
@@ -276,28 +294,44 @@ Combat returns:
 
 ```gdscript
 {
-	"outcome": "win",
-	"kills": 2,
-	"assists": 1,
-	"objective_score": 80,
+	"source": "fps_arena",
+	"map_name": "Crossfire Table",
+	"cleared": true,
+	"wave": 1,
+	"kills": 4,
+	"clear_time": 18.4,
+	"shots_fired": 8,
+	"shots_hit": 6,
+	"hit_rate": 0.75,
+	"critical_hits": 2,
 	"damage_dealt": 116,
 	"damage_taken": 12,
-	"cards_used": ["cursed_revolver", "smoke_veil"],
-	"chips_delta": 4,
-	"blood_delta": -12,
-	"upgrade_events": ["smoke_veil_xp_plus"]
+	"remaining_health": 28,
+	"remaining_armor": 5,
+	"loadout": {"weapon": "Ace Cutter Revolver", "abilities": 1, "armor": 5, "ammo": 24, "chips": 2},
+	"selected_reward": {"label": "Damage Payout", "kind": "damage", "amount": 3, "chip_bonus": 2},
+	"chips_awarded": 9,
+	"cards_to_draw": 5
 }
 ```
 
 ## Immediate Implementation Path
 
-1. Rename the existing `Energy` concept toward `Chips` or `Focus` depending on whether it is buy economy or per-turn action budget.
-2. Add visible loadout slots beside the hand: Weapon, Ability 1, Ability 2, Passive, Wager.
-3. Let cards be assigned to slots before combat instead of only played directly.
-4. Add `Burn` as a universal fallback so every drawn card has value.
-5. Convert card type labels into shooter roles: Weapon, Ability, Utility, Economy, Read, Defense, Ritual.
-6. Collapse the board into a combat HUD once the other movement/combat scene takes over.
-7. Build the bridge data contract between board UI and combat scene.
+Done in the prototype:
+
+1. Add visible loadout slots beside the hand: Weapon, Ability 1, Ability 2, Passive, Wager.
+2. Let cards be assigned to slots before combat instead of only played directly.
+3. Add `Burn` as a universal fallback so every drawn card has value.
+4. Convert card types into shooter-facing roles in the bridge payload.
+5. Build the card-to-FPS payload handoff and FPS-to-card result handoff.
+6. Add a payout screen that turns FPS stats and reward selection into chips and the next hand.
+
+Next implementation steps:
+
+1. Persist exact run/deck state across the scene swap instead of returning to a fresh table instance.
+2. Add non-chip payout effects: armor carryover, ammo reserve, wounds, card XP, card mutation, and upgrade events.
+3. Let the FPS result distinguish win/loss/objective outcomes, not only wave-cleared reward picks.
+4. Collapse or mirror the board into an in-FPS combat HUD with card ability icons and cooldowns.
 
 ## Design Rule
 

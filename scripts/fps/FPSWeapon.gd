@@ -214,12 +214,16 @@ func _get_shot_direction() -> Vector3:
 	var speed_ratio := 0.0
 	if player != null and player.has_method("get_horizontal_speed_ratio"):
 		speed_ratio = float(player.call("get_horizontal_speed_ratio"))
+	var ads_spread_multiplier := 1.0
+	if player != null and player.has_method("get_ads_spread_multiplier"):
+		ads_spread_multiplier = float(player.call("get_ads_spread_multiplier"))
 
 	var pattern := recoil_pattern[shot_index % recoil_pattern.size()]
 	var sustained := clampf(float(shot_index) / 7.0, 0.0, 1.0)
 	var spread := base_spread_degrees
 	spread += moving_spread_degrees * speed_ratio
 	spread += sustained_spread_degrees * sustained
+	spread *= ads_spread_multiplier
 	var random_offset := Vector2(
 		rng.randf_range(-spread, spread),
 		rng.randf_range(-spread, spread)
@@ -273,8 +277,13 @@ func _recover_viewmodel(delta: float) -> void:
 	if player != null and player.has_method("get_weapon_bob"):
 		bob = player.call("get_weapon_bob")
 	if viewmodel_root != null:
-		viewmodel_root.position = base_position + recoil_position + bob + Vector3(-sway_offset.x, sway_offset.y, 0.0)
-		viewmodel_root.rotation = recoil_rotation + Vector3(sway_offset.y * 0.7, sway_offset.x * 1.1, -sway_offset.x * 0.35)
+		var target_base := base_position
+		var sway_scale := 1.0
+		if player != null and player.has_method("is_ads_active") and bool(player.call("is_ads_active")):
+			target_base = Vector3(0.0, -0.36, -0.76)
+			sway_scale = 0.38
+		viewmodel_root.position = target_base + recoil_position + bob * sway_scale + Vector3(-sway_offset.x, sway_offset.y, 0.0) * sway_scale
+		viewmodel_root.rotation = recoil_rotation + Vector3(sway_offset.y * 0.7, sway_offset.x * 1.1, -sway_offset.x * 0.35) * sway_scale
 
 
 func _spawn_muzzle_flash() -> void:

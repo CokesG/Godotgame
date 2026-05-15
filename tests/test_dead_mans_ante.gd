@@ -10,7 +10,8 @@ const DEBUG_SCENES := [
 	"res://tests/debug/Phase45VisualQACheck.tscn",
 	"res://tests/debug/FPSPrototypeCheck.tscn",
 	"res://tests/debug/Phase56VFXShowcaseCheck.tscn",
-	"res://tests/debug/Phase61TacticalMapCheck.tscn"
+	"res://tests/debug/Phase61TacticalMapCheck.tscn",
+	"res://tests/debug/Phase69ArenaReturnCheck.tscn"
 ]
 
 const ENEMY_PATHS := [
@@ -110,6 +111,7 @@ func test_fps_pivot_scene_and_contracts_load() -> void:
 	assert_true(prototype.has_method("get_map_summary"), "FPSPrototype should expose Crossfire map summary.")
 	assert_true(prototype.has_method("get_map_regions"), "FPSPrototype should expose authored tactical map regions.")
 	assert_true(prototype.has_method("get_ability_state"), "FPSPrototype should expose bridged FPS ability state.")
+	assert_true(prototype.has_method("get_arena_result_preview"), "FPSPrototype should expose arena result payout previews.")
 	assert_true(player.has_method("dash_forward"), "FPSPlayer should expose card-driven dash.")
 	assert_true(player.has_method("add_armor"), "FPSPlayer should expose card-driven armor gain.")
 	assert_true(drone.has_method("reveal_for"), "FPSDrone should expose read-card reveal.")
@@ -134,6 +136,17 @@ func test_fps_player_mouse_look_changes_yaw_and_pitch() -> void:
 	player.call("_apply_mouse_look", Vector2(120.0, -60.0))
 	assert_ne(player.rotation.y, start_yaw, "Horizontal mouse motion should rotate the FPS body.")
 	assert_true(float(player.get("pitch")) > 0.0, "Vertical mouse motion should update FPS camera pitch.")
+	player.call("apply_aim_settings", {"mouse_sensitivity": 0.002, "ads_sensitivity_scale": 0.5, "ads_fov": 52.0, "fov": 78.0})
+	player.call("set_ads_state", true)
+	var ads_yaw := player.rotation.y
+	player.call("_apply_mouse_look", Vector2(100.0, 0.0))
+	var ads_delta := absf(player.rotation.y - ads_yaw)
+	player.call("set_ads_state", false)
+	var hip_yaw := player.rotation.y
+	player.call("_apply_mouse_look", Vector2(100.0, 0.0))
+	var hip_delta := absf(player.rotation.y - hip_yaw)
+	assert_true(ads_delta < hip_delta, "ADS sensitivity should scale mouse look down from hip-fire.")
+	assert_true(is_equal_approx(float(player.call("_get_target_fov", false, 0.0, true)), 52.0), "ADS FOV should be a functional camera target.")
 
 
 func test_fps_settings_crosshair_and_ability_contracts() -> void:
@@ -150,6 +163,8 @@ func test_fps_settings_crosshair_and_ability_contracts() -> void:
 	prototype.call("toggle_settings_menu")
 	assert_false(bool(prototype.call("is_gameplay_paused")), "Closing settings should resume FPS gameplay input.")
 	prototype.call("_ensure_input_actions")
+	assert_true(String(prototype.call("_get_action_binding_text", &"fps_reload")).contains("R"), "R should be bound to reload by default.")
+	assert_true(String(prototype.call("_get_action_binding_text", &"fps_ads")).contains("Mouse Right"), "Right mouse should aim down sights by default.")
 	prototype.call("_apply_encoded_binding", &"fps_ability_4", "key:%d" % KEY_Y)
 	assert_true(String(prototype.call("_get_action_binding_text", &"fps_ability_4")).contains("Y"), "Ability keybinds should update through the settings rebinder.")
 	prototype.call("_apply_encoded_binding", &"fps_ability_4", "joy_button:%d" % JOY_BUTTON_Y)
@@ -183,6 +198,14 @@ func test_fps_weapon_overclock_and_enemy_archetypes() -> void:
 	var weapon: Node = weapon_script.new()
 	weapon.call("apply_temporary_overclock", 4.0, 0.78, 1.2)
 	assert_true(float(weapon.get("overclock_timer")) > 0.0, "Weapon overclock should arm a timed fire-rate/damage modifier.")
+	weapon.set("magazine_size", 12)
+	weapon.set("ammo", 3)
+	weapon.set("reserve", 20)
+	assert_true(bool(weapon.call("try_reload")), "FPSWeapon should begin reloading when the magazine is not full and reserve ammo exists.")
+	weapon.call("_finish_reload")
+	assert_eq(int(weapon.get("ammo")), 12, "Reload should move reserve ammo into the magazine.")
+	assert_eq(int(weapon.get("reserve")), 11, "Reload should spend the reserve ammo that filled the magazine.")
+	assert_false(bool(weapon.get("reloading")), "Reload should clear the reloading flag when complete.")
 	var drone_script: GDScript = ResourceLoader.load("res://scripts/fps/FPSDrone.gd", "", ResourceLoader.CACHE_MODE_IGNORE)
 	var drone: Node = drone_script.new()
 	drone.call("configure", {"name": "Needle Eye", "archetype": "ranged", "ranged_attack_range": 11.5}, Node3D.new(), Node.new())
@@ -301,6 +324,11 @@ func test_arena_bridge_stores_and_hands_payload_to_fps() -> void:
 	var taken: Dictionary = bridge.call("take_payload")
 	assert_eq(String(taken.get("weapon_card", "")), "quick_slash", "Bridge should hand the same weapon card to FPS.")
 	assert_false(bool(bridge.call("has_pending_payload")), "Taking the payload should clear the pending handoff.")
+	bridge.call("set_result", {"source": "fps_arena", "chips_awarded": 7, "cards_to_draw": 5})
+	assert_true(bool(bridge.call("has_pending_result")), "Bridge should report a pending arena result.")
+	var result: Dictionary = bridge.call("take_result")
+	assert_eq(int(result.get("chips_awarded", 0)), 7, "Bridge should hand the same FPS result back to the card table.")
+	assert_false(bool(bridge.call("has_pending_result")), "Taking the result should clear the pending return payload.")
 
 
 func test_fps_prototype_consumes_bridge_payload_as_active_loadout() -> void:
@@ -321,6 +349,14 @@ func test_fps_prototype_consumes_bridge_payload_as_active_loadout() -> void:
 	assert_eq(int(summary.get("abilities", 0)), 1, "FPS should expose bridged ability count.")
 	assert_eq(int(summary.get("armor", 0)), 7, "FPS should expose bridged armor.")
 	assert_eq(int(summary.get("ammo", 0)), 36, "FPS should expose bridged ammo.")
+	prototype.set("kills", 3)
+	prototype.set("shots_fired", 6)
+	prototype.set("shots_hit", 4)
+	prototype.set("damage_taken", 10)
+	var result_preview: Dictionary = prototype.call("get_arena_result_preview", 0)
+	assert_eq(String(result_preview.get("source", "")), "fps_arena", "FPS payout previews should identify the arena source.")
+	assert_eq(String((result_preview.get("selected_reward", {}) as Dictionary).get("label", "")), "Damage Payout", "FPS payout previews should include the selected reward.")
+	assert_true(int(result_preview.get("chips_awarded", 0)) >= 10, "FPS payout previews should calculate a useful chip award.")
 
 
 func test_tactical_map_changes_damage_and_cover() -> void:

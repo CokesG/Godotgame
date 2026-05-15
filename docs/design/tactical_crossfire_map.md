@@ -47,6 +47,12 @@ The map is data-first. `CombatGrid` shows the labels and exposes `get_map_contex
 
 The FPS branch reads the same map data through `FPSPrototype.get_map_summary()` and `get_map_regions()`. It renders region markers and wall labels in the live arena so the shooter blockout says the same thing as the card board: Smoke Lane, Ante Mid, Long Rail, Center Pot, cover, flank, and angle.
 
+The dev hub and map viewer make the shared map easy to test without playing the whole loop:
+
+- `res://scenes/ui/MainMenu.tscn` opens to Full Game Experience, Card / Loadout Table, Shooter Arena, Tactical Map Viewer, and debug checks.
+- `res://scenes/ui/TacticalMapViewer.tscn` shows all nine Crossfire cells and their rule details.
+- FPS arena reward selection now returns to the card table with a result payload, so Crossfire stats can pay out into the next hand.
+
 ## Current Rules
 
 - `card_damage_bonus`: adds damage after action-beat scaling, only when a card would already hit.

@@ -39,6 +39,12 @@ Round concept:
 draw/buy phase -> choose loadout cards -> live shooter/arena round -> cards become abilities/equipment -> kills/objective/economy feed next draw
 ```
 
+Current playable loop:
+
+```text
+card/loadout prep -> FPS arena fight -> reward/payout screen -> next hand
+```
+
 Current FPS ability contract:
 
 - `Sidestep`, `Hook Step`, and other movement cards become a dash.
@@ -50,6 +56,9 @@ Current FPS ability contract:
 - Controls can be rebound with keyboard keys, mouse buttons, controller buttons, and controller trigger axes.
 - Movement, combat, system, and ability controls have per-action reset buttons plus a reset-all-controls button.
 - Duplicate inputs are rejected during rebinding with an inline conflict warning. Escape remains fixed so the player can always reopen settings or cancel a rebind.
+- Aim down sights defaults to right mouse / left trigger and has separate ADS FOV, ADS sensitivity scale, and toggle/hold settings.
+- FPS reward selection now builds an arena result with map name, wave, kills, hit rate, damage, selected reward, chips awarded, and next-hand draw count, then returns to `TestCombat` through `ArenaBridge`.
+- `TestCombat` consumes pending arena results on load, shows `ArenaPayoutPanel`, applies the chip award, blocks normal card actions until `Start Next Hand`, and leaves the player on a fresh prep hand.
 
 For the board-flow/UI contract, see `docs/design/board_flow_shooter_fusion.md`. That document is the source of truth for how the existing card-board interface should evolve around the movement/combat work happening in the other implementation thread.
 
