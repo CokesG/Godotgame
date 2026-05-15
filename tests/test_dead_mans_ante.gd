@@ -427,6 +427,20 @@ func test_run_manager_can_snapshot_restore_and_mark_arena_defeat() -> void:
 	assert_eq(int(restored_state.get("player_hp", -1)), 30, "Run restore should recover player Blood.")
 
 
+func test_opening_fighter_copy_explains_class_identity() -> void:
+	var controller_script: GDScript = ResourceLoader.load("res://scripts/combat/TestCombatController.gd", "", ResourceLoader.CACHE_MODE_IGNORE)
+	var controller: Control = controller_script.new()
+	controller.set("selected_hero_class_id", "gambler_knight")
+	assert_true(String(controller.call("_get_opening_prompt_text")).contains("DEAL IN"), "Opening prompt should point to Deal In without needing a debug click badge.")
+	var gambler_entry: Dictionary = controller.call("_get_hero_class_entry", "gambler_knight")
+	var hex_entry: Dictionary = controller.call("_get_hero_class_entry", "hex_sharpshooter")
+	var blood_entry: Dictionary = controller.call("_get_hero_class_entry", "blood_wager")
+	assert_true(String(gambler_entry.get("portrait", "")).contains("portrait"), "Gambler-Knight should use portrait art in the opening selector.")
+	assert_true(String(controller.call("_get_class_passive_text", gambler_entry)).contains("armor"), "Gambler-Knight copy should explain the armor/cooldown passive.")
+	assert_true(String(controller.call("_get_class_card_short_text", hex_entry)).contains("traps"), "Hex Sharpshooter copy should explain control deck identity.")
+	assert_true(String(controller.call("_get_class_card_short_text", blood_entry)).contains("Blood"), "Blood Wager copy should explain risky blood identity.")
+
+
 func test_combat_controller_exports_shooter_loadout_payload() -> void:
 	var controller_script: GDScript = ResourceLoader.load("res://scripts/combat/TestCombatController.gd", "", ResourceLoader.CACHE_MODE_IGNORE)
 	var controller: Control = controller_script.new()

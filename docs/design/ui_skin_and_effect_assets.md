@@ -1,6 +1,6 @@
 # Dead Man's Ante - UI Skin And Effect Asset Plan
 
-Status: Phase 83 armory prep controls wired
+Status: Phase 86 opening fighter picker clarified
 Last updated: 2026-05-15
 
 ## What Is Wired Now
@@ -55,6 +55,11 @@ Runtime pieces:
   - `hero_blood_wager_keyart.png` for Blood Wager / Berserker
 - The hidden `StartHeroClassOption` remains as compatibility plumbing for tests and selector sync, but players should use the visual fighter cards.
 - Opening copy now says that cards become weapons, armor, reads, traps, and FPS abilities in the arena.
+- The opening action prompt should not spawn the animated click beacon over the class picker. The picker is already dense, and the beacon can visually drift into the title/hero art. Use the selected-class prompt plus the pulsing `Deal In` button instead.
+- Fighter identity should be explicit in the selector:
+  - `Gambler-Knight`: balanced duelist, +2 opening armor, faster card-power cooldowns, mixed attack/guard/move/read/trap deck.
+  - `Hex Sharpshooter`: controller, read/trap/mark/reposition deck, FPS role built around outlines and snares.
+  - `Blood Wager`: berserker, ritual/blood/burst/hard-guard deck, FPS role built around risky tempo.
 
 ## Phase 82 Class Key-Art Asset Pass
 
@@ -69,7 +74,7 @@ hero_blood_wager_keyart.png
 hero_blood_wager_portrait.png
 ```
 
-These were generated as production-sized derivative assets from the existing generated card illustrations, then framed/tinted by class accent. The opening screen uses the wide `*_keyart.png` files. The taller `*_portrait.png` files are ready for future class cards, reward screens, profile panels, or 2D dialogue/event UI.
+These were generated as production-sized derivative assets from the existing generated card illustrations, then framed/tinted by class accent. The opening screen now uses the taller `*_portrait.png` files so the art reads as selected-fighter identity instead of a loose background. The wide `*_keyart.png` files remain available for larger profile panels, reward screens, or marketing-style screens.
 
 Asset note for future agents: these are class identity/key-art assets, not final 3D character model sources. They are enough for current UI, HUD, card, and marketing-style screens. For third-person/FPS visible bodies we will eventually want character model work, but the prototype can continue with 3D silhouettes, weapon/viewmodel pieces, particles, and HUD identity before committing to full hero rigs.
 
@@ -99,7 +104,7 @@ The prototype now has an explicit action-guide layer for the first loop. This is
 Runtime pieces:
 
 - `CombatVFX.play_click_beacon_on(target, color, label)` draws pulsing rings and a floating action badge over the current click target.
-- `OpeningClickPrompt` reinforces the first `CLICK DEAL IN` action.
+- `OpeningClickPrompt` explains `PICK A FIGHTER OR DEAL IN` or `SELECTED ... PRESS DEAL IN`; the animated click beacon should stay off the dense opening fighter picker.
 - `NextActionBadge` sits next to the live combat action button and says the current next action.
 - `HandActionStatus` now switches through concrete `NEXT:` instructions:
   - click an enemy `TARGET`

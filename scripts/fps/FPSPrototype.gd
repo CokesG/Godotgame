@@ -143,6 +143,7 @@ var card_hud_weapon_label: Label
 var card_hud_economy_label: Label
 var card_hud_ability_row: HBoxContainer
 var card_hud_summary_label: Label
+var card_hud_layout_signature := ""
 var telemetry_label: Label
 var reward_backdrop: ColorRect
 var reward_panel: PanelContainer
@@ -3581,10 +3582,11 @@ func _refresh_card_combat_hud(ammo_state: Dictionary) -> void:
 			reserve_text
 		]
 	if card_hud_ability_row != null:
-		_clear_children(card_hud_ability_row)
-		var max_slots := maxi(4, active_abilities.size())
-		for index in range(max_slots):
-			card_hud_ability_row.add_child(_build_ability_card_panel(index))
+		var signature := _get_card_hud_layout_signature()
+		if signature != card_hud_layout_signature:
+			card_hud_layout_signature = signature
+			_rebuild_card_hud_ability_row()
+		_update_card_hud_ability_row()
 	if card_hud_summary_label != null:
 		var target_text := String(summary.get("target_enemy", ""))
 		var wound_text := " | wounds %d" % int(summary.get("wounds_total", 0)) if int(summary.get("wounds_total", 0)) > 0 else ""
@@ -3592,6 +3594,48 @@ func _refresh_card_combat_hud(ammo_state: Dictionary) -> void:
 			"read target %s" % target_text if not target_text.is_empty() else "slot cards before arena entry",
 			wound_text
 		]
+
+
+func _rebuild_card_hud_ability_row() -> void:
+	if card_hud_ability_row == null:
+		return
+	_clear_children(card_hud_ability_row)
+	var max_slots := maxi(4, active_abilities.size())
+	for index in range(max_slots):
+		card_hud_ability_row.add_child(_build_ability_card_panel(index))
+
+
+func _update_card_hud_ability_row() -> void:
+	if card_hud_ability_row == null:
+		return
+	var max_slots := maxi(4, active_abilities.size())
+	for index in range(max_slots):
+		var panel := card_hud_ability_row.get_node_or_null("AbilityCardSlot%d" % (index + 1))
+		if panel == null:
+			continue
+		var label := panel.find_child("AbilityText%d" % (index + 1), true, false)
+		if label is Label:
+			if index < active_abilities.size():
+				(label as Label).text = _get_card_hud_ability_text(index)
+				(label as Label).add_theme_color_override("font_color", Color(0.88, 0.98, 1.0) if _is_ability_ready(index) else Color(0.58, 0.66, 0.70))
+			else:
+				(label as Label).text = "%s EMPTY" % _get_primary_action_binding_text(StringName("fps_ability_%d" % (index + 1)))
+		var cooldown := panel.find_child("AbilityCooldownBar%d" % (index + 1), true, false)
+		if cooldown is ProgressBar:
+			(cooldown as ProgressBar).value = _get_ability_cooldown_ratio(index)
+
+
+func _get_card_hud_layout_signature() -> String:
+	var parts: Array[String] = []
+	for index in range(active_abilities.size()):
+		var entry: Dictionary = active_abilities[index]
+		var ability: Dictionary = entry.get("ability", {})
+		parts.append("%s:%s:%s" % [
+			String(entry.get("id", "")),
+			String(entry.get("card_name", "")),
+			String(ability.get("kind", ""))
+		])
+	return "|".join(parts)
 
 
 func _build_ability_card_panel(index: int) -> PanelContainer:
@@ -3620,6 +3664,7 @@ func _build_ability_card_panel(index: int) -> PanelContainer:
 	margin.add_child(stack)
 
 	var label := Label.new()
+	label.name = "AbilityText%d" % (index + 1)
 	label.autowrap_mode = TextServer.AUTOWRAP_OFF
 	label.add_theme_font_size_override("font_size", 9)
 	if index < active_abilities.size():

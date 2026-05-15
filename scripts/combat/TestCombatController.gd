@@ -52,30 +52,33 @@ const HERO_CLASS_OPTIONS := [
 		"id": "gambler_knight",
 		"label": "Gambler-Knight",
 		"role": "Duelist",
-		"summary": "+2 armor, card powers cool down faster.",
+		"summary": "Balanced starter. Begins with +2 armor and faster card-power cooldowns.",
 		"deck_focus": "Balanced opener: cut, guard, move, read, trap.",
-		"arena_line": "FPS kit: armored duelist with flexible card powers.",
+		"arena_line": "FPS role: armored duelist with flexible card powers.",
 		"art": "res://art/game/classes/hero_gambler_knight_keyart.png",
+		"portrait": "res://art/game/classes/hero_gambler_knight_portrait.png",
 		"accent": Color(1.0, 0.74, 0.30)
 	},
 	{
 		"id": "hex_sharpshooter",
 		"label": "Hex Sharpshooter",
 		"role": "Controller",
-		"summary": "Read and trap cards become your natural kit.",
+		"summary": "Control starter. Reads, traps, marks, and mobility are easier to build around.",
 		"deck_focus": "Control opener: reveals, snares, marks, repositions.",
-		"arena_line": "FPS kit: outline reads, trap fields, marked shots.",
+		"arena_line": "FPS role: outline reads, trap fields, marked shots.",
 		"art": "res://art/game/classes/hero_hex_sharpshooter_keyart.png",
+		"portrait": "res://art/game/classes/hero_hex_sharpshooter_portrait.png",
 		"accent": Color(0.82, 0.50, 1.0)
 	},
 	{
 		"id": "blood_wager",
 		"label": "Blood Wager",
 		"role": "Berserker",
-		"summary": "Ritual and overclock cards become your natural kit.",
+		"summary": "Risk starter. Ritual, overclock, burst damage, and hard guard define the hand.",
 		"deck_focus": "Risk opener: blood fuel, burst damage, hard guard.",
-		"arena_line": "FPS kit: sacrifice economy for violent tempo.",
+		"arena_line": "FPS role: sacrifice economy for violent tempo.",
 		"art": "res://art/game/classes/hero_blood_wager_keyart.png",
+		"portrait": "res://art/game/classes/hero_blood_wager_portrait.png",
 		"accent": Color(1.0, 0.28, 0.22)
 	}
 ]
@@ -269,6 +272,7 @@ var card_upgrade_mods: Dictionary = {}
 var arena_card_xp_pool: int = 0
 var arena_wounds_total: int = 0
 var selected_reward_artifact_index: int = 0
+var start_hero_class_chosen: bool = false
 var feedback_history: Array[String] = []
 var run_ceremony_history: Array[String] = []
 var table_rule_effect_history: Array[String] = []
@@ -500,9 +504,9 @@ func _build_ui() -> void:
 
 	opening_click_prompt_label = Label.new()
 	opening_click_prompt_label.name = "OpeningClickPrompt"
-	opening_click_prompt_label.text = "CHOOSE A FIGHTER, THEN DEAL IN"
+	opening_click_prompt_label.text = _get_opening_prompt_text()
 	opening_click_prompt_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	opening_click_prompt_label.add_theme_font_size_override("font_size", 15)
+	opening_click_prompt_label.add_theme_font_size_override("font_size", 14)
 	opening_click_prompt_label.add_theme_color_override("font_color", Color(1.0, 0.86, 0.34))
 	run_shell_layout.add_child(opening_click_prompt_label)
 
@@ -1631,7 +1635,8 @@ func _build_ui() -> void:
 
 	recommend_loadout_button = Button.new()
 	recommend_loadout_button.name = "RecommendLoadoutButton"
-	recommend_loadout_button.text = "Recommend Loadout"
+	recommend_loadout_button.text = "1 Auto-Build Kit"
+	recommend_loadout_button.custom_minimum_size = Vector2(150, 48)
 	recommend_loadout_button.pressed.connect(_on_recommend_loadout_pressed)
 	hand_action_button_row.add_child(recommend_loadout_button)
 
@@ -1643,9 +1648,12 @@ func _build_ui() -> void:
 
 	enter_arena_button = Button.new()
 	enter_arena_button.name = "EnterArenaButton"
-	enter_arena_button.text = "Enter Arena"
+	enter_arena_button.text = "2 Enter FPS Arena"
+	enter_arena_button.custom_minimum_size = Vector2(170, 48)
 	enter_arena_button.pressed.connect(_on_enter_arena_pressed)
 	hand_action_button_row.add_child(enter_arena_button)
+	hand_action_button_row.move_child(recommend_loadout_button, 0)
+	hand_action_button_row.move_child(enter_arena_button, 1)
 
 	card_action_hint_label = RichTextLabel.new()
 	card_action_hint_label.name = "CardActionHint"
@@ -1790,7 +1798,7 @@ func _build_start_hero_class_selector(parent: VBoxContainer) -> void:
 	panel.add_child(layout)
 
 	var label := Label.new()
-	label.text = "CHOOSE YOUR FIGHTER"
+	label.text = "CHOOSE YOUR FIGHTER DECK"
 	label.custom_minimum_size = Vector2(188, 0)
 	label.add_theme_font_size_override("font_size", 15)
 	label.add_theme_color_override("font_color", Color(1.0, 0.82, 0.38))
@@ -1811,17 +1819,19 @@ func _build_start_hero_class_selector(parent: VBoxContainer) -> void:
 
 	start_hero_class_art = TextureRect.new()
 	start_hero_class_art.name = "StartHeroClassArt"
-	start_hero_class_art.custom_minimum_size = Vector2(360, 104)
+	start_hero_class_art.custom_minimum_size = Vector2(156, 116)
 	start_hero_class_art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	start_hero_class_art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	start_hero_class_art.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	spotlight.add_child(start_hero_class_art)
 
 	start_hero_class_loadout_label = Label.new()
 	start_hero_class_loadout_label.name = "StartHeroClassLoadout"
 	start_hero_class_loadout_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	start_hero_class_loadout_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	start_hero_class_loadout_label.add_theme_font_size_override("font_size", 14)
+	start_hero_class_loadout_label.add_theme_font_size_override("font_size", 13)
 	start_hero_class_loadout_label.add_theme_color_override("font_color", Color(0.96, 0.90, 0.72))
+	start_hero_class_loadout_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	spotlight.add_child(start_hero_class_loadout_label)
 
 	var card_row := HBoxContainer.new()
@@ -1850,19 +1860,19 @@ func _build_start_hero_class_card(entry: Dictionary, index: int) -> Button:
 	var button := Button.new()
 	button.name = "StartHeroClassCard%d" % index
 	button.text = "%s\n%s\n%s" % [
-		String(entry.get("label", "Fighter")),
+		String(entry.get("label", "Fighter")).to_upper(),
 		String(entry.get("role", "Role")).to_upper(),
-		String(entry.get("deck_focus", "Opening deck ready."))
+		_get_class_card_short_text(entry)
 	]
 	button.focus_mode = Control.FOCUS_ALL
 	button.clip_text = true
-	button.custom_minimum_size = Vector2(0, 78)
+	button.custom_minimum_size = Vector2(0, 88)
 	button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	button.set_meta("hero_class_id", class_id)
 	button.tooltip_text = "%s: %s" % [String(entry.get("label", "Fighter")), String(entry.get("summary", ""))]
 	button.pressed.connect(Callable(self, "_on_start_hero_class_card_pressed").bind(class_id))
 	button.alignment = HORIZONTAL_ALIGNMENT_CENTER
-	button.add_theme_font_size_override("font_size", 12)
+	button.add_theme_font_size_override("font_size", 11)
 	_style_start_hero_class_button(button, entry, class_id == selected_hero_class_id)
 	return button
 
@@ -1891,6 +1901,7 @@ func _on_start_hero_class_selected(index: int) -> void:
 
 
 func _on_start_hero_class_card_pressed(class_id: String) -> void:
+	start_hero_class_chosen = true
 	_select_hero_class_id(class_id)
 
 
@@ -1912,6 +1923,9 @@ func _select_hero_class_id(class_id: String) -> void:
 
 
 func _refresh_hero_class_selector() -> void:
+	var hero_class_selector := find_child("HeroClassSelector", true, false)
+	if hero_class_selector is Control:
+		(hero_class_selector as Control).visible = run_flow_state == RUN_FLOW_START or debug_controls_visible
 	if hero_class_option != null:
 		for index in range(hero_class_option.item_count):
 			if String(hero_class_option.get_item_metadata(index)) == selected_hero_class_id:
@@ -1928,13 +1942,18 @@ func _refresh_hero_class_selector() -> void:
 		start_hero_class_summary_label.text = _get_selected_hero_class_summary()
 	var selected_entry := _get_hero_class_entry(selected_hero_class_id)
 	if start_hero_class_art != null:
-		start_hero_class_art.texture = DEAD_MANS_ANTE_SKIN_SCRIPT.load_texture(String(selected_entry.get("art", "")))
+		start_hero_class_art.texture = DEAD_MANS_ANTE_SKIN_SCRIPT.load_texture(String(selected_entry.get("portrait", selected_entry.get("art", ""))))
 	if start_hero_class_loadout_label != null:
-		start_hero_class_loadout_label.text = "%s\n%s\n%s" % [
+		start_hero_class_loadout_label.text = "%s - %s\nPassive: %s\nStarter: %s\n%s" % [
 			String(selected_entry.get("label", "Fighter")),
+			String(selected_entry.get("role", "Role")),
+			_get_class_passive_text(selected_entry),
 			String(selected_entry.get("deck_focus", "Opening deck ready.")),
-			String(selected_entry.get("arena_line", "FPS kit ready."))
+			String(selected_entry.get("arena_line", "FPS role ready."))
 		]
+	if opening_click_prompt_label != null:
+		opening_click_prompt_label.text = _get_opening_prompt_text()
+		opening_click_prompt_label.add_theme_color_override("font_color", _get_hero_class_accent(selected_hero_class_id).lerp(Color(1.0, 0.92, 0.52), 0.45))
 	for button in start_hero_class_card_buttons:
 		var class_id := String(button.get_meta("hero_class_id", "gambler_knight"))
 		_style_start_hero_class_button(button, _get_hero_class_entry(class_id), class_id == selected_hero_class_id)
@@ -2014,15 +2033,43 @@ func _get_hero_class_accent(class_id: String) -> Color:
 	return Color(entry.get("accent", FEEDBACK_CARD_COLOR))
 
 
+func _get_class_passive_text(entry: Dictionary) -> String:
+	var class_id := String(entry.get("id", "gambler_knight"))
+	match class_id:
+		"hex_sharpshooter":
+			return "control cards guide your FPS kit toward reads, snares, and marks."
+		"blood_wager":
+			return "ritual and wager cards trade safety for burst tempo."
+		_:
+			return "+2 opening armor and faster card-power cooldowns."
+
+
+func _get_class_card_short_text(entry: Dictionary) -> String:
+	var class_id := String(entry.get("id", "gambler_knight"))
+	match class_id:
+		"hex_sharpshooter":
+			return "Reads | traps | marks | movement"
+		"blood_wager":
+			return "Blood fuel | burst | hard guard"
+		_:
+			return "Cut | guard | move | read | trap"
+
+
+func _get_opening_prompt_text() -> String:
+	var selected_label := _get_selected_hero_class_label()
+	if start_hero_class_chosen:
+		return "SELECTED: %s - PRESS DEAL IN" % selected_label.to_upper()
+	return "PICK A FIGHTER OR DEAL IN WITH %s" % selected_label.to_upper()
+
+
 func _get_selected_hero_class_summary() -> String:
 	for entry in HERO_CLASS_OPTIONS:
 		if String(entry.get("id", "")) == selected_hero_class_id:
-			return "%s: %s %s" % [
-				String(entry.get("role", "Role")),
+			return "%s - %s" % [
+				String(entry.get("role", "Role")).to_upper(),
 				String(entry.get("summary", "")),
-				String(entry.get("arena_line", "FPS kit ready."))
 			]
-	return "Duelist: +2 armor, card powers cool down faster."
+	return "DUELIST - Balanced starter. Begins with +2 armor and faster card-power cooldowns."
 
 
 func _get_selected_hero_class_label() -> String:
@@ -2123,9 +2170,9 @@ func _apply_phase35_default_layout(
 	body.custom_minimum_size = Vector2(0, 0)
 	var table_row: Node = body.find_child("TableRow", true, false)
 	if table_row is Control:
-		(table_row as Control).custom_minimum_size = Vector2(0, 430)
+		(table_row as Control).custom_minimum_size = Vector2(0, 300)
 		(table_row as Control).size_flags_vertical = Control.SIZE_SHRINK_BEGIN
-	combat_grid.custom_minimum_size = Vector2(760, 430)
+	combat_grid.custom_minimum_size = Vector2(620, 300)
 	enemy_status_label.custom_minimum_size = Vector2(320, 92)
 	intent_icon_strip_label.custom_minimum_size = Vector2(360, 58)
 	threat_summary_label.custom_minimum_size = Vector2(360, 58)
@@ -2144,7 +2191,7 @@ func _apply_phase35_default_layout(
 
 	var hand_scroll: Node = deck_panel.find_child("HandScroll", true, false)
 	if hand_scroll is Control:
-		(hand_scroll as Control).custom_minimum_size = Vector2(0, 154)
+		(hand_scroll as Control).custom_minimum_size = Vector2(0, 178)
 
 	if deck_panel.get_parent() != body:
 		var previous_parent := deck_panel.get_parent()
@@ -3673,6 +3720,7 @@ func _refresh_loadout_ui() -> void:
 	if recommend_loadout_button != null:
 		var hand_count := int(deck_manager.call("get_hand_count")) if deck_manager != null else 0
 		recommend_loadout_button.disabled = arena_payout_pending or hand_count <= 0 or _get_slotted_card_count() >= 5
+		recommend_loadout_button.text = "1 AUTO-BUILD KIT\n%s" % _get_objective_label(preview_objective_mode).to_upper()
 		var recommend_tooltip := "Auto-slot an affordable kit for %s from the current hand." % _get_objective_label(preview_objective_mode)
 		if arena_payout_pending:
 			recommend_tooltip = "Collect the arena payout first."
@@ -3681,6 +3729,7 @@ func _refresh_loadout_ui() -> void:
 		_style_compact_button(recommend_loadout_button, not recommend_loadout_button.disabled, FEEDBACK_MOVE_COLOR, recommend_tooltip)
 	if enter_arena_button != null:
 		enter_arena_button.disabled = arena_payout_pending or _get_slotted_card_count() <= 0
+		enter_arena_button.text = "2 ENTER FPS ARENA\n%d CARD KIT" % _get_slotted_card_count()
 		enter_arena_button.tooltip_text = "Collect the arena payout first." if arena_payout_pending else "Slot at least one card, then enter the shooter arena with that loadout."
 		_style_compact_button(enter_arena_button, arena_round_armed or _get_slotted_card_count() > 0, FEEDBACK_MOVE_COLOR, enter_arena_button.tooltip_text)
 	_refresh_hand_loadout_recommendations(preview_objective_mode)
@@ -5749,7 +5798,7 @@ func _refresh_action_guide(session_state: Dictionary, run_state: Dictionary) -> 
 	if opening_click_prompt_label != null:
 		opening_click_prompt_label.visible = run_flow_state == RUN_FLOW_START
 		if opening_click_prompt_label.visible:
-			opening_click_prompt_label.text = "%s: %s" % [label.to_upper(), detail.to_upper()]
+			opening_click_prompt_label.text = _get_opening_prompt_text()
 			opening_click_prompt_label.add_theme_color_override("font_color", color.lerp(Color(1.0, 0.92, 0.52), 0.55))
 
 	if combat_action_badge_label != null:
@@ -5767,8 +5816,8 @@ func _get_action_guide_snapshot(session_state: Dictionary, run_state: Dictionary
 		RUN_FLOW_START:
 			return {
 				"target": start_run_button,
-				"label": "CLICK",
-				"detail": "Choose fighter, then Deal In",
+				"label": "DEAL IN",
+				"detail": "%s ready" % _get_selected_hero_class_label(),
 				"color": FEEDBACK_CARD_COLOR
 			}
 		RUN_FLOW_REWARD:
@@ -5852,6 +5901,20 @@ func _get_player_commit_action_guide() -> Dictionary:
 		}
 
 	var playable_card := _get_first_playable_hand_card()
+	if _get_slotted_card_count() <= 0 and recommend_loadout_button != null and not bool(recommend_loadout_button.get("disabled")):
+		return {
+			"target": recommend_loadout_button,
+			"label": "KIT",
+			"detail": "Auto-build",
+			"color": FEEDBACK_MOVE_COLOR
+		}
+	if _get_slotted_card_count() > 0 and enter_arena_button != null and not bool(enter_arena_button.get("disabled")):
+		return {
+			"target": enter_arena_button,
+			"label": "FPS",
+			"detail": "Enter arena",
+			"color": FEEDBACK_MOVE_COLOR
+		}
 	if playable_card != null:
 		return {
 			"target": playable_card,
@@ -5881,8 +5944,9 @@ func _refresh_battlefield_focus() -> void:
 		return
 
 	battlefield_focus_label.visible = true
+	var compact_live := run_flow_state == RUN_FLOW_COMBAT and not debug_controls_visible
 	if battlefield_callout_label != null:
-		battlefield_callout_label.visible = true
+		battlefield_callout_label.visible = not compact_live
 	if arena_payout_pending:
 		battlefield_focus_label.text = "ARENA PAYOUT READY  |  COLLECT REWARD  |  BUILD NEXT LOADOUT"
 		battlefield_focus_label.tooltip_text = "The FPS wave is finished. Collect the payout first; the tactical board is hidden because there is no target decision right now."
@@ -5899,12 +5963,11 @@ func _refresh_battlefield_focus() -> void:
 	var target_intent := _get_enemy_intent_line(StringName(target.get("id", &""))) if not target.is_empty() else "no intent read"
 	var target_status := _get_enemy_battle_state_text(target) if not target.is_empty() else "No target"
 	var map_hint := _get_live_map_hint()
-	var phase_text := String(next_phase_button.get("text")) if next_phase_button != null else "Resolve"
 	battlefield_focus_label.text = "%s  |  %s  |  %s  |  %s" % [
-		target_name.to_upper(),
-		target_role,
-		target_intent,
-		phase_text.to_upper()
+		"ROUND PREP",
+		"TARGET %s" % target_name.to_upper(),
+		"%d/5 CARD KIT" % _get_slotted_card_count(),
+		"ENTER FPS NEXT" if _get_slotted_card_count() > 0 else "BUILD KIT"
 	]
 	battlefield_focus_label.tooltip_text = "%s is an enemy %s. Your attack/read cards currently aim here. Click another enemy card to switch targets.\n%s" % [
 		target_name,
@@ -5929,10 +5992,10 @@ func _refresh_battlefield_focus() -> void:
 func _get_battlefield_callout_text(phase_key: String, target_name: String, target_role: String, target_intent: String, target_status: String, map_hint: String) -> String:
 	if phase_key == "PLAYER_COMMIT":
 		if _is_first_table_coach_active() and not bool(first_play_coach_steps.get("target", false)):
-			return "Aim first: click a fighter card or pawn. Current aim: %s, the %s." % [target_name, target_role]
+			return "Pick a fighter target, then use the hand below to build a shooter kit. Current target: %s, the %s." % [target_name, target_role]
 		if _is_first_table_coach_active() and not bool(first_play_coach_steps.get("card", false)):
-			return "Play next: choose a glowing card. It will act on %s." % target_name
-		return "Resolve next: press Resolve Turn and watch the arena answer."
+			return "Build kit: click a hand card or use Auto-Build Kit. Cards become weapons, armor, movement, reads, traps, and wagers in FPS."
+		return "Build kit below: Auto-Build for a quick FPS loadout, or manually slot cards, then press Enter FPS Arena."
 	if phase_key == "BLUFF_WAGER":
 		return "Bluff window: call, raise, or fold. Then Reveal Turn resolves the wager."
 	if phase_key == "REVEAL":
@@ -6009,6 +6072,8 @@ func _on_guide_beacon_timeout() -> void:
 
 
 func _queue_guided_click_beacon() -> void:
+	if run_flow_state == RUN_FLOW_START:
+		return
 	var tree := get_tree()
 	if tree == null:
 		return
@@ -6016,6 +6081,8 @@ func _queue_guided_click_beacon() -> void:
 
 
 func _play_guided_click_beacon() -> void:
+	if run_flow_state == RUN_FLOW_START:
+		return
 	if combat_vfx == null or not combat_vfx.has_method("play_click_beacon_on"):
 		return
 	if guided_click_target == null or not is_instance_valid(guided_click_target):
@@ -6477,10 +6544,10 @@ func _refresh_run_shell(state: Dictionary) -> void:
 	if start_run_button != null:
 		start_run_button.visible = run_flow_state == RUN_FLOW_START
 		start_run_button.disabled = run_flow_state != RUN_FLOW_START
-		start_run_button.text = "DEAL IN\nDraw Class Hand"
+		start_run_button.text = "DEAL IN\nDraw %s Hand" % _get_selected_hero_class_label()
 		if run_flow_state == RUN_FLOW_START:
-			start_run_button.custom_minimum_size = Vector2(300, 58)
-			start_run_button.add_theme_font_size_override("font_size", 20)
+			start_run_button.custom_minimum_size = Vector2(330, 58)
+			start_run_button.add_theme_font_size_override("font_size", 18)
 	if next_encounter_button != null:
 		next_encounter_button.visible = run_flow_state == RUN_FLOW_NEXT_ENCOUNTER
 		next_encounter_button.disabled = run_flow_state != RUN_FLOW_NEXT_ENCOUNTER
@@ -8072,6 +8139,7 @@ func _get_active_first_play_step_indices(session_state: Dictionary, _run_state: 
 func _sync_live_text_density() -> void:
 	var compact_live := run_flow_state == RUN_FLOW_COMBAT and not debug_controls_visible
 	var payout_stage := run_flow_state == RUN_FLOW_COMBAT and arena_payout_pending
+	var show_expanded_combat_detail := run_flow_state == RUN_FLOW_COMBAT and not compact_live
 	var title_plate := find_child("TitlePlaque", true, false)
 	if title_plate is Control:
 		(title_plate as Control).visible = not compact_live
@@ -8083,6 +8151,13 @@ func _sync_live_text_density() -> void:
 	var deck_panel_node := find_child("DeckPanel", true, false)
 	if deck_panel_node is Control:
 		(deck_panel_node as Control).visible = run_flow_state == RUN_FLOW_COMBAT and not payout_stage
+		(deck_panel_node as Control).custom_minimum_size = Vector2(0, 246 if compact_live else 260)
+	var reward_artifacts := find_child("ArenaRewardArtifacts", true, false)
+	if reward_artifacts is Control:
+		(reward_artifacts as Control).visible = show_expanded_combat_detail
+	var hero_class_selector := find_child("HeroClassSelector", true, false)
+	if hero_class_selector is Control:
+		(hero_class_selector as Control).visible = show_expanded_combat_detail
 	var start_class_panel := find_child("StartHeroClassPanel", true, false)
 	if start_class_panel is Control:
 		(start_class_panel as Control).visible = run_flow_state == RUN_FLOW_START
@@ -8093,7 +8168,6 @@ func _sync_live_text_density() -> void:
 		(run_path_panel as Control).visible = not compact_live and run_flow_state != RUN_FLOW_REWARD
 	var route_decision_shell := run_flow_state == RUN_FLOW_REWARD or run_flow_state == RUN_FLOW_NEXT_ENCOUNTER or run_flow_state == RUN_FLOW_RESULTS
 	var compact_reward := run_flow_state == RUN_FLOW_REWARD and not debug_controls_visible
-	var show_expanded_combat_detail := run_flow_state == RUN_FLOW_COMBAT and not compact_live
 	for panel_name in ["TurnGuidance", "TurnStatusPanel", "TableRulePanel", "CombatFeedbackPanel"]:
 		var panel := find_child(panel_name, true, false)
 		if panel is Control:
@@ -8123,6 +8197,8 @@ func _sync_live_text_density() -> void:
 		first_play_step_row.visible = run_flow_state == RUN_FLOW_COMBAT and not compact_live
 	if first_play_coach_panel != null:
 		first_play_coach_panel.visible = run_flow_state == RUN_FLOW_COMBAT and _is_first_table_coach_active() and not first_play_coach_complete and not compact_live
+	if battlefield_callout_label != null and not payout_stage:
+		battlefield_callout_label.visible = show_expanded_combat_detail
 	_sync_reward_panel_priority(compact_reward)
 	if run_shell_detail_label != null:
 		run_shell_detail_label.visible = not compact_live and not compact_reward
@@ -8181,6 +8257,8 @@ func _sync_live_text_density() -> void:
 		card_action_hint_label.visible = show_expanded_combat_detail
 	if card_target_preview_label != null:
 		card_target_preview_label.visible = show_expanded_combat_detail
+	if armory_plan_label != null:
+		armory_plan_label.visible = show_expanded_combat_detail
 	if shooter_economy_label != null:
 		shooter_economy_label.visible = run_flow_state == RUN_FLOW_COMBAT
 	if arena_payout_panel != null:
@@ -8202,14 +8280,22 @@ func _sync_compact_live_layout(compact_live: bool) -> void:
 		(body as Control).custom_minimum_size = Vector2(0, 0)
 		if body is BoxContainer:
 			(body as BoxContainer).add_theme_constant_override("separation", 4 if compact_live else 8)
+	if next_phase_button != null:
+		next_phase_button.custom_minimum_size = Vector2(158, 38) if compact_live else Vector2(220, 44)
+		next_phase_button.add_theme_font_size_override("font_size", 15 if compact_live else 18)
+	if combat_action_badge_label != null:
+		combat_action_badge_label.custom_minimum_size = Vector2(0, 38) if compact_live else Vector2(0, 46)
+		combat_action_badge_label.add_theme_font_size_override("font_size", 16 if compact_live else 18)
 
 	var table_row := find_child("TableRow", true, false)
 	if table_row is Control:
-		(table_row as Control).custom_minimum_size = Vector2(0, 440) if compact_live else Vector2(0, 430)
+		(table_row as Control).custom_minimum_size = Vector2(0, 258) if compact_live else Vector2(0, 300)
+	if combat_grid != null:
+		combat_grid.custom_minimum_size = Vector2(520, 250) if compact_live else Vector2(620, 300)
 
 	var opponent_panel := find_child("OpponentCardsPanel", true, false)
 	if opponent_panel is Control:
-		(opponent_panel as Control).custom_minimum_size = Vector2(280, 0) if compact_live else Vector2(320, 0)
+		(opponent_panel as Control).custom_minimum_size = Vector2(255, 0) if compact_live else Vector2(300, 0)
 
 	if hand_action_status_label != null:
 		hand_action_status_label.custom_minimum_size = Vector2(0, 30) if compact_live else Vector2(0, 28)
@@ -8220,7 +8306,7 @@ func _sync_compact_live_layout(compact_live: bool) -> void:
 
 	var hand_scroll := find_child("HandScroll", true, false)
 	if hand_scroll is Control:
-		(hand_scroll as Control).custom_minimum_size = Vector2(0, 188) if compact_live else Vector2(0, 196)
+		(hand_scroll as Control).custom_minimum_size = Vector2(0, 174) if compact_live else Vector2(0, 188)
 
 
 func _sync_reward_panel_priority(compact_reward: bool) -> void:

@@ -56,8 +56,8 @@ func _verify_opening_cue(combat_scene: Node) -> void:
 	if not String(start_button.get("text")).contains("DEAL IN") or start_button.custom_minimum_size.x < 280 or not start_button.tooltip_text.contains("Deal"):
 		_fail("Deal In button should stay visually dominant and self-explanatory.")
 		return
-	if not bool(opening_prompt.get("visible")) or not String(opening_prompt.get("text")).contains("CLICK"):
-		_fail("Opening prompt should explicitly point at the click target.")
+	if not bool(opening_prompt.get("visible")) or not String(opening_prompt.get("text")).contains("DEAL IN"):
+		_fail("Opening prompt should explain that selecting a fighter leads to Deal In.")
 		return
 	if not bool(opening_steps.get("visible")) or opening_steps.get_child_count() < 4:
 		_fail("Opening screen should show the four-step Deal In, Target, Card, Resolve path.")
