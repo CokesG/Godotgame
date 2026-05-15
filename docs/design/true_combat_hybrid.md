@@ -39,6 +39,14 @@ Round concept:
 draw/buy phase -> choose loadout cards -> live shooter/arena round -> cards become abilities/equipment -> kills/objective/economy feed next draw
 ```
 
+Current FPS ability contract:
+
+- `Sidestep`, `Hook Step`, and other movement cards become a dash.
+- `Guard Up`, `Iron Vow`, and other guard cards become shield armor.
+- `Read Tell` and read cards reveal enemy outlines/marks.
+- `Snare Card` and trap cards create a snare field.
+- The current FPS bindings are `Q`, `E`, `C`, and `V` for the first four bridged abilities.
+
 For the board-flow/UI contract, see `docs/design/board_flow_shooter_fusion.md`. That document is the source of truth for how the existing card-board interface should evolve around the movement/combat work happening in the other implementation thread.
 
 ## Why Third-Person First For The Prototype

@@ -2,6 +2,7 @@
 extends "res://addons/godot_ai/testing/test_suite.gd"
 
 const DEBUG_SCENES := [
+	"res://tests/debug/DevHubCheck.tscn",
 	"res://tests/debug/Phase42PresentationLockCheck.tscn",
 	"res://tests/debug/Phase43FirstLoopJuiceCheck.tscn",
 	"res://tests/debug/Phase44ResponsivenessGuidanceCheck.tscn",
@@ -24,6 +25,8 @@ func suite_name() -> String:
 
 
 func test_main_scene_and_phase45_resources_load() -> void:
+	assert_true(load("res://scenes/ui/MainMenu.tscn") is PackedScene, "MainMenu should load as the project launch hub.")
+	assert_true(load("res://scenes/ui/TacticalMapViewer.tscn") is PackedScene, "TacticalMapViewer should load as a direct map inspection scene.")
 	var main_scene := load("res://scenes/combat/TestCombat.tscn")
 	assert_true(main_scene is PackedScene, "TestCombat should load as a PackedScene.")
 	for scene_path in DEBUG_SCENES:
@@ -82,7 +85,7 @@ func test_crossfire_tactical_map_rules_load() -> void:
 
 
 func test_fps_pivot_scene_and_contracts_load() -> void:
-	assert_true(load("res://scenes/fps/FPSPrototype.tscn") is PackedScene, "FPSPrototype should load as the pivot main scene.")
+	assert_true(load("res://scenes/fps/FPSPrototype.tscn") is PackedScene, "FPSPrototype should load as the shooter arena scene.")
 	var player_script: GDScript = ResourceLoader.load("res://scripts/fps/FPSPlayer.gd", "", ResourceLoader.CACHE_MODE_IGNORE)
 	var weapon_script: GDScript = ResourceLoader.load("res://scripts/fps/FPSWeapon.gd", "", ResourceLoader.CACHE_MODE_IGNORE)
 	var drone_script: GDScript = ResourceLoader.load("res://scripts/fps/FPSDrone.gd", "", ResourceLoader.CACHE_MODE_IGNORE)
@@ -106,6 +109,11 @@ func test_fps_pivot_scene_and_contracts_load() -> void:
 	assert_true(prototype.has_method("get_living_enemies"), "FPSPrototype should expose encounter state.")
 	assert_true(prototype.has_method("get_map_summary"), "FPSPrototype should expose Crossfire map summary.")
 	assert_true(prototype.has_method("get_map_regions"), "FPSPrototype should expose authored tactical map regions.")
+	assert_true(prototype.has_method("get_ability_state"), "FPSPrototype should expose bridged FPS ability state.")
+	assert_true(player.has_method("dash_forward"), "FPSPlayer should expose card-driven dash.")
+	assert_true(player.has_method("add_armor"), "FPSPlayer should expose card-driven armor gain.")
+	assert_true(drone.has_method("reveal_for"), "FPSDrone should expose read-card reveal.")
+	assert_true(drone.has_method("apply_snare"), "FPSDrone should expose trap-card snare.")
 
 
 func test_fps_pivot_uses_existing_visual_assets() -> void:
@@ -133,6 +141,10 @@ func test_fps_settings_crosshair_and_ability_contracts() -> void:
 	var prototype: Node = prototype_script.new()
 	assert_true(prototype.has_method("toggle_settings_menu"), "FPSPrototype should expose the Escape settings overlay.")
 	assert_true(prototype.has_method("is_gameplay_paused"), "FPSPrototype should expose settings/reward pause state.")
+	prototype.call("toggle_settings_menu")
+	assert_true(bool(prototype.call("is_gameplay_paused")), "Escape settings overlay should pause FPS gameplay input.")
+	prototype.call("toggle_settings_menu")
+	assert_false(bool(prototype.call("is_gameplay_paused")), "Closing settings should resume FPS gameplay input.")
 	prototype.set("crosshair_settings", {
 		"color": Color(1.0, 0.25, 0.78, 0.5),
 		"gap": 4.0,
@@ -145,7 +157,7 @@ func test_fps_settings_crosshair_and_ability_contracts() -> void:
 		"dynamic_gap": false
 	})
 	var crosshair_color: Color = prototype.call("_get_crosshair_color")
-	assert_eq(crosshair_color.a, 0.8, "Crosshair opacity should be controlled separately from color.")
+	assert_true(is_equal_approx(crosshair_color.a, 0.8), "Crosshair opacity should be controlled separately from color.")
 	prototype.call("apply_arena_bridge_payload", {
 		"loadout": [{"slot": "ability_1", "id": "sidestep", "ability": {"kind": "dash", "cooldown": 6.0}}],
 		"economy": {"chips": 0, "armor": 0, "ammo": 24}

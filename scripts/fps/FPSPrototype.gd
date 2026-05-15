@@ -80,6 +80,7 @@ var active_weapon_profile: Dictionary = {}
 var ability_cooldowns: Array[float] = []
 var aim_settings: Dictionary = DEFAULT_AIM_SETTINGS.duplicate(true)
 var crosshair_settings: Dictionary = DEFAULT_CROSSHAIR_SETTINGS.duplicate(true)
+var crosshair_signature := ""
 
 var enemy_defs: Array[Dictionary] = [
 	{
@@ -417,7 +418,8 @@ func _get_ability_hud_text() -> String:
 		var entry: Dictionary = active_abilities[index]
 		var ability: Dictionary = entry.get("ability", {})
 		var name := _get_ability_display_name(String(entry.get("id", "")), String(ability.get("kind", "")))
-		var key := str(index + 1)
+		var key_labels: Array[String] = ["Q", "E", "C", "V"]
+		var key: String = key_labels[index] if index < key_labels.size() else str(index + 1)
 		var cooldown := ability_cooldowns[index] if index < ability_cooldowns.size() else 0.0
 		var state := "READY" if cooldown <= 0.0 else "%.1fs" % cooldown
 		labels.append("%s:%s %s" % [key, name, state])
@@ -1124,6 +1126,10 @@ func _format_setting_value(value: float) -> String:
 func _update_crosshair() -> void:
 	if crosshair == null:
 		return
+	var signature := _get_crosshair_signature(true)
+	if signature == crosshair_signature:
+		return
+	crosshair_signature = signature
 	_rebuild_crosshair_on(crosshair, true)
 
 
@@ -1134,9 +1140,7 @@ func _rebuild_preview_crosshair(preview_crosshair: Control) -> void:
 func _rebuild_crosshair_on(target: Control, use_dynamic_gap: bool) -> void:
 	_clear_children(target)
 	var color := _get_crosshair_color()
-	var gap := float(crosshair_settings.get("gap", 7.0))
-	if use_dynamic_gap and bool(crosshair_settings.get("dynamic_gap", true)) and player != null and player.has_method("get_horizontal_speed_ratio"):
-		gap += float(player.call("get_horizontal_speed_ratio")) * 5.0
+	var gap := _get_crosshair_gap(use_dynamic_gap)
 	var length := float(crosshair_settings.get("length", 8.0))
 	var thickness := float(crosshair_settings.get("thickness", 2.0))
 	var dot_size := float(crosshair_settings.get("dot_size", 2.0))
@@ -1149,6 +1153,30 @@ func _rebuild_crosshair_on(target: Control, use_dynamic_gap: bool) -> void:
 	_add_crosshair_pip(target, Vector2(gap, -thickness * 0.5), Vector2(length, thickness), color, outline, outline_color)
 	if dot_size > 0.0:
 		_add_crosshair_pip(target, Vector2(-dot_size * 0.5, -dot_size * 0.5), Vector2(dot_size, dot_size), color, outline, outline_color)
+
+
+func _get_crosshair_gap(use_dynamic_gap: bool) -> float:
+	var gap := float(crosshair_settings.get("gap", 7.0))
+	if use_dynamic_gap and bool(crosshair_settings.get("dynamic_gap", true)) and player != null and player.has_method("get_horizontal_speed_ratio"):
+		gap += float(player.call("get_horizontal_speed_ratio")) * 5.0
+	return snappedf(gap, 0.25)
+
+
+func _get_crosshair_signature(use_dynamic_gap: bool) -> String:
+	var color := _get_crosshair_color()
+	return "%.3f|%.3f|%.3f|%.3f|%.3f|%.3f|%.3f|%.3f|%.3f|%s|%s" % [
+		color.r,
+		color.g,
+		color.b,
+		color.a,
+		_get_crosshair_gap(use_dynamic_gap),
+		float(crosshair_settings.get("length", 8.0)),
+		float(crosshair_settings.get("thickness", 2.0)),
+		float(crosshair_settings.get("dot_size", 2.0)),
+		float(crosshair_settings.get("outline_opacity", 0.62)),
+		str(bool(crosshair_settings.get("outline", true))),
+		str(bool(crosshair_settings.get("dynamic_gap", true)))
+	]
 
 
 func _add_crosshair_pip(parent: Control, position: Vector2, size: Vector2, color: Color, outline: bool, outline_color: Color) -> void:
