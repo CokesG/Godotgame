@@ -1,6 +1,6 @@
 # Dead Man's Ante - UI Skin And Effect Asset Plan
 
-Status: Phase 81 opening class showcase wired
+Status: Phase 82 class key-art asset pass wired
 Last updated: 2026-05-15
 
 ## What Is Wired Now
@@ -49,14 +49,37 @@ Runtime pieces:
 
 - `StartHeroClassPanel` shows three selectable fighter buttons before `Deal In`.
 - The selected fighter drives the opening run deck and bridge `hero_class` payload.
-- The spotlight image uses existing generated card art as temporary class identity art:
-  - `card_quick_slash.png` for Gambler-Knight / Duelist
-  - `card_marked_card.png` for Hex Sharpshooter / Controller
-  - `card_blood_ritual.png` for Blood Wager / Berserker
+- The spotlight image uses class key-art assets synthesized from existing generated source art:
+  - `hero_gambler_knight_keyart.png` for Gambler-Knight / Duelist
+  - `hero_hex_sharpshooter_keyart.png` for Hex Sharpshooter / Controller
+  - `hero_blood_wager_keyart.png` for Blood Wager / Berserker
 - The hidden `StartHeroClassOption` remains as compatibility plumbing for tests and selector sync, but players should use the visual fighter cards.
 - Opening copy now says that cards become weapons, armor, reads, traps, and FPS abilities in the arena.
 
-Asset note for future agents: we do not yet have true hero portrait PNGs or class key art. Do not treat the current card-art spotlight as final character art. The next asset upgrade should generate or paint dedicated transparent/portrait crops for each fighter class, then keep the same selection flow.
+## Phase 82 Class Key-Art Asset Pass
+
+The first class art package now lives in `art/game/classes/`:
+
+```text
+hero_gambler_knight_keyart.png
+hero_gambler_knight_portrait.png
+hero_hex_sharpshooter_keyart.png
+hero_hex_sharpshooter_portrait.png
+hero_blood_wager_keyart.png
+hero_blood_wager_portrait.png
+```
+
+These were generated as production-sized derivative assets from the existing generated card illustrations, then framed/tinted by class accent. The opening screen uses the wide `*_keyart.png` files. The taller `*_portrait.png` files are ready for future class cards, reward screens, profile panels, or 2D dialogue/event UI.
+
+Asset note for future agents: these are class identity/key-art assets, not final 3D character model sources. They are enough for current UI, HUD, card, and marketing-style screens. For third-person/FPS visible bodies we will eventually want character model work, but the prototype can continue with 3D silhouettes, weapon/viewmodel pieces, particles, and HUD identity before committing to full hero rigs.
+
+What we need from the user is mostly taste direction, not technical files yet:
+
+1. Pick which class fantasy should be the flagship look: Gambler-Knight, Hex Sharpshooter, or Blood Wager.
+2. Share any must-keep references for clothing, weapons, silhouettes, table/arena mood, and camera style.
+3. Decide whether the shooter is first-person only for the next milestone or needs third-person/team silhouettes soon.
+
+If the game stays first-person for now, prioritize hands/weapons, enemy models, ability VFX, arena props, HUD/card icons, and audio. Full hero bodies can wait until multiplayer readability, third-person camera, kill cams, lobby poses, or cosmetic skins become real scope.
 
 ## Phase 49 Action-Guide VFX
 

@@ -197,6 +197,10 @@ static func load_texture(path: String) -> Texture2D:
 		var texture_resource := load(path)
 		if texture_resource is Texture2D:
 			return texture_resource
+	if _should_use_runtime_textures() and FileAccess.file_exists(path):
+		var image := Image.new()
+		if image.load(path) == OK:
+			return ImageTexture.create_from_image(image)
 	return null
 
 

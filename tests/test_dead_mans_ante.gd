@@ -140,10 +140,16 @@ func test_fps_pivot_uses_existing_visual_assets() -> void:
 		"res://art/game/enemies/enemy_skulker.png",
 		"res://art/game/enemies/enemy_brute.png",
 		"res://art/game/enemies/enemy_needle_eye.png",
-		"res://art/game/enemies/enemy_hexmonger.png"
+		"res://art/game/enemies/enemy_hexmonger.png",
+		"res://art/game/classes/hero_gambler_knight_keyart.png",
+		"res://art/game/classes/hero_gambler_knight_portrait.png",
+		"res://art/game/classes/hero_hex_sharpshooter_keyart.png",
+		"res://art/game/classes/hero_hex_sharpshooter_portrait.png",
+		"res://art/game/classes/hero_blood_wager_keyart.png",
+		"res://art/game/classes/hero_blood_wager_portrait.png"
 	]
 	for asset_path in fps_asset_paths:
-		assert_true(FileAccess.file_exists(String(asset_path)), "%s should be available for FPS enemy billboards." % asset_path)
+		assert_true(FileAccess.file_exists(String(asset_path)), "%s should be available for FPS/class presentation." % asset_path)
 
 
 func test_fps_player_mouse_look_changes_yaw_and_pitch() -> void:

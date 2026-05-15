@@ -55,7 +55,7 @@ const HERO_CLASS_OPTIONS := [
 		"summary": "+2 armor, card powers cool down faster.",
 		"deck_focus": "Balanced opener: cut, guard, move, read, trap.",
 		"arena_line": "FPS kit: armored duelist with flexible card powers.",
-		"art": "res://art/game/cards/illustrations/card_quick_slash.png",
+		"art": "res://art/game/classes/hero_gambler_knight_keyart.png",
 		"accent": Color(1.0, 0.74, 0.30)
 	},
 	{
@@ -65,7 +65,7 @@ const HERO_CLASS_OPTIONS := [
 		"summary": "Read and trap cards become your natural kit.",
 		"deck_focus": "Control opener: reveals, snares, marks, repositions.",
 		"arena_line": "FPS kit: outline reads, trap fields, marked shots.",
-		"art": "res://art/game/cards/illustrations/card_marked_card.png",
+		"art": "res://art/game/classes/hero_hex_sharpshooter_keyart.png",
 		"accent": Color(0.82, 0.50, 1.0)
 	},
 	{
@@ -75,7 +75,7 @@ const HERO_CLASS_OPTIONS := [
 		"summary": "Ritual and overclock cards become your natural kit.",
 		"deck_focus": "Risk opener: blood fuel, burst damage, hard guard.",
 		"arena_line": "FPS kit: sacrifice economy for violent tempo.",
-		"art": "res://art/game/cards/illustrations/card_blood_ritual.png",
+		"art": "res://art/game/classes/hero_blood_wager_keyart.png",
 		"accent": Color(1.0, 0.28, 0.22)
 	}
 ]
@@ -1788,7 +1788,7 @@ func _build_start_hero_class_selector(parent: VBoxContainer) -> void:
 
 	start_hero_class_art = TextureRect.new()
 	start_hero_class_art.name = "StartHeroClassArt"
-	start_hero_class_art.custom_minimum_size = Vector2(190, 84)
+	start_hero_class_art.custom_minimum_size = Vector2(360, 104)
 	start_hero_class_art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	start_hero_class_art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 	spotlight.add_child(start_hero_class_art)
@@ -1797,7 +1797,7 @@ func _build_start_hero_class_selector(parent: VBoxContainer) -> void:
 	start_hero_class_loadout_label.name = "StartHeroClassLoadout"
 	start_hero_class_loadout_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	start_hero_class_loadout_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	start_hero_class_loadout_label.add_theme_font_size_override("font_size", 13)
+	start_hero_class_loadout_label.add_theme_font_size_override("font_size", 14)
 	start_hero_class_loadout_label.add_theme_color_override("font_color", Color(0.96, 0.90, 0.72))
 	spotlight.add_child(start_hero_class_loadout_label)
 
