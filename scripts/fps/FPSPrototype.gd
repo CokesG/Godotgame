@@ -77,6 +77,7 @@ var keybind_buttons: Dictionary = {}
 var rebind_status_label: Label
 var rebinding_action: StringName = &""
 var rebinding_ignore_until_msec := 0
+var settings_tabs: TabContainer
 var spawn_position := Vector3(0.0, 1.4, 10.5)
 var tactical_map: Dictionary = {}
 var active_bridge_payload: Dictionary = DEFAULT_BRIDGE_PAYLOAD.duplicate(true)
@@ -427,8 +428,8 @@ func _get_ability_hud_text() -> String:
 		var entry: Dictionary = active_abilities[index]
 		var ability: Dictionary = entry.get("ability", {})
 		var name := _get_ability_display_name(String(entry.get("id", "")), String(ability.get("kind", "")))
-		var key_labels: Array[String] = ["Q", "E", "C", "V"]
-		var key: String = key_labels[index] if index < key_labels.size() else str(index + 1)
+		var action := StringName("fps_ability_%d" % (index + 1))
+		var key := _get_primary_action_binding_text(action)
 		var cooldown := ability_cooldowns[index] if index < ability_cooldowns.size() else 0.0
 		var state := "READY" if cooldown <= 0.0 else "%.1fs" % cooldown
 		labels.append("%s:%s %s" % [key, name, state])
@@ -905,10 +906,10 @@ func _set_settings_open(open: bool) -> void:
 func _build_settings_panel(root: Control) -> void:
 	settings_panel = PanelContainer.new()
 	settings_panel.name = "FPSSettingsPanel"
-	settings_panel.anchor_left = 0.23
-	settings_panel.anchor_top = 0.10
-	settings_panel.anchor_right = 0.77
-	settings_panel.anchor_bottom = 0.90
+	settings_panel.anchor_left = 0.18
+	settings_panel.anchor_top = 0.08
+	settings_panel.anchor_right = 0.82
+	settings_panel.anchor_bottom = 0.92
 	settings_panel.visible = false
 	settings_panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	root.add_child(settings_panel)
@@ -927,10 +928,16 @@ func _build_settings_panel(root: Control) -> void:
 	var header := HBoxContainer.new()
 	layout.add_child(header)
 	var title := Label.new()
-	title.text = "Aim Lab"
+	title.text = "Combat Settings"
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title.add_theme_font_size_override("font_size", 24)
 	header.add_child(title)
+	var reset_controls_button := Button.new()
+	reset_controls_button.text = "Reset Controls"
+	reset_controls_button.pressed.connect(func() -> void:
+		_reset_all_keybinds()
+	)
+	header.add_child(reset_controls_button)
 	var close_button := Button.new()
 	close_button.text = "Close"
 	close_button.pressed.connect(func() -> void:
@@ -938,55 +945,70 @@ func _build_settings_panel(root: Control) -> void:
 	)
 	header.add_child(close_button)
 
+	settings_tabs = TabContainer.new()
+	settings_tabs.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	settings_tabs.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	layout.add_child(settings_tabs)
+
+	var aim_tab := _add_settings_tab(settings_tabs, "Aim")
+	var reticle_tab := _add_settings_tab(settings_tabs, "Reticle")
+	var controls_tab := _add_settings_tab(settings_tabs, "Controls")
+
+	var aim_hint := Label.new()
+	aim_hint.text = "Tune mouse feel before a duel. These changes apply instantly."
+	aim_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	aim_hint.add_theme_font_size_override("font_size", 13)
+	aim_tab.add_child(aim_hint)
+	_add_slider_row(aim_tab, "Sensitivity", 0.00045, 0.0045, 0.00005, float(aim_settings.get("mouse_sensitivity", 0.00155)), func(value: float) -> void:
+		aim_settings["mouse_sensitivity"] = value
+		_apply_player_settings()
+		_save_player_settings()
+	)
+	_add_slider_row(aim_tab, "Field of View", 65.0, 100.0, 1.0, float(aim_settings.get("fov", 74.0)), func(value: float) -> void:
+		aim_settings["fov"] = value
+		_apply_player_settings()
+		_save_player_settings()
+	)
+	_add_checkbox_row(aim_tab, "Invert Y", bool(aim_settings.get("invert_y", false)), func(enabled: bool) -> void:
+		aim_settings["invert_y"] = enabled
+		_apply_player_settings()
+		_save_player_settings()
+	)
+
 	var preview := Control.new()
 	preview.name = "CrosshairPreview"
 	preview.custom_minimum_size = Vector2(220, 120)
-	layout.add_child(preview)
+	reticle_tab.add_child(preview)
 	var preview_crosshair := Control.new()
 	preview_crosshair.name = "PreviewCrosshair"
 	preview_crosshair.position = Vector2(110, 60)
 	preview.add_child(preview_crosshair)
 
-	_add_slider_row(layout, "Sensitivity", 0.00045, 0.0045, 0.00005, float(aim_settings.get("mouse_sensitivity", 0.00155)), func(value: float) -> void:
-		aim_settings["mouse_sensitivity"] = value
-		_apply_player_settings()
-		_save_player_settings()
-	)
-	_add_slider_row(layout, "Field of View", 65.0, 100.0, 1.0, float(aim_settings.get("fov", 74.0)), func(value: float) -> void:
-		aim_settings["fov"] = value
-		_apply_player_settings()
-		_save_player_settings()
-	)
-	_add_checkbox_row(layout, "Invert Y", bool(aim_settings.get("invert_y", false)), func(enabled: bool) -> void:
-		aim_settings["invert_y"] = enabled
-		_apply_player_settings()
-		_save_player_settings()
-	)
-	_add_slider_row(layout, "Gap", 0.0, 24.0, 1.0, float(crosshair_settings.get("gap", 7.0)), func(value: float) -> void:
+	_add_slider_row(reticle_tab, "Gap", 0.0, 24.0, 1.0, float(crosshair_settings.get("gap", 7.0)), func(value: float) -> void:
 		crosshair_settings["gap"] = value
 		_update_crosshair()
 		_rebuild_preview_crosshair(preview_crosshair)
 		_save_player_settings()
 	)
-	_add_slider_row(layout, "Length", 2.0, 22.0, 1.0, float(crosshair_settings.get("length", 8.0)), func(value: float) -> void:
+	_add_slider_row(reticle_tab, "Length", 2.0, 22.0, 1.0, float(crosshair_settings.get("length", 8.0)), func(value: float) -> void:
 		crosshair_settings["length"] = value
 		_update_crosshair()
 		_rebuild_preview_crosshair(preview_crosshair)
 		_save_player_settings()
 	)
-	_add_slider_row(layout, "Thickness", 1.0, 8.0, 1.0, float(crosshair_settings.get("thickness", 2.0)), func(value: float) -> void:
+	_add_slider_row(reticle_tab, "Thickness", 1.0, 8.0, 1.0, float(crosshair_settings.get("thickness", 2.0)), func(value: float) -> void:
 		crosshair_settings["thickness"] = value
 		_update_crosshair()
 		_rebuild_preview_crosshair(preview_crosshair)
 		_save_player_settings()
 	)
-	_add_slider_row(layout, "Dot", 0.0, 10.0, 1.0, float(crosshair_settings.get("dot_size", 2.0)), func(value: float) -> void:
+	_add_slider_row(reticle_tab, "Dot", 0.0, 10.0, 1.0, float(crosshair_settings.get("dot_size", 2.0)), func(value: float) -> void:
 		crosshair_settings["dot_size"] = value
 		_update_crosshair()
 		_rebuild_preview_crosshair(preview_crosshair)
 		_save_player_settings()
 	)
-	_add_slider_row(layout, "Opacity", 0.15, 1.0, 0.05, float(crosshair_settings.get("opacity", 0.92)), func(value: float) -> void:
+	_add_slider_row(reticle_tab, "Opacity", 0.15, 1.0, 0.05, float(crosshair_settings.get("opacity", 0.92)), func(value: float) -> void:
 		crosshair_settings["opacity"] = value
 		_update_crosshair()
 		_rebuild_preview_crosshair(preview_crosshair)
@@ -995,7 +1017,7 @@ func _build_settings_panel(root: Control) -> void:
 
 	var color_row := HBoxContainer.new()
 	color_row.add_theme_constant_override("separation", 10)
-	layout.add_child(color_row)
+	reticle_tab.add_child(color_row)
 	var color_label := Label.new()
 	color_label.text = "Color"
 	color_label.custom_minimum_size = Vector2(120, 0)
@@ -1011,37 +1033,22 @@ func _build_settings_panel(root: Control) -> void:
 	)
 	color_row.add_child(color_picker)
 
-	_add_checkbox_row(layout, "Outline", bool(crosshair_settings.get("outline", true)), func(enabled: bool) -> void:
+	_add_checkbox_row(reticle_tab, "Outline", bool(crosshair_settings.get("outline", true)), func(enabled: bool) -> void:
 		crosshair_settings["outline"] = enabled
 		_update_crosshair()
 		_rebuild_preview_crosshair(preview_crosshair)
 		_save_player_settings()
 	)
-	_add_checkbox_row(layout, "Dynamic gap", bool(crosshair_settings.get("dynamic_gap", true)), func(enabled: bool) -> void:
+	_add_checkbox_row(reticle_tab, "Dynamic gap", bool(crosshair_settings.get("dynamic_gap", true)), func(enabled: bool) -> void:
 		crosshair_settings["dynamic_gap"] = enabled
 		_update_crosshair()
 		_rebuild_preview_crosshair(preview_crosshair)
 		_save_player_settings()
 	)
 
-	var keybind_title := Label.new()
-	keybind_title.text = "Keybinds"
-	keybind_title.add_theme_font_size_override("font_size", 20)
-	layout.add_child(keybind_title)
-
-	rebind_status_label = Label.new()
-	rebind_status_label.text = "Click Rebind, then press a key or mouse button. Escape stays fixed for settings."
-	rebind_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	rebind_status_label.add_theme_font_size_override("font_size", 13)
-	layout.add_child(rebind_status_label)
-
-	keybind_buttons.clear()
-	for binding in _get_rebindable_actions():
-		_add_keybind_row(layout, binding)
-
 	var preset_row := HBoxContainer.new()
 	preset_row.add_theme_constant_override("separation", 8)
-	layout.add_child(preset_row)
+	reticle_tab.add_child(preset_row)
 	for preset in [
 		{"label": "Cyan", "color": Color(0.42, 0.95, 1.0, 0.95), "gap": 7.0, "length": 8.0},
 		{"label": "Lime", "color": Color(0.60, 1.0, 0.24, 0.95), "gap": 5.0, "length": 7.0},
@@ -1060,7 +1067,41 @@ func _build_settings_panel(root: Control) -> void:
 		)
 		preset_row.add_child(button)
 
+	rebind_status_label = Label.new()
+	rebind_status_label.text = "Pick Rebind, then press a key, mouse button, or controller button/trigger. Escape cancels and stays fixed for settings."
+	rebind_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	rebind_status_label.add_theme_font_size_override("font_size", 13)
+	controls_tab.add_child(rebind_status_label)
+
+	keybind_buttons.clear()
+	_add_keybind_group(controls_tab, "Movement", "movement")
+	_add_keybind_group(controls_tab, "Combat", "combat")
+	_add_keybind_group(controls_tab, "Card Abilities", "ability")
+	_add_keybind_group(controls_tab, "System", "system")
+	_refresh_keybind_rows()
+
 	_rebuild_preview_crosshair(preview_crosshair)
+
+
+func _add_settings_tab(tabs: TabContainer, tab_name: String) -> VBoxContainer:
+	var scroll := ScrollContainer.new()
+	scroll.name = tab_name
+	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	tabs.add_child(scroll)
+
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 8)
+	margin.add_theme_constant_override("margin_top", 12)
+	margin.add_theme_constant_override("margin_right", 8)
+	margin.add_theme_constant_override("margin_bottom", 12)
+	scroll.add_child(margin)
+
+	var tab := VBoxContainer.new()
+	tab.add_theme_constant_override("separation", 10)
+	tab.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	margin.add_child(tab)
+	return tab
 
 
 func _build_reward_panel(root: Control) -> void:
@@ -1141,6 +1182,16 @@ func _add_checkbox_row(parent: VBoxContainer, label_text: String, enabled: bool,
 	parent.add_child(checkbox)
 
 
+func _add_keybind_group(parent: VBoxContainer, title_text: String, group: String) -> void:
+	var title := Label.new()
+	title.text = title_text
+	title.add_theme_font_size_override("font_size", 18)
+	parent.add_child(title)
+	for binding in _get_rebindable_actions():
+		if String(binding.get("group", "")) == group:
+			_add_keybind_row(parent, binding)
+
+
 func _add_keybind_row(parent: VBoxContainer, binding: Dictionary) -> void:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 10)
@@ -1154,14 +1205,26 @@ func _add_keybind_row(parent: VBoxContainer, binding: Dictionary) -> void:
 	current.text = _get_action_binding_text(StringName(binding.get("action", &"")))
 	current.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(current)
+	var warning := Label.new()
+	warning.name = "BindWarning_%s" % String(binding.get("action", "action"))
+	warning.custom_minimum_size = Vector2(170, 0)
+	warning.add_theme_font_size_override("font_size", 12)
+	warning.add_theme_color_override("font_color", Color(1.0, 0.46, 0.28))
+	row.add_child(warning)
 	var button := Button.new()
 	button.text = "Rebind"
 	var action := StringName(binding.get("action", &""))
 	button.pressed.connect(func() -> void:
 		_start_rebinding(action)
 	)
-	keybind_buttons[action] = {"button": button, "label": current}
 	row.add_child(button)
+	var reset_button := Button.new()
+	reset_button.text = "Reset"
+	reset_button.pressed.connect(func() -> void:
+		_reset_action_binding(action)
+	)
+	row.add_child(reset_button)
+	keybind_buttons[action] = {"button": button, "label": current, "warning": warning}
 
 
 func _format_setting_value(value: float) -> String:
@@ -1172,20 +1235,20 @@ func _format_setting_value(value: float) -> String:
 
 func _get_rebindable_actions() -> Array[Dictionary]:
 	return [
-		{"action": &"fps_move_forward", "label": "Move Forward", "default_key": KEY_W},
-		{"action": &"fps_move_back", "label": "Move Back", "default_key": KEY_S},
-		{"action": &"fps_move_left", "label": "Move Left", "default_key": KEY_A},
-		{"action": &"fps_move_right", "label": "Move Right", "default_key": KEY_D},
-		{"action": &"fps_jump", "label": "Jump", "default_key": KEY_SPACE},
-		{"action": &"fps_sprint", "label": "Sprint", "default_key": KEY_SHIFT},
-		{"action": &"fps_crouch", "label": "Crouch", "default_key": KEY_CTRL},
-		{"action": &"fps_reload", "label": "Reload", "default_key": KEY_R},
-		{"action": &"fps_fire", "label": "Fire", "default_mouse": MOUSE_BUTTON_LEFT},
-		{"action": &"fps_quick_restart", "label": "Restart Encounter", "default_key": KEY_F5},
-		{"action": &"fps_ability_1", "label": "Ability 1", "default_key": KEY_Q},
-		{"action": &"fps_ability_2", "label": "Ability 2", "default_key": KEY_E},
-		{"action": &"fps_ability_3", "label": "Ability 3", "default_key": KEY_C},
-		{"action": &"fps_ability_4", "label": "Ability 4", "default_key": KEY_V}
+		{"action": &"fps_move_forward", "label": "Move Forward", "group": "movement", "default_key": KEY_W, "default_joy_button": JOY_BUTTON_DPAD_UP},
+		{"action": &"fps_move_back", "label": "Move Back", "group": "movement", "default_key": KEY_S, "default_joy_button": JOY_BUTTON_DPAD_DOWN},
+		{"action": &"fps_move_left", "label": "Move Left", "group": "movement", "default_key": KEY_A, "default_joy_button": JOY_BUTTON_DPAD_LEFT},
+		{"action": &"fps_move_right", "label": "Move Right", "group": "movement", "default_key": KEY_D, "default_joy_button": JOY_BUTTON_DPAD_RIGHT},
+		{"action": &"fps_jump", "label": "Jump", "group": "movement", "default_key": KEY_SPACE, "default_joy_button": JOY_BUTTON_A},
+		{"action": &"fps_sprint", "label": "Sprint", "group": "movement", "default_key": KEY_SHIFT, "default_joy_button": JOY_BUTTON_LEFT_STICK},
+		{"action": &"fps_crouch", "label": "Crouch", "group": "movement", "default_key": KEY_CTRL, "default_joy_button": JOY_BUTTON_RIGHT_STICK},
+		{"action": &"fps_reload", "label": "Reload", "group": "combat", "default_key": KEY_R, "default_joy_button": JOY_BUTTON_X},
+		{"action": &"fps_fire", "label": "Fire", "group": "combat", "default_mouse": MOUSE_BUTTON_LEFT, "default_joy_axis": JOY_AXIS_TRIGGER_RIGHT, "default_joy_axis_value": 1.0},
+		{"action": &"fps_quick_restart", "label": "Restart Encounter", "group": "system", "default_key": KEY_F5, "default_joy_button": JOY_BUTTON_START},
+		{"action": &"fps_ability_1", "label": "Ability 1", "group": "ability", "default_key": KEY_Q, "default_joy_button": JOY_BUTTON_LEFT_SHOULDER},
+		{"action": &"fps_ability_2", "label": "Ability 2", "group": "ability", "default_key": KEY_E, "default_joy_button": JOY_BUTTON_RIGHT_SHOULDER},
+		{"action": &"fps_ability_3", "label": "Ability 3", "group": "ability", "default_key": KEY_C, "default_joy_button": JOY_BUTTON_Y},
+		{"action": &"fps_ability_4", "label": "Ability 4", "group": "ability", "default_key": KEY_V, "default_joy_button": JOY_BUTTON_B}
 	]
 
 
@@ -1219,11 +1282,33 @@ func _capture_rebind_event(event: InputEvent) -> bool:
 		new_mouse.button_index = mouse_event.button_index
 		_apply_rebind_event(rebinding_action, new_mouse)
 		return true
+	if event is InputEventJoypadButton:
+		var joy_button_event := event as InputEventJoypadButton
+		if not joy_button_event.pressed:
+			return false
+		var new_joy_button := InputEventJoypadButton.new()
+		new_joy_button.button_index = joy_button_event.button_index
+		_apply_rebind_event(rebinding_action, new_joy_button)
+		return true
+	if event is InputEventJoypadMotion:
+		var joy_motion_event := event as InputEventJoypadMotion
+		if absf(joy_motion_event.axis_value) < 0.55:
+			return false
+		var new_joy_motion := InputEventJoypadMotion.new()
+		new_joy_motion.axis = joy_motion_event.axis
+		new_joy_motion.axis_value = 1.0 if joy_motion_event.axis_value > 0.0 else -1.0
+		_apply_rebind_event(rebinding_action, new_joy_motion)
+		return true
 	return false
 
 
 func _apply_rebind_event(action: StringName, event: InputEvent) -> void:
 	if action.is_empty():
+		return
+	var conflict := _find_binding_conflict(event, action)
+	if not conflict.is_empty():
+		if rebind_status_label != null:
+			rebind_status_label.text = "%s is already used by %s. Pick another input or press Escape." % [_get_input_event_label(event), _get_action_label(conflict)]
 		return
 	if not InputMap.has_action(action):
 		InputMap.add_action(action)
@@ -1251,6 +1336,11 @@ func _refresh_keybind_rows() -> void:
 		var current: Label = row.get("label", null)
 		if current != null:
 			current.text = _get_action_binding_text(action)
+			var conflict_text := _get_action_conflict_text(action)
+			current.add_theme_color_override("font_color", Color(1.0, 0.48, 0.30) if not conflict_text.is_empty() else Color(0.88, 0.94, 1.0))
+		var warning: Label = row.get("warning", null)
+		if warning != null:
+			warning.text = _get_action_conflict_text(action)
 
 
 func _get_action_label(action: StringName) -> String:
@@ -1268,27 +1358,38 @@ func _get_action_binding_text(action: StringName) -> String:
 		return "Unbound"
 	var names: Array[String] = []
 	for event in events:
-		if event is InputEventKey:
-			var key_event := event as InputEventKey
-			var code := key_event.physical_keycode if key_event.physical_keycode != 0 else key_event.keycode
-			names.append(OS.get_keycode_string(code))
-		elif event is InputEventMouseButton:
-			var mouse_event := event as InputEventMouseButton
-			names.append("Mouse %d" % int(mouse_event.button_index))
-		else:
-			names.append(event.as_text())
+		names.append(_get_input_event_label(event))
 	return " / ".join(names)
 
 
-func _get_default_input_event(binding: Dictionary) -> InputEvent:
+func _get_primary_action_binding_text(action: StringName) -> String:
+	var text := _get_action_binding_text(action)
+	if text == "Unbound":
+		return String(action)
+	return text.split(" / ", false, 1)[0]
+
+
+func _get_default_input_events(binding: Dictionary) -> Array[InputEvent]:
+	var events: Array[InputEvent] = []
 	if binding.has("default_mouse"):
 		var mouse := InputEventMouseButton.new()
 		mouse.button_index = int(binding.get("default_mouse", MOUSE_BUTTON_LEFT))
-		return mouse
-	var key := InputEventKey.new()
-	key.physical_keycode = int(binding.get("default_key", KEY_NONE))
-	key.keycode = int(binding.get("default_key", KEY_NONE))
-	return key
+		events.append(mouse)
+	if binding.has("default_key"):
+		var key := InputEventKey.new()
+		key.physical_keycode = int(binding.get("default_key", KEY_NONE))
+		key.keycode = int(binding.get("default_key", KEY_NONE))
+		events.append(key)
+	if binding.has("default_joy_button"):
+		var joy_button := InputEventJoypadButton.new()
+		joy_button.button_index = int(binding.get("default_joy_button", JOY_BUTTON_A))
+		events.append(joy_button)
+	if binding.has("default_joy_axis"):
+		var joy_axis := InputEventJoypadMotion.new()
+		joy_axis.axis = int(binding.get("default_joy_axis", JOY_AXIS_TRIGGER_RIGHT))
+		joy_axis.axis_value = float(binding.get("default_joy_axis_value", 1.0))
+		events.append(joy_axis)
+	return events
 
 
 func _encode_action_binding(action: StringName) -> String:
@@ -1297,37 +1398,200 @@ func _encode_action_binding(action: StringName) -> String:
 	var events := InputMap.action_get_events(action)
 	if events.is_empty():
 		return ""
-	var event := events[0]
+	var encoded: Array[String] = []
+	for event in events:
+		var event_text := _encode_input_event(event)
+		if not event_text.is_empty():
+			encoded.append(event_text)
+	return "|".join(encoded)
+
+
+func _encode_input_event(event: InputEvent) -> String:
 	if event is InputEventKey:
 		var key_event := event as InputEventKey
 		var code := key_event.physical_keycode if key_event.physical_keycode != 0 else key_event.keycode
 		return "key:%d" % int(code)
 	if event is InputEventMouseButton:
 		return "mouse:%d" % int((event as InputEventMouseButton).button_index)
+	if event is InputEventJoypadButton:
+		return "joy_button:%d" % int((event as InputEventJoypadButton).button_index)
+	if event is InputEventJoypadMotion:
+		var motion := event as InputEventJoypadMotion
+		var sign := 1 if motion.axis_value >= 0.0 else -1
+		return "joy_axis:%d:%d" % [int(motion.axis), sign]
 	return ""
 
 
 func _apply_encoded_binding(action: StringName, encoded: String) -> void:
-	var parts := encoded.split(":", false, 1)
-	if parts.size() != 2:
+	var events: Array[InputEvent] = []
+	for encoded_event in encoded.split("|", false):
+		var event := _decode_input_event(encoded_event)
+		if event != null:
+			events.append(event)
+	if events.is_empty():
 		return
-	var event: InputEvent
+	if not InputMap.has_action(action):
+		InputMap.add_action(action)
+	InputMap.action_erase_events(action)
+	for event in events:
+		InputMap.action_add_event(action, event)
+
+
+func _decode_input_event(encoded: String) -> InputEvent:
+	var parts := encoded.split(":", false)
+	if parts.size() < 2:
+		return null
 	match parts[0]:
 		"key":
 			var key := InputEventKey.new()
 			key.physical_keycode = int(parts[1])
 			key.keycode = int(parts[1])
-			event = key
+			return key
 		"mouse":
 			var mouse := InputEventMouseButton.new()
 			mouse.button_index = int(parts[1])
-			event = mouse
+			return mouse
+		"joy_button":
+			var joy_button := InputEventJoypadButton.new()
+			joy_button.button_index = int(parts[1])
+			return joy_button
+		"joy_axis":
+			if parts.size() < 3:
+				return null
+			var joy_axis := InputEventJoypadMotion.new()
+			joy_axis.axis = int(parts[1])
+			joy_axis.axis_value = 1.0 if int(parts[2]) >= 0 else -1.0
+			return joy_axis
 		_:
-			return
+			return null
+
+
+func _reset_action_binding(action: StringName) -> void:
+	for binding in _get_rebindable_actions():
+		if StringName(binding.get("action", &"")) != action:
+			continue
+		if not InputMap.has_action(action):
+			InputMap.add_action(action)
+		InputMap.action_erase_events(action)
+		for event in _get_default_input_events(binding):
+			InputMap.action_add_event(action, event)
+		_save_player_settings()
+		_refresh_keybind_rows()
+		if rebind_status_label != null:
+			rebind_status_label.text = "%s reset to default." % _get_action_label(action)
+		return
+
+
+func _reset_all_keybinds() -> void:
+	for binding in _get_rebindable_actions():
+		_reset_action_binding(StringName(binding.get("action", &"")))
+	_save_player_settings()
+	_refresh_keybind_rows()
+	if rebind_status_label != null:
+		rebind_status_label.text = "Controls reset to keyboard, mouse, and gamepad defaults."
+
+
+func _find_binding_conflict(event: InputEvent, except_action: StringName = &"") -> StringName:
+	var signature := _get_input_event_signature(event)
+	if signature.is_empty():
+		return &""
+	for binding in _get_rebindable_actions():
+		var action := StringName(binding.get("action", &""))
+		if action == except_action or not InputMap.has_action(action):
+			continue
+		for existing_event in InputMap.action_get_events(action):
+			if _get_input_event_signature(existing_event) == signature:
+				return action
+	return &""
+
+
+func _get_action_conflict_text(action: StringName) -> String:
 	if not InputMap.has_action(action):
-		InputMap.add_action(action)
-	InputMap.action_erase_events(action)
-	InputMap.action_add_event(action, event)
+		return ""
+	for event in InputMap.action_get_events(action):
+		var conflict := _find_binding_conflict(event, action)
+		if not conflict.is_empty():
+			return "Conflict: %s" % _get_action_label(conflict)
+	return ""
+
+
+func _get_input_event_signature(event: InputEvent) -> String:
+	if event is InputEventKey:
+		var key_event := event as InputEventKey
+		var code := key_event.physical_keycode if key_event.physical_keycode != 0 else key_event.keycode
+		return "key:%d" % int(code)
+	if event is InputEventMouseButton:
+		return "mouse:%d" % int((event as InputEventMouseButton).button_index)
+	if event is InputEventJoypadButton:
+		return "joy_button:%d" % int((event as InputEventJoypadButton).button_index)
+	if event is InputEventJoypadMotion:
+		var motion := event as InputEventJoypadMotion
+		var sign := 1 if motion.axis_value >= 0.0 else -1
+		return "joy_axis:%d:%d" % [int(motion.axis), sign]
+	return ""
+
+
+func _get_input_event_label(event: InputEvent) -> String:
+	if event is InputEventKey:
+		var key_event := event as InputEventKey
+		var code := key_event.physical_keycode if key_event.physical_keycode != 0 else key_event.keycode
+		return OS.get_keycode_string(code)
+	if event is InputEventMouseButton:
+		var mouse_event := event as InputEventMouseButton
+		if mouse_event.button_index == MOUSE_BUTTON_LEFT:
+			return "Mouse Left"
+		if mouse_event.button_index == MOUSE_BUTTON_RIGHT:
+			return "Mouse Right"
+		if mouse_event.button_index == MOUSE_BUTTON_MIDDLE:
+			return "Mouse Middle"
+		return "Mouse %d" % int(mouse_event.button_index)
+	if event is InputEventJoypadButton:
+		return _get_joypad_button_label(int((event as InputEventJoypadButton).button_index))
+	if event is InputEventJoypadMotion:
+		var motion := event as InputEventJoypadMotion
+		return _get_joypad_axis_label(int(motion.axis), motion.axis_value)
+	return event.as_text()
+
+
+func _get_joypad_button_label(button_index: int) -> String:
+	match button_index:
+		JOY_BUTTON_A:
+			return "Pad A"
+		JOY_BUTTON_B:
+			return "Pad B"
+		JOY_BUTTON_X:
+			return "Pad X"
+		JOY_BUTTON_Y:
+			return "Pad Y"
+		JOY_BUTTON_LEFT_SHOULDER:
+			return "LB"
+		JOY_BUTTON_RIGHT_SHOULDER:
+			return "RB"
+		JOY_BUTTON_LEFT_STICK:
+			return "L3"
+		JOY_BUTTON_RIGHT_STICK:
+			return "R3"
+		JOY_BUTTON_START:
+			return "Start"
+		JOY_BUTTON_DPAD_UP:
+			return "D-Pad Up"
+		JOY_BUTTON_DPAD_DOWN:
+			return "D-Pad Down"
+		JOY_BUTTON_DPAD_LEFT:
+			return "D-Pad Left"
+		JOY_BUTTON_DPAD_RIGHT:
+			return "D-Pad Right"
+		_:
+			return "Pad Button %d" % button_index
+
+
+func _get_joypad_axis_label(axis: int, value: float) -> String:
+	if axis == JOY_AXIS_TRIGGER_LEFT:
+		return "LT"
+	if axis == JOY_AXIS_TRIGGER_RIGHT:
+		return "RT"
+	var direction := "+" if value >= 0.0 else "-"
+	return "Axis %d%s" % [axis, direction]
 
 
 func _update_crosshair() -> void:
@@ -1675,7 +1939,8 @@ func _ensure_input_actions() -> void:
 		if not InputMap.has_action(action):
 			InputMap.add_action(action)
 		if InputMap.action_get_events(action).is_empty():
-			InputMap.action_add_event(action, _get_default_input_event(binding))
+			for event in _get_default_input_events(binding):
+				InputMap.action_add_event(action, event)
 
 
 func _ensure_key_action(action: StringName, keycode: Key) -> void:

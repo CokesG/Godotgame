@@ -143,6 +143,8 @@ func test_fps_settings_crosshair_and_ability_contracts() -> void:
 	assert_true(prototype.has_method("is_gameplay_paused"), "FPSPrototype should expose settings/reward pause state.")
 	assert_true(prototype.has_method("_apply_encoded_binding"), "FPSPrototype settings should support persisted keybind rebinding.")
 	assert_true(prototype.has_method("_get_action_binding_text"), "FPSPrototype settings should show readable binding text.")
+	assert_true(prototype.has_method("_reset_action_binding"), "FPSPrototype settings should allow per-action default resets.")
+	assert_true(prototype.has_method("_find_binding_conflict"), "FPSPrototype settings should detect duplicate keybinds.")
 	prototype.call("toggle_settings_menu")
 	assert_true(bool(prototype.call("is_gameplay_paused")), "Escape settings overlay should pause FPS gameplay input.")
 	prototype.call("toggle_settings_menu")
@@ -150,7 +152,10 @@ func test_fps_settings_crosshair_and_ability_contracts() -> void:
 	prototype.call("_ensure_input_actions")
 	prototype.call("_apply_encoded_binding", &"fps_ability_4", "key:%d" % KEY_Y)
 	assert_true(String(prototype.call("_get_action_binding_text", &"fps_ability_4")).contains("Y"), "Ability keybinds should update through the settings rebinder.")
-	prototype.call("_apply_encoded_binding", &"fps_ability_4", "key:%d" % KEY_V)
+	prototype.call("_apply_encoded_binding", &"fps_ability_4", "joy_button:%d" % JOY_BUTTON_Y)
+	assert_true(String(prototype.call("_get_action_binding_text", &"fps_ability_4")).contains("Pad Y"), "Ability keybinds should support gamepad button bindings.")
+	prototype.call("_reset_action_binding", &"fps_ability_4")
+	assert_true(String(prototype.call("_get_action_binding_text", &"fps_ability_4")).contains("V"), "Ability keybind reset should restore keyboard defaults.")
 	prototype.set("crosshair_settings", {
 		"color": Color(1.0, 0.25, 0.78, 0.5),
 		"gap": 4.0,

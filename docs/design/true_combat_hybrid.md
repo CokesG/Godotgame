@@ -45,8 +45,11 @@ Current FPS ability contract:
 - `Guard Up`, `Iron Vow`, and other guard cards become shield armor.
 - `Read Tell` and read cards reveal enemy outlines/marks.
 - `Snare Card` and trap cards create a snare field.
-- The current FPS bindings are `Q`, `E`, `C`, and `V` for the first four bridged abilities.
-- The Escape settings panel now includes custom keybind rows for movement, fire, reload, restart, and the four ability slots. Escape remains fixed so the player can always reopen settings.
+- Ability HUD labels read from the live bindings instead of hardcoded `Q/E/C/V`.
+- The Escape settings panel now groups tuning into Aim, Reticle, and Controls tabs.
+- Controls can be rebound with keyboard keys, mouse buttons, controller buttons, and controller trigger axes.
+- Movement, combat, system, and ability controls have per-action reset buttons plus a reset-all-controls button.
+- Duplicate inputs are rejected during rebinding with an inline conflict warning. Escape remains fixed so the player can always reopen settings or cancel a rebind.
 
 For the board-flow/UI contract, see `docs/design/board_flow_shooter_fusion.md`. That document is the source of truth for how the existing card-board interface should evolve around the movement/combat work happening in the other implementation thread.
 
