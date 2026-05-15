@@ -141,10 +141,16 @@ func test_fps_settings_crosshair_and_ability_contracts() -> void:
 	var prototype: Node = prototype_script.new()
 	assert_true(prototype.has_method("toggle_settings_menu"), "FPSPrototype should expose the Escape settings overlay.")
 	assert_true(prototype.has_method("is_gameplay_paused"), "FPSPrototype should expose settings/reward pause state.")
+	assert_true(prototype.has_method("_apply_encoded_binding"), "FPSPrototype settings should support persisted keybind rebinding.")
+	assert_true(prototype.has_method("_get_action_binding_text"), "FPSPrototype settings should show readable binding text.")
 	prototype.call("toggle_settings_menu")
 	assert_true(bool(prototype.call("is_gameplay_paused")), "Escape settings overlay should pause FPS gameplay input.")
 	prototype.call("toggle_settings_menu")
 	assert_false(bool(prototype.call("is_gameplay_paused")), "Closing settings should resume FPS gameplay input.")
+	prototype.call("_ensure_input_actions")
+	prototype.call("_apply_encoded_binding", &"fps_ability_4", "key:%d" % KEY_Y)
+	assert_true(String(prototype.call("_get_action_binding_text", &"fps_ability_4")).contains("Y"), "Ability keybinds should update through the settings rebinder.")
+	prototype.call("_apply_encoded_binding", &"fps_ability_4", "key:%d" % KEY_V)
 	prototype.set("crosshair_settings", {
 		"color": Color(1.0, 0.25, 0.78, 0.5),
 		"gap": 4.0,
