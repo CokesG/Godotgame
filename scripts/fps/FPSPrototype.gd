@@ -72,6 +72,10 @@ var waves_cleared := 0
 var rewards_pending := false
 var active_reward_index := -1
 var reward_options: Array[Dictionary] = []
+var keybind_buttons: Dictionary = {}
+var rebind_status_label: Label
+var rebinding_action: StringName = &""
+var rebinding_ignore_until_msec := 0
 var spawn_position := Vector3(0.0, 1.4, 10.5)
 var tactical_map: Dictionary = {}
 var active_bridge_payload: Dictionary = DEFAULT_BRIDGE_PAYLOAD.duplicate(true)
@@ -158,6 +162,10 @@ func _process(delta: float) -> void:
 
 
 func _input(event: InputEvent) -> void:
+	if not rebinding_action.is_empty():
+		if _capture_rebind_event(event):
+			get_viewport().set_input_as_handled()
+		return
 	if event.is_action_pressed("fps_ability_1"):
 		_try_use_ability(0)
 		get_viewport().set_input_as_handled()
@@ -1015,6 +1023,21 @@ func _build_settings_panel(root: Control) -> void:
 		_save_player_settings()
 	)
 
+	var keybind_title := Label.new()
+	keybind_title.text = "Keybinds"
+	keybind_title.add_theme_font_size_override("font_size", 20)
+	layout.add_child(keybind_title)
+
+	rebind_status_label = Label.new()
+	rebind_status_label.text = "Click Rebind, then press a key or mouse button. Escape stays fixed for settings."
+	rebind_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	rebind_status_label.add_theme_font_size_override("font_size", 13)
+	layout.add_child(rebind_status_label)
+
+	keybind_buttons.clear()
+	for binding in _get_rebindable_actions():
+		_add_keybind_row(layout, binding)
+
 	var preset_row := HBoxContainer.new()
 	preset_row.add_theme_constant_override("separation", 8)
 	layout.add_child(preset_row)
@@ -1117,10 +1140,193 @@ func _add_checkbox_row(parent: VBoxContainer, label_text: String, enabled: bool,
 	parent.add_child(checkbox)
 
 
+func _add_keybind_row(parent: VBoxContainer, binding: Dictionary) -> void:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	parent.add_child(row)
+	var label := Label.new()
+	label.text = String(binding.get("label", binding.get("action", "Action")))
+	label.custom_minimum_size = Vector2(150, 0)
+	row.add_child(label)
+	var current := Label.new()
+	current.name = "CurrentBind_%s" % String(binding.get("action", "action"))
+	current.text = _get_action_binding_text(StringName(binding.get("action", &"")))
+	current.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(current)
+	var button := Button.new()
+	button.text = "Rebind"
+	var action := StringName(binding.get("action", &""))
+	button.pressed.connect(func() -> void:
+		_start_rebinding(action)
+	)
+	keybind_buttons[action] = {"button": button, "label": current}
+	row.add_child(button)
+
+
 func _format_setting_value(value: float) -> String:
 	if value < 0.01:
 		return "%.4f" % value
 	return "%.1f" % value
+
+
+func _get_rebindable_actions() -> Array[Dictionary]:
+	return [
+		{"action": &"fps_move_forward", "label": "Move Forward", "default_key": KEY_W},
+		{"action": &"fps_move_back", "label": "Move Back", "default_key": KEY_S},
+		{"action": &"fps_move_left", "label": "Move Left", "default_key": KEY_A},
+		{"action": &"fps_move_right", "label": "Move Right", "default_key": KEY_D},
+		{"action": &"fps_jump", "label": "Jump", "default_key": KEY_SPACE},
+		{"action": &"fps_sprint", "label": "Sprint", "default_key": KEY_SHIFT},
+		{"action": &"fps_crouch", "label": "Crouch", "default_key": KEY_CTRL},
+		{"action": &"fps_reload", "label": "Reload", "default_key": KEY_R},
+		{"action": &"fps_fire", "label": "Fire", "default_mouse": MOUSE_BUTTON_LEFT},
+		{"action": &"fps_quick_restart", "label": "Restart Encounter", "default_key": KEY_F5},
+		{"action": &"fps_ability_1", "label": "Ability 1", "default_key": KEY_Q},
+		{"action": &"fps_ability_2", "label": "Ability 2", "default_key": KEY_E},
+		{"action": &"fps_ability_3", "label": "Ability 3", "default_key": KEY_C},
+		{"action": &"fps_ability_4", "label": "Ability 4", "default_key": KEY_V}
+	]
+
+
+func _start_rebinding(action: StringName) -> void:
+	rebinding_action = action
+	rebinding_ignore_until_msec = Time.get_ticks_msec() + 160
+	if rebind_status_label != null:
+		rebind_status_label.text = "Press a key or mouse button for %s. Press Escape to cancel." % _get_action_label(action)
+
+
+func _capture_rebind_event(event: InputEvent) -> bool:
+	if Time.get_ticks_msec() < rebinding_ignore_until_msec:
+		return true
+	if event is InputEventKey:
+		var key_event := event as InputEventKey
+		if not key_event.pressed or key_event.echo:
+			return false
+		if key_event.keycode == KEY_ESCAPE:
+			_finish_rebinding(false)
+			return true
+		var new_event := InputEventKey.new()
+		new_event.physical_keycode = key_event.physical_keycode if key_event.physical_keycode != 0 else key_event.keycode
+		new_event.keycode = key_event.keycode
+		_apply_rebind_event(rebinding_action, new_event)
+		return true
+	if event is InputEventMouseButton:
+		var mouse_event := event as InputEventMouseButton
+		if not mouse_event.pressed:
+			return false
+		var new_mouse := InputEventMouseButton.new()
+		new_mouse.button_index = mouse_event.button_index
+		_apply_rebind_event(rebinding_action, new_mouse)
+		return true
+	return false
+
+
+func _apply_rebind_event(action: StringName, event: InputEvent) -> void:
+	if action.is_empty():
+		return
+	if not InputMap.has_action(action):
+		InputMap.add_action(action)
+	InputMap.action_erase_events(action)
+	InputMap.action_add_event(action, event)
+	_save_player_settings()
+	_finish_rebinding(true)
+
+
+func _finish_rebinding(success: bool) -> void:
+	var action := rebinding_action
+	rebinding_action = &""
+	rebinding_ignore_until_msec = 0
+	_refresh_keybind_rows()
+	if rebind_status_label != null:
+		if success:
+			rebind_status_label.text = "%s is now %s." % [_get_action_label(action), _get_action_binding_text(action)]
+		else:
+			rebind_status_label.text = "Rebind canceled."
+
+
+func _refresh_keybind_rows() -> void:
+	for action in keybind_buttons.keys():
+		var row: Dictionary = keybind_buttons[action]
+		var current: Label = row.get("label", null)
+		if current != null:
+			current.text = _get_action_binding_text(action)
+
+
+func _get_action_label(action: StringName) -> String:
+	for binding in _get_rebindable_actions():
+		if StringName(binding.get("action", &"")) == action:
+			return String(binding.get("label", action))
+	return String(action)
+
+
+func _get_action_binding_text(action: StringName) -> String:
+	if not InputMap.has_action(action):
+		return "Unbound"
+	var events := InputMap.action_get_events(action)
+	if events.is_empty():
+		return "Unbound"
+	var names: Array[String] = []
+	for event in events:
+		if event is InputEventKey:
+			var key_event := event as InputEventKey
+			var code := key_event.physical_keycode if key_event.physical_keycode != 0 else key_event.keycode
+			names.append(OS.get_keycode_string(code))
+		elif event is InputEventMouseButton:
+			var mouse_event := event as InputEventMouseButton
+			names.append("Mouse %d" % int(mouse_event.button_index))
+		else:
+			names.append(event.as_text())
+	return " / ".join(names)
+
+
+func _get_default_input_event(binding: Dictionary) -> InputEvent:
+	if binding.has("default_mouse"):
+		var mouse := InputEventMouseButton.new()
+		mouse.button_index = int(binding.get("default_mouse", MOUSE_BUTTON_LEFT))
+		return mouse
+	var key := InputEventKey.new()
+	key.physical_keycode = int(binding.get("default_key", KEY_NONE))
+	key.keycode = int(binding.get("default_key", KEY_NONE))
+	return key
+
+
+func _encode_action_binding(action: StringName) -> String:
+	if not InputMap.has_action(action):
+		return ""
+	var events := InputMap.action_get_events(action)
+	if events.is_empty():
+		return ""
+	var event := events[0]
+	if event is InputEventKey:
+		var key_event := event as InputEventKey
+		var code := key_event.physical_keycode if key_event.physical_keycode != 0 else key_event.keycode
+		return "key:%d" % int(code)
+	if event is InputEventMouseButton:
+		return "mouse:%d" % int((event as InputEventMouseButton).button_index)
+	return ""
+
+
+func _apply_encoded_binding(action: StringName, encoded: String) -> void:
+	var parts := encoded.split(":", false, 1)
+	if parts.size() != 2:
+		return
+	var event: InputEvent
+	match parts[0]:
+		"key":
+			var key := InputEventKey.new()
+			key.physical_keycode = int(parts[1])
+			key.keycode = int(parts[1])
+			event = key
+		"mouse":
+			var mouse := InputEventMouseButton.new()
+			mouse.button_index = int(parts[1])
+			event = mouse
+		_:
+			return
+	if not InputMap.has_action(action):
+		InputMap.add_action(action)
+	InputMap.action_erase_events(action)
+	InputMap.action_add_event(action, event)
 
 
 func _update_crosshair() -> void:
@@ -1223,6 +1429,11 @@ func _load_player_settings() -> void:
 	var color_value: Variant = config.get_value("crosshair", "color", crosshair_settings.get("color", Color(0.72, 0.96, 1.0, 0.92)))
 	if typeof(color_value) == TYPE_COLOR:
 		crosshair_settings["color"] = color_value
+	for binding in _get_rebindable_actions():
+		var action := StringName(binding.get("action", &""))
+		var encoded := String(config.get_value("keybinds", String(action), ""))
+		if not encoded.is_empty():
+			_apply_encoded_binding(action, encoded)
 
 
 func _save_player_settings() -> void:
@@ -1239,6 +1450,9 @@ func _save_player_settings() -> void:
 	config.set_value("crosshair", "opacity", crosshair_settings.get("opacity", 0.92))
 	config.set_value("crosshair", "outline", crosshair_settings.get("outline", true))
 	config.set_value("crosshair", "dynamic_gap", crosshair_settings.get("dynamic_gap", true))
+	for binding in _get_rebindable_actions():
+		var action := StringName(binding.get("action", &""))
+		config.set_value("keybinds", String(action), _encode_action_binding(action))
 	config.save(SETTINGS_PATH)
 
 
@@ -1412,21 +1626,13 @@ func _consume_pending_arena_bridge_payload() -> void:
 
 
 func _ensure_input_actions() -> void:
-	_ensure_key_action("fps_move_forward", KEY_W)
-	_ensure_key_action("fps_move_back", KEY_S)
-	_ensure_key_action("fps_move_left", KEY_A)
-	_ensure_key_action("fps_move_right", KEY_D)
-	_ensure_key_action("fps_jump", KEY_SPACE)
-	_ensure_key_action("fps_sprint", KEY_SHIFT)
-	_ensure_key_action("fps_crouch", KEY_CTRL)
-	_ensure_key_action("fps_reload", KEY_R)
 	_ensure_key_action("fps_toggle_mouse", KEY_ESCAPE)
-	_ensure_key_action("fps_quick_restart", KEY_F5)
-	_ensure_key_action("fps_ability_1", KEY_Q)
-	_ensure_key_action("fps_ability_2", KEY_E)
-	_ensure_key_action("fps_ability_3", KEY_C)
-	_ensure_key_action("fps_ability_4", KEY_V)
-	_ensure_mouse_action("fps_fire", MOUSE_BUTTON_LEFT)
+	for binding in _get_rebindable_actions():
+		var action := StringName(binding.get("action", &""))
+		if not InputMap.has_action(action):
+			InputMap.add_action(action)
+		if InputMap.action_get_events(action).is_empty():
+			InputMap.action_add_event(action, _get_default_input_event(binding))
 
 
 func _ensure_key_action(action: StringName, keycode: Key) -> void:
