@@ -519,6 +519,27 @@ func spawn_impact(position: Vector3, normal: Vector3, critical: bool = false) ->
 	tween.tween_property(spark, "scale", Vector3(2.2, 2.2, 2.2), 0.12).from(Vector3(0.35, 0.35, 0.35))
 	tween.tween_property(spark, "transparency", 1.0, 0.14)
 	tween.chain().tween_callback(spark.queue_free)
+	_spawn_impact_decal(position, critical)
+
+
+func _spawn_impact_decal(position: Vector3, critical: bool) -> void:
+	if effects_root == null:
+		return
+	var decal := MeshInstance3D.new()
+	decal.name = "ImpactDecal"
+	var mesh := CylinderMesh.new()
+	mesh.top_radius = 0.18 if critical else 0.11
+	mesh.bottom_radius = mesh.top_radius
+	mesh.height = 0.01
+	decal.mesh = mesh
+	decal.global_position = Vector3(position.x, 0.018, position.z)
+	decal.material_override = _make_marker_material(Color(1.0, 0.48, 0.20) if critical else Color(0.50, 0.92, 1.0), 0.36)
+	effects_root.add_child(decal)
+	var tween := create_tween()
+	tween.set_parallel(true)
+	tween.tween_property(decal, "scale", Vector3(1.8, 1.0, 1.8), 0.24).from(Vector3(0.35, 1.0, 0.35))
+	tween.tween_property(decal, "transparency", 1.0, 1.05).set_delay(0.16)
+	tween.chain().tween_callback(decal.queue_free)
 
 
 func spawn_enemy_tell(position: Vector3, color: Color, radius: float, text: String = "DANGER") -> void:
@@ -697,12 +718,12 @@ func _build_world() -> void:
 
 
 func _build_arena() -> void:
-	var floor_mat := _make_material(Color(0.15, 0.19, 0.18), 0.08, 0.86)
-	var wall_mat := _make_material(Color(0.12, 0.15, 0.22), 0.0, 0.72)
-	var cover_mat := _make_material(Color(0.40, 0.29, 0.18), 0.12, 0.66)
-	var teal_mat := _make_emissive_material(Color(0.10, 0.76, 0.86), 0.62)
-	var brass_mat := _make_material(Color(0.86, 0.57, 0.26), 0.3, 0.48)
-	var lane_mat := _make_emissive_material(Color(0.08, 0.52, 0.56), 0.20)
+	var floor_mat := _make_material(Color(0.10, 0.12, 0.13), 0.12, 0.78)
+	var wall_mat := _make_material(Color(0.08, 0.10, 0.16), 0.02, 0.68)
+	var cover_mat := _make_material(Color(0.36, 0.27, 0.18), 0.16, 0.58)
+	var teal_mat := _make_emissive_material(Color(0.10, 0.76, 0.86), 0.82)
+	var brass_mat := _make_material(Color(0.86, 0.57, 0.26), 0.34, 0.42)
+	var lane_mat := _make_emissive_material(Color(0.08, 0.58, 0.68), 0.34)
 
 	_add_box("Floor", Vector3(0.0, -0.20, 0.0), Vector3(32.0, 0.4, 32.0), floor_mat)
 	_add_box("NorthWall", Vector3(0.0, 2.0, -16.0), Vector3(32.0, 4.4, 0.6), wall_mat)
@@ -724,6 +745,11 @@ func _build_arena() -> void:
 	_add_box("RightLaneLine", Vector3(5.35, 0.012, 0.0), Vector3(0.035, 0.022, 23.5), lane_mat, Vector3.ZERO, false)
 	_add_box("CrossLaneLine", Vector3(0.0, 0.014, -5.2), Vector3(18.0, 0.022, 0.035), lane_mat, Vector3.ZERO, false)
 
+	_build_spectacle_stage(lane_mat, brass_mat, teal_mat)
+	_build_spawn_portals()
+	_build_objective_props()
+	_build_cover_silhouettes()
+
 	for i in range(6):
 		var x := -11.0 + float(i) * 4.4
 		var lamp := _add_box("TableLight%d" % i, Vector3(x, 0.09, -14.2), Vector3(0.18, 0.18, 0.18), teal_mat, Vector3.ZERO, false)
@@ -735,6 +761,173 @@ func _build_arena() -> void:
 		lamp.add_child(light)
 
 	_build_tactical_map_markers()
+
+
+func _build_spectacle_stage(lane_mat: Material, brass_mat: Material, teal_mat: Material) -> void:
+	var stage := Node3D.new()
+	stage.name = "ArenaSpectacleStage"
+	arena_root.add_child(stage)
+
+	var rail_positions := [
+		Vector3(-12.8, 0.08, 0.0),
+		Vector3(12.8, 0.08, 0.0),
+		Vector3(0.0, 0.08, -12.8),
+		Vector3(0.0, 0.08, 12.8)
+	]
+	var rail_sizes := [
+		Vector3(0.12, 0.12, 25.0),
+		Vector3(0.12, 0.12, 25.0),
+		Vector3(25.0, 0.12, 0.12),
+		Vector3(25.0, 0.12, 0.12)
+	]
+	for index in range(rail_positions.size()):
+		var rail := _add_box("ArenaEnergyRail%d" % index, rail_positions[index], rail_sizes[index], lane_mat, Vector3.ZERO, false)
+		arena_root.remove_child(rail)
+		stage.add_child(rail)
+
+	for index in range(4):
+		var sign_x := -1.0 if index % 2 == 0 else 1.0
+		var sign_z := -1.0 if index < 2 else 1.0
+		var pillar := _add_box("BrassCornerPylon%d" % index, Vector3(sign_x * 12.8, 1.15, sign_z * 12.8), Vector3(0.62, 2.3, 0.62), brass_mat, Vector3.ZERO, false)
+		arena_root.remove_child(pillar)
+		stage.add_child(pillar)
+		var light := OmniLight3D.new()
+		light.name = "PylonLight"
+		light.light_color = Color(0.95, 0.62, 0.22)
+		light.light_energy = 1.4
+		light.omni_range = 6.5
+		pillar.add_child(light)
+
+	var scoreboard := Label3D.new()
+	scoreboard.name = "ArenaScoreboard"
+	scoreboard.text = "ANTE ARENA // HOLD MID // CASH OUT ALIVE"
+	scoreboard.font_size = 58
+	scoreboard.modulate = Color(1.0, 0.78, 0.30)
+	scoreboard.outline_size = 12
+	scoreboard.outline_modulate = Color(0.02, 0.01, 0.01, 0.94)
+	scoreboard.position = Vector3(0.0, 3.15, -15.58)
+	stage.add_child(scoreboard)
+
+	var crown := MeshInstance3D.new()
+	crown.name = "ArenaCeilingSigil"
+	var torus := TorusMesh.new()
+	torus.inner_radius = 3.8
+	torus.outer_radius = 3.92
+	crown.mesh = torus
+	crown.position = Vector3(0.0, 3.55, -4.0)
+	crown.rotation_degrees.x = 90.0
+	crown.material_override = teal_mat
+	stage.add_child(crown)
+
+
+func _build_spawn_portals() -> void:
+	var portal_data := [
+		{"name": "Left Spawn", "position": Vector3(-9.4, 0.06, -12.4), "color": Color(1.0, 0.34, 0.22)},
+		{"name": "Mid Spawn", "position": Vector3(0.0, 0.06, -14.0), "color": Color(0.34, 0.86, 1.0)},
+		{"name": "Right Spawn", "position": Vector3(9.4, 0.06, -12.4), "color": Color(0.78, 0.42, 1.0)}
+	]
+	for index in range(portal_data.size()):
+		var data: Dictionary = portal_data[index]
+		var portal := Node3D.new()
+		portal.name = "EnemySpawnPortal%d" % index
+		portal.position = data.get("position", Vector3.ZERO)
+		arena_root.add_child(portal)
+
+		var color: Color = data.get("color", Color.WHITE)
+		var ring := MeshInstance3D.new()
+		ring.name = "PortalRing"
+		var ring_mesh := TorusMesh.new()
+		ring_mesh.inner_radius = 1.12
+		ring_mesh.outer_radius = 1.20
+		ring.mesh = ring_mesh
+		ring.material_override = _make_marker_material(color, 1.1)
+		portal.add_child(ring)
+
+		var haze := MeshInstance3D.new()
+		haze.name = "PortalHaze"
+		var haze_mesh := CylinderMesh.new()
+		haze_mesh.top_radius = 1.05
+		haze_mesh.bottom_radius = 1.05
+		haze_mesh.height = 0.03
+		haze.mesh = haze_mesh
+		haze.position.y = 0.02
+		haze.material_override = _make_marker_material(color, 0.44)
+		portal.add_child(haze)
+
+		var portal_light := OmniLight3D.new()
+		portal_light.name = "PortalLight"
+		portal_light.light_color = color
+		portal_light.light_energy = 1.8
+		portal_light.omni_range = 5.0
+		portal.add_child(portal_light)
+
+		var label := Label3D.new()
+		label.name = "PortalLabel"
+		label.text = String(data.get("name", "Spawn")).to_upper()
+		label.font_size = 34
+		label.modulate = color
+		label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		label.outline_size = 8
+		label.outline_modulate = Color(0.02, 0.01, 0.01, 0.92)
+		label.position = Vector3(0.0, 1.25, 0.0)
+		portal.add_child(label)
+
+
+func _build_objective_props() -> void:
+	var objective := Node3D.new()
+	objective.name = "ObjectiveAntePot"
+	objective.position = Vector3(0.0, 0.08, -2.2)
+	arena_root.add_child(objective)
+
+	var pot := MeshInstance3D.new()
+	pot.name = "ChipPot"
+	var pot_mesh := CylinderMesh.new()
+	pot_mesh.top_radius = 0.85
+	pot_mesh.bottom_radius = 0.72
+	pot_mesh.height = 0.32
+	pot.mesh = pot_mesh
+	pot.material_override = _make_material(Color(0.74, 0.42, 0.18), 0.35, 0.38)
+	pot.position.y = 0.16
+	objective.add_child(pot)
+
+	for index in range(12):
+		var chip := MeshInstance3D.new()
+		chip.name = "ScatteredChip%d" % index
+		var chip_mesh := CylinderMesh.new()
+		chip_mesh.top_radius = 0.16
+		chip_mesh.bottom_radius = 0.16
+		chip_mesh.height = 0.045
+		chip.mesh = chip_mesh
+		var angle := float(index) * TAU / 12.0
+		var radius := 1.0 + float(index % 3) * 0.22
+		chip.position = Vector3(cos(angle) * radius, 0.06, sin(angle) * radius)
+		chip.rotation_degrees.y = float(index) * 21.0
+		chip.material_override = _make_emissive_material(Color(1.0, 0.72, 0.26), 0.18)
+		objective.add_child(chip)
+
+	var label := Label3D.new()
+	label.name = "ObjectiveLabel"
+	label.text = "ANTE POT"
+	label.font_size = 42
+	label.modulate = Color(1.0, 0.80, 0.34)
+	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	label.outline_size = 9
+	label.outline_modulate = Color(0.02, 0.01, 0.01, 0.92)
+	label.position = Vector3(0.0, 1.15, 0.0)
+	objective.add_child(label)
+
+
+func _build_cover_silhouettes() -> void:
+	var glass_mat := _make_marker_material(Color(0.22, 0.88, 1.0), 0.28)
+	var warning_mat := _make_marker_material(Color(1.0, 0.48, 0.20), 0.38)
+	var silhouettes := [
+		{"name": "CoverSilhouetteCenterA", "position": Vector3(-2.6, 1.35, -3.8), "size": Vector3(3.7, 0.08, 1.18), "mat": glass_mat},
+		{"name": "CoverSilhouetteCenterB", "position": Vector3(3.0, 1.35, -2.0), "size": Vector3(1.18, 0.08, 4.7), "mat": glass_mat},
+		{"name": "CoverWarningLeft", "position": Vector3(-7.0, 1.02, 6.0), "size": Vector3(4.4, 0.07, 1.08), "mat": warning_mat},
+		{"name": "CoverWarningRight", "position": Vector3(6.4, 1.02, 6.7), "size": Vector3(3.4, 0.07, 1.08), "mat": warning_mat}
+	]
+	for data in silhouettes:
+		_add_box(String(data.get("name", "CoverSilhouette")), data.get("position", Vector3.ZERO), data.get("size", Vector3.ONE), data.get("mat", glass_mat), Vector3.ZERO, false)
 
 
 func _build_tactical_map_markers() -> void:
@@ -864,15 +1057,28 @@ func _build_ui() -> void:
 	damage_flash.color = Color(0.95, 0.08, 0.04, 0.0)
 	hud_root.add_child(damage_flash)
 
+	var combat_panel := PanelContainer.new()
+	combat_panel.name = "CombatStatusHud"
+	combat_panel.anchor_left = 0.035
+	combat_panel.anchor_top = 0.035
+	combat_panel.anchor_right = 0.965
+	combat_panel.anchor_bottom = 0.13
+	combat_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	combat_panel.add_theme_stylebox_override("panel", _make_hud_panel_style(Color(0.025, 0.030, 0.036, 0.74), Color(0.20, 0.84, 1.0, 0.62)))
+	hud_root.add_child(combat_panel)
+
+	var combat_margin := MarginContainer.new()
+	combat_margin.add_theme_constant_override("margin_left", 12)
+	combat_margin.add_theme_constant_override("margin_top", 8)
+	combat_margin.add_theme_constant_override("margin_right", 12)
+	combat_margin.add_theme_constant_override("margin_bottom", 8)
+	combat_panel.add_child(combat_margin)
+
 	var top_bar := HBoxContainer.new()
 	top_bar.name = "TopBar"
-	top_bar.anchor_left = 0.035
-	top_bar.anchor_top = 0.035
-	top_bar.anchor_right = 0.965
-	top_bar.anchor_bottom = 0.13
 	top_bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	top_bar.add_theme_constant_override("separation", 14)
-	hud_root.add_child(top_bar)
+	combat_margin.add_child(top_bar)
 
 	health_bar = ProgressBar.new()
 	health_bar.name = "HealthBar"
@@ -927,9 +1133,9 @@ func _build_ui() -> void:
 	loadout_label = Label.new()
 	loadout_label.name = "LoadoutLabel"
 	loadout_label.anchor_left = 0.035
-	loadout_label.anchor_top = 0.135
+	loadout_label.anchor_top = 0.145
 	loadout_label.anchor_right = 0.965
-	loadout_label.anchor_bottom = 0.19
+	loadout_label.anchor_bottom = 0.20
 	loadout_label.add_theme_font_size_override("font_size", 15)
 	loadout_label.add_theme_color_override("font_color", Color(1.0, 0.84, 0.34))
 	loadout_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
@@ -938,9 +1144,9 @@ func _build_ui() -> void:
 	ability_label = Label.new()
 	ability_label.name = "AbilityLabel"
 	ability_label.anchor_left = 0.035
-	ability_label.anchor_top = 0.19
+	ability_label.anchor_top = 0.205
 	ability_label.anchor_right = 0.965
-	ability_label.anchor_bottom = 0.25
+	ability_label.anchor_bottom = 0.255
 	ability_label.add_theme_font_size_override("font_size", 14)
 	ability_label.add_theme_color_override("font_color", Color(0.74, 0.96, 1.0))
 	hud_root.add_child(ability_label)
@@ -971,6 +1177,7 @@ func _build_card_combat_hud(root: Control) -> void:
 	card_hud_panel.anchor_right = 0.965
 	card_hud_panel.anchor_bottom = 0.885
 	card_hud_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	card_hud_panel.add_theme_stylebox_override("panel", _make_hud_panel_style(Color(0.020, 0.018, 0.016, 0.78), Color(1.0, 0.64, 0.20, 0.70)))
 	root.add_child(card_hud_panel)
 
 	var margin := MarginContainer.new()
@@ -2536,6 +2743,21 @@ func _make_marker_material(color: Color, energy: float) -> StandardMaterial3D:
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	mat.roughness = 0.58
 	return mat
+
+
+func _make_hud_panel_style(bg_color: Color, border_color: Color) -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	style.bg_color = bg_color
+	style.border_color = border_color
+	style.border_width_left = 2
+	style.border_width_top = 2
+	style.border_width_right = 2
+	style.border_width_bottom = 2
+	style.corner_radius_top_left = 6
+	style.corner_radius_top_right = 6
+	style.corner_radius_bottom_left = 6
+	style.corner_radius_bottom_right = 6
+	return style
 
 
 func _make_emissive_material(color: Color, energy: float) -> StandardMaterial3D:

@@ -28,6 +28,9 @@ func _run_check() -> void:
 	if reload_bar == null or reload_status == null:
 		_fail("FPS HUD should expose reload progress state.")
 		return
+	if prototype.find_child("CombatStatusHud", true, false) == null:
+		_fail("FPS HUD should frame combat state in a readable status panel.")
+		return
 
 	if not prototype.has_method("get_living_enemies"):
 		_fail("FPSPrototype should expose get_living_enemies.")
@@ -42,6 +45,15 @@ func _run_check() -> void:
 	var map_markers: Node = prototype.find_child("TacticalMapMarkers", true, false)
 	if map_markers == null or map_markers.get_child_count() < 9:
 		_fail("FPSPrototype should render tactical map markers for all 3x3 regions.")
+		return
+	if prototype.find_child("ArenaSpectacleStage", true, false) == null:
+		_fail("FPS arena should include authored spectacle staging.")
+		return
+	if prototype.find_child("EnemySpawnPortal0", true, false) == null:
+		_fail("FPS arena should expose readable enemy spawn portals.")
+		return
+	if prototype.find_child("ObjectiveAntePot", true, false) == null:
+		_fail("FPS arena should include an objective prop.")
 		return
 	var living: Array = prototype.call("get_living_enemies")
 	if living.size() < 4:

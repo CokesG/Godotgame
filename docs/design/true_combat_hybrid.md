@@ -64,8 +64,8 @@ Current FPS ability contract:
 - The FPS HUD includes a lower card-power rail so weapon, chip/armor/ammo economy, and the first four slotted ability cards stay visible during live combat.
 - Card-power HUD slots now include cooldown bars and pulse when a slotted card ability fires, so the card layer feels active during the shooter fight.
 - FPS enemies now carry visible combat roles, status tags, attack windup rings, shield plates for guards, and incoming projectiles for ranged shots instead of invisible instant hits.
+- The FPS arena now has authored staging pieces: energy rails, spawn portals, an objective chip pot, cover silhouettes, wall signage, short-lived impact decals, and framed HUD panels so the battlefield reads as a competitive table-ritual combat space before custom art arrives.
 - The dev hub includes shortcuts for raw FPS sandbox, seeded FPS loadout, card prep, seeded return payout, and seeded defeat return so this loop can be tested without replaying the whole run.
-- The dev hub also includes a seeded defeat return so loss-state, wound, and run-failure handoffs can be tested as quickly as win payouts.
 - FPS reward selection now builds an arena result with map name, wave, kills, hit rate, damage, selected reward, objective score, wounds, chips awarded, and next-hand draw count, then returns to `TestCombat` through `ArenaBridge`.
 - `TestCombat` consumes pending arena results on load, restores the pre-FPS run/deck/loadout snapshot, shows `ArenaPayoutPanel`, applies chip and non-chip payout effects, blocks normal card actions until `Start Next Hand`, and leaves the player on the next prep hand.
 - `ArenaBridge`, `DeckManager`, and `RunManager` expose snapshot/restore hooks so the table can preserve exact deck piles, loadout piles, run node, rewards, relics, Blood, carryover payouts, and defeat state across the arena scene swap.
