@@ -74,6 +74,9 @@ var hand_view: HBoxContainer
 var pile_counts_label: Label
 var resource_state_label: Label
 var shooter_economy_label: Label
+var arena_payout_panel: PanelContainer
+var arena_payout_label: RichTextLabel
+var arena_payout_continue_button: Button
 var loadout_slot_row: HBoxContainer
 var loadout_slot_buttons: Dictionary = {}
 var hand_action_button_row: HBoxContainer
@@ -207,6 +210,8 @@ var loadout_slots: Dictionary = {}
 var selected_hand_index: int = -1
 var arena_bridge_payload: Dictionary = {}
 var arena_round_armed := false
+var pending_arena_result: Dictionary = {}
+var arena_payout_pending := false
 var feedback_history: Array[String] = []
 var run_ceremony_history: Array[String] = []
 var table_rule_effect_history: Array[String] = []
