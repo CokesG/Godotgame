@@ -18,6 +18,8 @@ const FPS_WEAPON_SCRIPT := preload("res://scripts/fps/FPSWeapon.gd")
 @export var jump_velocity := 5.4
 @export var gravity := 17.5
 @export var mouse_sensitivity := 0.00155
+@export var base_fov := 74.0
+@export var sprint_fov_add := 5.0
 @export var standing_height := 1.82
 @export var crouching_height := 1.16
 @export var standing_eye_height := 1.61
@@ -50,6 +52,8 @@ var dead := false
 var mouse_captured := false
 var last_spawn_position := Vector3.ZERO
 var highest_horizontal_speed := 9.2
+var input_enabled := true
+var invert_y := false
 
 
 func _ready() -> void:
@@ -68,11 +72,16 @@ func _ready() -> void:
 
 func _input(event: InputEvent) -> void:
 	if event.is_action_pressed("fps_toggle_mouse"):
-		if mouse_captured:
+		if game_mode != null and game_mode.has_method("toggle_settings_menu"):
+			game_mode.call("toggle_settings_menu")
+		elif mouse_captured:
 			_release_mouse()
 		else:
 			_capture_mouse()
 		get_viewport().set_input_as_handled()
+		return
+
+	if not input_enabled:
 		return
 
 	if event.is_action_pressed("fps_quick_restart"):
@@ -96,7 +105,7 @@ func _input(event: InputEvent) -> void:
 
 
 func _physics_process(delta: float) -> void:
-	if dead:
+	if dead or not input_enabled:
 		velocity.x = move_toward(velocity.x, 0.0, ground_friction * delta)
 		velocity.z = move_toward(velocity.z, 0.0, ground_friction * delta)
 		velocity.y -= gravity * delta
@@ -198,6 +207,37 @@ func reset_for_arena(spawn_position: Vector3) -> void:
 func apply_bridge_survivability(extra_armor: int) -> void:
 	armor = maxi(0, extra_armor)
 	health_changed.emit(health, max_health)
+
+
+func add_armor(amount: int) -> void:
+	armor = maxi(0, armor + amount)
+	health_changed.emit(health, max_health)
+
+
+func dash_forward(strength: float = 11.0) -> void:
+	var forward := -global_basis.z
+	forward.y = 0.0
+	if forward.length_squared() < 0.01:
+		forward = Vector3.FORWARD
+	velocity += forward.normalized() * strength
+	add_camera_impulse(Vector2(deg_to_rad(-1.2), randf_range(-0.015, 0.015)), 0.10)
+
+
+func apply_aim_settings(settings: Dictionary) -> void:
+	mouse_sensitivity = float(settings.get("mouse_sensitivity", mouse_sensitivity))
+	base_fov = float(settings.get("fov", base_fov))
+	sprint_fov_add = float(settings.get("sprint_fov_add", sprint_fov_add))
+	invert_y = bool(settings.get("invert_y", invert_y))
+	if camera != null:
+		camera.fov = base_fov
+
+
+func set_gameplay_input_enabled(enabled: bool) -> void:
+	input_enabled = enabled
+	if enabled:
+		_capture_mouse()
+	else:
+		_release_mouse()
 
 
 func add_camera_impulse(amount: Vector2, fov_amount: float = 0.0) -> void:
@@ -310,9 +350,9 @@ func _update_camera(delta: float, input_vec: Vector2, wants_sprint: bool, wants_
 	head.rotation.z = -input_vec.x * 0.018 - recoil_offset.y * 0.35
 	camera.rotation.y = recoil_offset.y
 
-	var target_fov := 74.0
+	var target_fov := base_fov
 	if wants_sprint and horizontal_speed > walk_speed:
-		target_fov = 79.0
+		target_fov = base_fov + sprint_fov_add
 	target_fov += fov_impulse
 	camera.fov = lerpf(camera.fov, target_fov, clampf(delta * 8.0, 0.0, 1.0))
 
@@ -331,7 +371,8 @@ func _release_mouse() -> void:
 
 func _apply_mouse_look(relative_motion: Vector2) -> void:
 	rotate_y(-relative_motion.x * mouse_sensitivity)
-	pitch = clampf(pitch - relative_motion.y * mouse_sensitivity, deg_to_rad(-86.0), deg_to_rad(86.0))
+	var y_sign := 1.0 if invert_y else -1.0
+	pitch = clampf(pitch + relative_motion.y * mouse_sensitivity * y_sign, deg_to_rad(-86.0), deg_to_rad(86.0))
 	if weapon != null:
 		weapon.add_sway(relative_motion)
 

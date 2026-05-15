@@ -128,6 +128,45 @@ func test_fps_player_mouse_look_changes_yaw_and_pitch() -> void:
 	assert_true(float(player.get("pitch")) > 0.0, "Vertical mouse motion should update FPS camera pitch.")
 
 
+func test_fps_settings_crosshair_and_ability_contracts() -> void:
+	var prototype_script: GDScript = ResourceLoader.load("res://scripts/fps/FPSPrototype.gd", "", ResourceLoader.CACHE_MODE_IGNORE)
+	var prototype: Node = prototype_script.new()
+	assert_true(prototype.has_method("toggle_settings_menu"), "FPSPrototype should expose the Escape settings overlay.")
+	assert_true(prototype.has_method("is_gameplay_paused"), "FPSPrototype should expose settings/reward pause state.")
+	prototype.set("crosshair_settings", {
+		"color": Color(1.0, 0.25, 0.78, 0.5),
+		"gap": 4.0,
+		"length": 10.0,
+		"thickness": 3.0,
+		"dot_size": 2.0,
+		"opacity": 0.8,
+		"outline": true,
+		"outline_opacity": 0.6,
+		"dynamic_gap": false
+	})
+	var crosshair_color: Color = prototype.call("_get_crosshair_color")
+	assert_eq(crosshair_color.a, 0.8, "Crosshair opacity should be controlled separately from color.")
+	prototype.call("apply_arena_bridge_payload", {
+		"loadout": [{"slot": "ability_1", "id": "sidestep", "ability": {"kind": "dash", "cooldown": 6.0}}],
+		"economy": {"chips": 0, "armor": 0, "ammo": 24}
+	})
+	var ability_state: Array = prototype.call("get_ability_state")
+	assert_eq(ability_state.size(), 1, "FPSPrototype should expose active Q/E ability state.")
+	assert_true(bool((ability_state[0] as Dictionary).get("ready", false)), "Slotted abilities should start ready.")
+
+
+func test_fps_weapon_overclock_and_enemy_archetypes() -> void:
+	var weapon_script: GDScript = ResourceLoader.load("res://scripts/fps/FPSWeapon.gd", "", ResourceLoader.CACHE_MODE_IGNORE)
+	var weapon: Node = weapon_script.new()
+	weapon.call("apply_temporary_overclock", 4.0, 0.78, 1.2)
+	assert_true(float(weapon.get("overclock_timer")) > 0.0, "Weapon overclock should arm a timed fire-rate/damage modifier.")
+	var drone_script: GDScript = ResourceLoader.load("res://scripts/fps/FPSDrone.gd", "", ResourceLoader.CACHE_MODE_IGNORE)
+	var drone: Node = drone_script.new()
+	drone.call("configure", {"name": "Needle Eye", "archetype": "ranged", "ranged_attack_range": 11.5}, Node3D.new(), Node.new())
+	assert_eq(String(drone.get("archetype")), "ranged", "FPS enemies should support ranged archetypes.")
+	assert_true(drone.has_method("apply_bait"), "FPS enemies should support bait/debuff ability hooks.")
+
+
 func test_action_guide_vfx_loads() -> void:
 	var vfx_script: GDScript = ResourceLoader.load("res://scripts/vfx/CombatVFX.gd", "", ResourceLoader.CACHE_MODE_IGNORE)
 	var vfx: Control = vfx_script.new()

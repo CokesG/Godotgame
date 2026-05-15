@@ -1,4 +1,4 @@
-class_name FPSPrototype
+﻿class_name FPSPrototype
 extends Node3D
 
 const FPS_PLAYER_SCRIPT := preload("res://scripts/fps/FPSPlayer.gd")
@@ -15,29 +15,71 @@ const DEFAULT_BRIDGE_PAYLOAD := {
 	"reads": {"target_enemy": &"", "threat": "intent hidden"}
 }
 
+const SETTINGS_PATH := "user://fps_settings.cfg"
+const DEFAULT_AIM_SETTINGS := {
+	"mouse_sensitivity": 0.00155,
+	"fov": 74.0,
+	"sprint_fov_add": 5.0,
+	"invert_y": false
+}
+const DEFAULT_CROSSHAIR_SETTINGS := {
+	"color": Color(0.72, 0.96, 1.0, 0.92),
+	"gap": 7.0,
+	"length": 8.0,
+	"thickness": 2.0,
+	"dot_size": 2.0,
+	"opacity": 0.92,
+	"outline": true,
+	"outline_opacity": 0.62,
+	"dynamic_gap": true,
+	"hit_marker_color": Color(1.0, 0.78, 0.24, 1.0)
+}
+
 var player: Node
 var arena_root: Node3D
 var tactical_map_root: Node3D
 var enemies_root: Node3D
 var effects_root: Node3D
 var ui_layer: CanvasLayer
+var hud_root: Control
 var health_bar: ProgressBar
 var ammo_label: Label
 var reserve_label: Label
 var kill_label: Label
 var status_label: Label
 var loadout_label: Label
+var ability_label: Label
+var telemetry_label: Label
+var reward_panel: PanelContainer
+var reward_label: RichTextLabel
+var settings_panel: PanelContainer
+var crosshair: Control
 var hit_marker: Control
 var damage_flash: ColorRect
 var restart_timer := 0.0
 var kills := 0
 var wave_index := 1
 var wave_active := false
+var settings_open := false
+var run_started_msec := 0
+var wave_started_msec := 0
+var shots_fired := 0
+var shots_hit := 0
+var critical_hits := 0
+var damage_dealt := 0
+var damage_taken := 0
+var waves_cleared := 0
+var rewards_pending := false
+var active_reward_index := -1
+var reward_options: Array[Dictionary] = []
 var spawn_position := Vector3(0.0, 1.4, 10.5)
 var tactical_map: Dictionary = {}
 var active_bridge_payload: Dictionary = DEFAULT_BRIDGE_PAYLOAD.duplicate(true)
 var active_abilities: Array[Dictionary] = []
 var active_weapon_profile: Dictionary = {}
+var ability_cooldowns: Array[float] = []
+var aim_settings: Dictionary = DEFAULT_AIM_SETTINGS.duplicate(true)
+var crosshair_settings: Dictionary = DEFAULT_CROSSHAIR_SETTINGS.duplicate(true)
 
 var enemy_defs: Array[Dictionary] = [
 	{
@@ -45,6 +87,7 @@ var enemy_defs: Array[Dictionary] = [
 		"position": Vector3(-7.5, 0.2, -8.5),
 		"texture": "res://art/game/enemies/enemy_skulker.png",
 		"color": Color(0.82, 0.18, 0.16),
+		"archetype": "charger",
 		"health": 68,
 		"speed": 3.75,
 		"attack_damage": 10,
@@ -55,6 +98,7 @@ var enemy_defs: Array[Dictionary] = [
 		"position": Vector3(6.5, 0.2, -10.5),
 		"texture": "res://art/game/enemies/enemy_brute.png",
 		"color": Color(0.90, 0.56, 0.24),
+		"archetype": "shield",
 		"health": 118,
 		"speed": 2.75,
 		"attack_damage": 18,
@@ -65,16 +109,20 @@ var enemy_defs: Array[Dictionary] = [
 		"position": Vector3(0.0, 0.2, -14.0),
 		"texture": "res://art/game/enemies/enemy_needle_eye.png",
 		"color": Color(0.34, 0.78, 0.88),
+		"archetype": "ranged",
 		"health": 82,
 		"speed": 3.55,
 		"attack_damage": 13,
-		"attack_range": 1.72
+		"attack_range": 1.72,
+		"ranged_attack_range": 11.5,
+		"hold_distance": 7.0
 	},
 	{
 		"name": "Hexmonger",
 		"position": Vector3(10.0, 0.2, -2.0),
 		"texture": "res://art/game/enemies/enemy_hexmonger.png",
 		"color": Color(0.58, 0.32, 0.90),
+		"archetype": "chaser",
 		"health": 92,
 		"speed": 3.20,
 		"attack_damage": 14,
@@ -86,22 +134,45 @@ var enemy_defs: Array[Dictionary] = [
 func _ready() -> void:
 	add_to_group("fps_game")
 	tactical_map = TACTICAL_MAP_SCRIPT.get_default_map()
+	_load_player_settings()
 	_ensure_input_actions()
 	_build_world()
 	_build_arena()
 	_build_player()
 	_consume_pending_arena_bridge_payload()
 	_build_ui()
+	run_started_msec = Time.get_ticks_msec()
 	_spawn_wave()
 	_refresh_ui()
 
 
 func _process(delta: float) -> void:
+	_tick_ability_cooldowns(delta)
 	if restart_timer > 0.0:
 		restart_timer -= delta
 		if restart_timer <= 0.0:
 			_spawn_wave()
+	_update_crosshair()
 	_refresh_ui()
+
+
+func _input(event: InputEvent) -> void:
+	if event.is_action_pressed("fps_ability_1"):
+		_try_use_ability(0)
+		get_viewport().set_input_as_handled()
+	elif event.is_action_pressed("fps_ability_2"):
+		_try_use_ability(1)
+		get_viewport().set_input_as_handled()
+	elif event.is_action_pressed("fps_ability_3"):
+		_try_use_ability(2)
+		get_viewport().set_input_as_handled()
+	elif event.is_action_pressed("fps_ability_4"):
+		_try_use_ability(3)
+		get_viewport().set_input_as_handled()
+
+
+func is_gameplay_paused() -> bool:
+	return settings_open or rewards_pending
 
 
 func get_living_enemies() -> Array[Node]:
@@ -156,6 +227,9 @@ func apply_arena_bridge_payload(payload: Dictionary) -> void:
 			active_weapon_profile = slot.get("weapon", {})
 		if slot.has("ability"):
 			active_abilities.append(slot)
+	ability_cooldowns.clear()
+	for _index in range(active_abilities.size()):
+		ability_cooldowns.append(0.0)
 
 	var economy: Dictionary = active_bridge_payload.get("economy", {})
 	var total_ammo := int(economy.get("ammo", 24))
@@ -172,11 +246,214 @@ func get_active_loadout_summary() -> Dictionary:
 	return {
 		"weapon": String(active_weapon_profile.get("name", "House Sidearm")),
 		"abilities": active_abilities.size(),
+		"ability_names": _get_ability_names(),
 		"chips": int(economy.get("chips", 0)),
 		"armor": int(economy.get("armor", 0)),
 		"ammo": int(economy.get("ammo", 24)),
 		"target_enemy": active_bridge_payload.get("reads", {}).get("target_enemy", &"")
 	}
+
+
+func get_ability_state() -> Array[Dictionary]:
+	var states: Array[Dictionary] = []
+	for index in range(active_abilities.size()):
+		var entry: Dictionary = active_abilities[index]
+		var ability: Dictionary = entry.get("ability", {})
+		states.append({
+			"index": index,
+			"id": String(entry.get("id", "")),
+			"kind": String(ability.get("kind", "")),
+			"ready": _is_ability_ready(index),
+			"cooldown": ability_cooldowns[index] if index < ability_cooldowns.size() else 0.0
+		})
+	return states
+
+
+func _get_ability_names() -> Array[String]:
+	var names: Array[String] = []
+	for entry in active_abilities:
+		var ability: Dictionary = entry.get("ability", {})
+		names.append(_get_ability_display_name(String(entry.get("id", "")), String(ability.get("kind", ""))))
+	return names
+
+
+func _get_ability_display_name(card_id: String, kind: String) -> String:
+	match card_id:
+		"sidestep", "hook_step", "shadow_step":
+			return "Dash"
+		"guard_up", "iron_vow", "bone_guard", "black_shield":
+			return "Shield"
+		"read_tell", "marked_card":
+			return "Read"
+		"snare_card", "tripwire":
+			return "Snare"
+		"blood_ritual":
+			return "Overclock"
+		"false_opening":
+			return "Bait"
+	match kind:
+		"dash":
+			return "Dash"
+		"guard_shimmer":
+			return "Shield"
+		"reveal_target":
+			return "Read"
+		"snare_field":
+			return "Snare"
+		"blood_overclock":
+			return "Overclock"
+		"bait_ping":
+			return "Bait"
+		_:
+			return kind.capitalize()
+
+
+func _tick_ability_cooldowns(delta: float) -> void:
+	for index in range(ability_cooldowns.size()):
+		ability_cooldowns[index] = maxf(0.0, float(ability_cooldowns[index]) - delta)
+
+
+func _try_use_ability(index: int) -> bool:
+	if is_gameplay_paused():
+		return false
+	if index < 0 or index >= active_abilities.size():
+		return false
+	if not _is_ability_ready(index):
+		return false
+	var entry: Dictionary = active_abilities[index]
+	var ability: Dictionary = entry.get("ability", {})
+	var kind := String(ability.get("kind", ""))
+	var used := false
+	match kind:
+		"dash":
+			used = _use_dash_ability(ability)
+		"guard_shimmer":
+			used = _use_guard_shimmer_ability(ability)
+		"reveal_target":
+			used = _use_read_reveal_ability(ability)
+		"snare_field":
+			used = _use_snare_field_ability(ability)
+		"blood_overclock":
+			used = _use_overclock_ability(ability)
+		"bait_ping":
+			used = _use_bait_ping_ability(ability)
+	if used:
+		ability_cooldowns[index] = float(ability.get("cooldown", 6.0))
+		_show_status_flash("%s readying" % _get_ability_display_name(String(entry.get("id", "")), kind), Color(0.52, 1.0, 0.82))
+		_refresh_ui()
+	return used
+
+
+func _is_ability_ready(index: int) -> bool:
+	return index >= 0 and index < active_abilities.size() and (index >= ability_cooldowns.size() or float(ability_cooldowns[index]) <= 0.0)
+
+
+func _use_dash_ability(ability: Dictionary) -> bool:
+	if player == null or not player.has_method("dash_forward"):
+		return false
+	player.call("dash_forward", float(ability.get("strength", 12.5)))
+	_spawn_ability_ring(player.global_position, Color(0.34, 0.95, 1.0), 1.6)
+	return true
+
+
+func _use_guard_shimmer_ability(ability: Dictionary) -> bool:
+	if player == null:
+		return false
+	if player.has_method("add_armor"):
+		player.call("add_armor", int(ability.get("armor", 5)))
+	_spawn_ability_ring(player.global_position, Color(0.55, 0.78, 1.0), 2.1)
+	return true
+
+
+func _use_read_reveal_ability(ability: Dictionary) -> bool:
+	if player == null:
+		return false
+	var duration := float(ability.get("duration", 3.5))
+	for enemy in get_living_enemies():
+		if enemy.has_method("reveal_for"):
+			enemy.call("reveal_for", duration)
+	_spawn_ability_ring(player.global_position + Vector3(0.0, 0.12, -2.0), Color(0.22, 0.95, 1.0), 3.0)
+	return true
+
+
+func _use_snare_field_ability(ability: Dictionary) -> bool:
+	if player == null:
+		return false
+	var duration := float(ability.get("duration", 4.0))
+	var radius := float(ability.get("radius", 4.2))
+	var center: Vector3 = player.global_position + (-player.global_basis.z).normalized() * 5.4
+	center.y = 0.05
+	_spawn_ability_ring(center, Color(0.92, 0.48, 1.0), radius)
+	for enemy in get_living_enemies():
+		if enemy.global_position.distance_to(center) <= radius and enemy.has_method("apply_snare"):
+			enemy.call("apply_snare", duration)
+	return true
+
+
+func _use_overclock_ability(ability: Dictionary) -> bool:
+	if player == null or player.weapon == null or not player.weapon.has_method("apply_temporary_overclock"):
+		return false
+	player.weapon.call("apply_temporary_overclock", float(ability.get("duration", 4.0)), 0.78, 1.20)
+	_spawn_ability_ring(player.global_position, Color(1.0, 0.58, 0.24), 2.0)
+	return true
+
+
+func _use_bait_ping_ability(ability: Dictionary) -> bool:
+	if player == null:
+		return false
+	var duration := float(ability.get("duration", 2.5))
+	for enemy in get_living_enemies():
+		if enemy.has_method("apply_bait"):
+			enemy.call("apply_bait", duration)
+	_spawn_ability_ring(player.global_position, Color(1.0, 0.86, 0.35), 3.4)
+	return true
+
+
+func _get_ability_hud_text() -> String:
+	if active_abilities.is_empty():
+		return "Abilities: none slotted"
+	var labels: Array[String] = []
+	for index in range(active_abilities.size()):
+		var entry: Dictionary = active_abilities[index]
+		var ability: Dictionary = entry.get("ability", {})
+		var name := _get_ability_display_name(String(entry.get("id", "")), String(ability.get("kind", "")))
+		var key := str(index + 1)
+		var cooldown := ability_cooldowns[index] if index < ability_cooldowns.size() else 0.0
+		var state := "READY" if cooldown <= 0.0 else "%.1fs" % cooldown
+		labels.append("%s:%s %s" % [key, name, state])
+	return "Abilities | " + " | ".join(labels)
+
+
+func _spawn_ability_ring(position: Vector3, color: Color, radius: float) -> void:
+	if effects_root == null:
+		return
+	var ring := MeshInstance3D.new()
+	ring.name = "AbilityRing"
+	var mesh := TorusMesh.new()
+	mesh.inner_radius = radius
+	mesh.outer_radius = radius + 0.05
+	ring.mesh = mesh
+	ring.position = position
+	ring.material_override = _make_marker_material(color, 0.95)
+	effects_root.add_child(ring)
+	var tween := create_tween()
+	tween.set_parallel(true)
+	tween.tween_property(ring, "scale", Vector3(1.35, 1.35, 1.35), 0.28).from(Vector3(0.3, 0.3, 0.3))
+	tween.tween_property(ring, "transparency", 1.0, 0.42)
+	tween.chain().tween_callback(ring.queue_free)
+
+
+func _show_status_flash(text: String, color: Color) -> void:
+	if status_label == null:
+		return
+	status_label.text = text
+	status_label.add_theme_color_override("font_color", color)
+	var tween := create_tween()
+	tween.tween_interval(0.35)
+	tween.tween_callback(func() -> void:
+		if status_label != null:
+			status_label.add_theme_color_override("font_color", Color.WHITE)
+	)
 
 
 func spawn_tracer(start_position: Vector3, end_position: Vector3, critical: bool = false) -> void:
@@ -243,9 +520,10 @@ func on_enemy_defeated(_enemy: Node) -> void:
 	kills += 1
 	if get_living_enemies().is_empty():
 		wave_active = false
-		restart_timer = 1.15
-		wave_index += 1
+		rewards_pending = true
+		waves_cleared += 1
 		status_label.text = "WAVE CLEARED" if status_label != null else ""
+		_show_wave_rewards()
 
 
 func restart_encounter() -> void:
@@ -253,7 +531,17 @@ func restart_encounter() -> void:
 		child.queue_free()
 	kills = 0
 	wave_index = 1
+	waves_cleared = 0
+	shots_fired = 0
+	shots_hit = 0
+	critical_hits = 0
+	damage_dealt = 0
+	damage_taken = 0
+	rewards_pending = false
 	restart_timer = 0.0
+	run_started_msec = Time.get_ticks_msec()
+	if reward_panel != null:
+		reward_panel.visible = false
 	if player != null:
 		player.reset_for_arena(spawn_position)
 	_spawn_wave()
@@ -447,6 +735,11 @@ func _build_player() -> void:
 	player.damage_taken.connect(_on_player_damage_taken)
 	player.weapon_state_changed.connect(_on_weapon_state_changed)
 	player.request_restart.connect(restart_encounter)
+	if player.has_method("apply_aim_settings"):
+		player.call("apply_aim_settings", aim_settings)
+	if player.weapon != null:
+		player.weapon.fired.connect(_on_weapon_fired)
+		player.weapon.hit_confirmed.connect(_on_weapon_hit_confirmed)
 
 
 func _build_ui() -> void:
@@ -454,17 +747,17 @@ func _build_ui() -> void:
 	ui_layer.name = "FPSHud"
 	add_child(ui_layer)
 
-	var root := Control.new()
-	root.name = "HudRoot"
-	root.set_anchors_preset(Control.PRESET_FULL_RECT)
-	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	ui_layer.add_child(root)
+	hud_root = Control.new()
+	hud_root.name = "HudRoot"
+	hud_root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	hud_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	ui_layer.add_child(hud_root)
 
 	damage_flash = ColorRect.new()
 	damage_flash.name = "DamageFlash"
 	damage_flash.set_anchors_preset(Control.PRESET_FULL_RECT)
 	damage_flash.color = Color(0.95, 0.08, 0.04, 0.0)
-	root.add_child(damage_flash)
+	hud_root.add_child(damage_flash)
 
 	var top_bar := HBoxContainer.new()
 	top_bar.name = "TopBar"
@@ -474,7 +767,7 @@ func _build_ui() -> void:
 	top_bar.anchor_bottom = 0.13
 	top_bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	top_bar.add_theme_constant_override("separation", 14)
-	root.add_child(top_bar)
+	hud_root.add_child(top_bar)
 
 	health_bar = ProgressBar.new()
 	health_bar.name = "HealthBar"
@@ -518,25 +811,44 @@ func _build_ui() -> void:
 	loadout_label.add_theme_font_size_override("font_size", 15)
 	loadout_label.add_theme_color_override("font_color", Color(1.0, 0.84, 0.34))
 	loadout_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-	root.add_child(loadout_label)
+	hud_root.add_child(loadout_label)
 
-	_build_crosshair(root)
-	_build_hit_marker(root)
+	ability_label = Label.new()
+	ability_label.name = "AbilityLabel"
+	ability_label.anchor_left = 0.035
+	ability_label.anchor_top = 0.19
+	ability_label.anchor_right = 0.965
+	ability_label.anchor_bottom = 0.25
+	ability_label.add_theme_font_size_override("font_size", 14)
+	ability_label.add_theme_color_override("font_color", Color(0.74, 0.96, 1.0))
+	hud_root.add_child(ability_label)
+
+	telemetry_label = Label.new()
+	telemetry_label.name = "TelemetryLabel"
+	telemetry_label.anchor_left = 0.035
+	telemetry_label.anchor_top = 0.90
+	telemetry_label.anchor_right = 0.965
+	telemetry_label.anchor_bottom = 0.96
+	telemetry_label.add_theme_font_size_override("font_size", 13)
+	telemetry_label.add_theme_color_override("font_color", Color(0.78, 0.84, 0.86, 0.88))
+	hud_root.add_child(telemetry_label)
+
+	_build_crosshair(hud_root)
+	_build_hit_marker(hud_root)
+	_build_reward_panel(hud_root)
+	_build_settings_panel(hud_root)
 
 
 func _build_crosshair(root: Control) -> void:
-	var cross := Control.new()
-	cross.name = "Crosshair"
-	cross.anchor_left = 0.5
-	cross.anchor_top = 0.5
-	cross.anchor_right = 0.5
-	cross.anchor_bottom = 0.5
-	cross.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	root.add_child(cross)
-	_add_crosshair_rect(cross, Vector2(-1.0, -15.0), Vector2(2.0, 8.0))
-	_add_crosshair_rect(cross, Vector2(-1.0, 7.0), Vector2(2.0, 8.0))
-	_add_crosshair_rect(cross, Vector2(-15.0, -1.0), Vector2(8.0, 2.0))
-	_add_crosshair_rect(cross, Vector2(7.0, -1.0), Vector2(8.0, 2.0))
+	crosshair = Control.new()
+	crosshair.name = "Crosshair"
+	crosshair.anchor_left = 0.5
+	crosshair.anchor_top = 0.5
+	crosshair.anchor_right = 0.5
+	crosshair.anchor_bottom = 0.5
+	crosshair.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(crosshair)
+	_update_crosshair()
 
 
 func _build_hit_marker(root: Control) -> void:
@@ -567,13 +879,350 @@ func _add_crosshair_rect(parent: Control, position: Vector2, size: Vector2, colo
 	return rect
 
 
+func toggle_settings_menu() -> void:
+	_set_settings_open(not settings_open)
+
+
+func _set_settings_open(open: bool) -> void:
+	settings_open = open
+	if settings_panel != null:
+		settings_panel.visible = settings_open
+	if player != null and player.has_method("set_gameplay_input_enabled"):
+		player.call("set_gameplay_input_enabled", not settings_open and not rewards_pending)
+
+
+func _build_settings_panel(root: Control) -> void:
+	settings_panel = PanelContainer.new()
+	settings_panel.name = "FPSSettingsPanel"
+	settings_panel.anchor_left = 0.23
+	settings_panel.anchor_top = 0.10
+	settings_panel.anchor_right = 0.77
+	settings_panel.anchor_bottom = 0.90
+	settings_panel.visible = false
+	settings_panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	root.add_child(settings_panel)
+
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 18)
+	margin.add_theme_constant_override("margin_top", 16)
+	margin.add_theme_constant_override("margin_right", 18)
+	margin.add_theme_constant_override("margin_bottom", 16)
+	settings_panel.add_child(margin)
+
+	var layout := VBoxContainer.new()
+	layout.add_theme_constant_override("separation", 10)
+	margin.add_child(layout)
+
+	var header := HBoxContainer.new()
+	layout.add_child(header)
+	var title := Label.new()
+	title.text = "Aim Lab"
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title.add_theme_font_size_override("font_size", 24)
+	header.add_child(title)
+	var close_button := Button.new()
+	close_button.text = "Close"
+	close_button.pressed.connect(func() -> void:
+		_set_settings_open(false)
+	)
+	header.add_child(close_button)
+
+	var preview := Control.new()
+	preview.name = "CrosshairPreview"
+	preview.custom_minimum_size = Vector2(220, 120)
+	layout.add_child(preview)
+	var preview_crosshair := Control.new()
+	preview_crosshair.name = "PreviewCrosshair"
+	preview_crosshair.position = Vector2(110, 60)
+	preview.add_child(preview_crosshair)
+
+	_add_slider_row(layout, "Sensitivity", 0.00045, 0.0045, 0.00005, float(aim_settings.get("mouse_sensitivity", 0.00155)), func(value: float) -> void:
+		aim_settings["mouse_sensitivity"] = value
+		_apply_player_settings()
+		_save_player_settings()
+	)
+	_add_slider_row(layout, "Field of View", 65.0, 100.0, 1.0, float(aim_settings.get("fov", 74.0)), func(value: float) -> void:
+		aim_settings["fov"] = value
+		_apply_player_settings()
+		_save_player_settings()
+	)
+	_add_checkbox_row(layout, "Invert Y", bool(aim_settings.get("invert_y", false)), func(enabled: bool) -> void:
+		aim_settings["invert_y"] = enabled
+		_apply_player_settings()
+		_save_player_settings()
+	)
+	_add_slider_row(layout, "Gap", 0.0, 24.0, 1.0, float(crosshair_settings.get("gap", 7.0)), func(value: float) -> void:
+		crosshair_settings["gap"] = value
+		_update_crosshair()
+		_rebuild_preview_crosshair(preview_crosshair)
+		_save_player_settings()
+	)
+	_add_slider_row(layout, "Length", 2.0, 22.0, 1.0, float(crosshair_settings.get("length", 8.0)), func(value: float) -> void:
+		crosshair_settings["length"] = value
+		_update_crosshair()
+		_rebuild_preview_crosshair(preview_crosshair)
+		_save_player_settings()
+	)
+	_add_slider_row(layout, "Thickness", 1.0, 8.0, 1.0, float(crosshair_settings.get("thickness", 2.0)), func(value: float) -> void:
+		crosshair_settings["thickness"] = value
+		_update_crosshair()
+		_rebuild_preview_crosshair(preview_crosshair)
+		_save_player_settings()
+	)
+	_add_slider_row(layout, "Dot", 0.0, 10.0, 1.0, float(crosshair_settings.get("dot_size", 2.0)), func(value: float) -> void:
+		crosshair_settings["dot_size"] = value
+		_update_crosshair()
+		_rebuild_preview_crosshair(preview_crosshair)
+		_save_player_settings()
+	)
+	_add_slider_row(layout, "Opacity", 0.15, 1.0, 0.05, float(crosshair_settings.get("opacity", 0.92)), func(value: float) -> void:
+		crosshair_settings["opacity"] = value
+		_update_crosshair()
+		_rebuild_preview_crosshair(preview_crosshair)
+		_save_player_settings()
+	)
+
+	var color_row := HBoxContainer.new()
+	color_row.add_theme_constant_override("separation", 10)
+	layout.add_child(color_row)
+	var color_label := Label.new()
+	color_label.text = "Color"
+	color_label.custom_minimum_size = Vector2(120, 0)
+	color_row.add_child(color_label)
+	var color_picker := ColorPickerButton.new()
+	color_picker.color = _get_crosshair_color()
+	color_picker.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	color_picker.color_changed.connect(func(color: Color) -> void:
+		crosshair_settings["color"] = Color(color.r, color.g, color.b, float(crosshair_settings.get("opacity", 0.92)))
+		_update_crosshair()
+		_rebuild_preview_crosshair(preview_crosshair)
+		_save_player_settings()
+	)
+	color_row.add_child(color_picker)
+
+	_add_checkbox_row(layout, "Outline", bool(crosshair_settings.get("outline", true)), func(enabled: bool) -> void:
+		crosshair_settings["outline"] = enabled
+		_update_crosshair()
+		_rebuild_preview_crosshair(preview_crosshair)
+		_save_player_settings()
+	)
+	_add_checkbox_row(layout, "Dynamic gap", bool(crosshair_settings.get("dynamic_gap", true)), func(enabled: bool) -> void:
+		crosshair_settings["dynamic_gap"] = enabled
+		_update_crosshair()
+		_rebuild_preview_crosshair(preview_crosshair)
+		_save_player_settings()
+	)
+
+	var preset_row := HBoxContainer.new()
+	preset_row.add_theme_constant_override("separation", 8)
+	layout.add_child(preset_row)
+	for preset in [
+		{"label": "Cyan", "color": Color(0.42, 0.95, 1.0, 0.95), "gap": 7.0, "length": 8.0},
+		{"label": "Lime", "color": Color(0.60, 1.0, 0.24, 0.95), "gap": 5.0, "length": 7.0},
+		{"label": "Magenta", "color": Color(1.0, 0.25, 0.78, 0.95), "gap": 8.0, "length": 9.0}
+	]:
+		var button := Button.new()
+		button.text = String(preset.get("label", "Preset"))
+		button.pressed.connect(func() -> void:
+			crosshair_settings["color"] = preset.get("color", _get_crosshair_color())
+			crosshair_settings["gap"] = preset.get("gap", crosshair_settings.get("gap", 7.0))
+			crosshair_settings["length"] = preset.get("length", crosshair_settings.get("length", 8.0))
+			color_picker.color = _get_crosshair_color()
+			_update_crosshair()
+			_rebuild_preview_crosshair(preview_crosshair)
+			_save_player_settings()
+		)
+		preset_row.add_child(button)
+
+	_rebuild_preview_crosshair(preview_crosshair)
+
+
+func _build_reward_panel(root: Control) -> void:
+	reward_panel = PanelContainer.new()
+	reward_panel.name = "RewardPanel"
+	reward_panel.anchor_left = 0.30
+	reward_panel.anchor_top = 0.26
+	reward_panel.anchor_right = 0.70
+	reward_panel.anchor_bottom = 0.58
+	reward_panel.visible = false
+	reward_panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	root.add_child(reward_panel)
+
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 18)
+	margin.add_theme_constant_override("margin_top", 16)
+	margin.add_theme_constant_override("margin_right", 18)
+	margin.add_theme_constant_override("margin_bottom", 16)
+	reward_panel.add_child(margin)
+
+	var layout := VBoxContainer.new()
+	layout.add_theme_constant_override("separation", 10)
+	margin.add_child(layout)
+	reward_label = RichTextLabel.new()
+	reward_label.bbcode_enabled = true
+	reward_label.fit_content = true
+	reward_label.custom_minimum_size = Vector2(360, 120)
+	layout.add_child(reward_label)
+
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	layout.add_child(row)
+	for i in range(3):
+		var button := Button.new()
+		button.name = "RewardButton%d" % i
+		button.text = "Reward %d" % (i + 1)
+		var index := i
+		button.pressed.connect(func() -> void:
+			_select_reward(index)
+		)
+		row.add_child(button)
+
+
+func _add_slider_row(parent: VBoxContainer, label_text: String, min_value: float, max_value: float, step: float, value: float, callback: Callable) -> void:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	parent.add_child(row)
+	var label := Label.new()
+	label.text = label_text
+	label.custom_minimum_size = Vector2(120, 0)
+	row.add_child(label)
+	var slider := HSlider.new()
+	slider.min_value = min_value
+	slider.max_value = max_value
+	slider.step = step
+	slider.value = value
+	slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	slider.value_changed.connect(func(new_value: float) -> void:
+		callback.call(new_value)
+	)
+	row.add_child(slider)
+	var value_label := Label.new()
+	value_label.custom_minimum_size = Vector2(58, 0)
+	value_label.text = _format_setting_value(value)
+	slider.value_changed.connect(func(new_value: float) -> void:
+		value_label.text = _format_setting_value(new_value)
+	)
+	row.add_child(value_label)
+
+
+func _add_checkbox_row(parent: VBoxContainer, label_text: String, enabled: bool, callback: Callable) -> void:
+	var checkbox := CheckBox.new()
+	checkbox.text = label_text
+	checkbox.button_pressed = enabled
+	checkbox.toggled.connect(func(new_value: bool) -> void:
+		callback.call(new_value)
+	)
+	parent.add_child(checkbox)
+
+
+func _format_setting_value(value: float) -> String:
+	if value < 0.01:
+		return "%.4f" % value
+	return "%.1f" % value
+
+
+func _update_crosshair() -> void:
+	if crosshair == null:
+		return
+	_rebuild_crosshair_on(crosshair, true)
+
+
+func _rebuild_preview_crosshair(preview_crosshair: Control) -> void:
+	_rebuild_crosshair_on(preview_crosshair, false)
+
+
+func _rebuild_crosshair_on(target: Control, use_dynamic_gap: bool) -> void:
+	_clear_children(target)
+	var color := _get_crosshair_color()
+	var gap := float(crosshair_settings.get("gap", 7.0))
+	if use_dynamic_gap and bool(crosshair_settings.get("dynamic_gap", true)) and player != null and player.has_method("get_horizontal_speed_ratio"):
+		gap += float(player.call("get_horizontal_speed_ratio")) * 5.0
+	var length := float(crosshair_settings.get("length", 8.0))
+	var thickness := float(crosshair_settings.get("thickness", 2.0))
+	var dot_size := float(crosshair_settings.get("dot_size", 2.0))
+	var outline := bool(crosshair_settings.get("outline", true))
+	var outline_color := Color(0.02, 0.018, 0.012, float(crosshair_settings.get("outline_opacity", 0.62)))
+
+	_add_crosshair_pip(target, Vector2(-thickness * 0.5, -gap - length), Vector2(thickness, length), color, outline, outline_color)
+	_add_crosshair_pip(target, Vector2(-thickness * 0.5, gap), Vector2(thickness, length), color, outline, outline_color)
+	_add_crosshair_pip(target, Vector2(-gap - length, -thickness * 0.5), Vector2(length, thickness), color, outline, outline_color)
+	_add_crosshair_pip(target, Vector2(gap, -thickness * 0.5), Vector2(length, thickness), color, outline, outline_color)
+	if dot_size > 0.0:
+		_add_crosshair_pip(target, Vector2(-dot_size * 0.5, -dot_size * 0.5), Vector2(dot_size, dot_size), color, outline, outline_color)
+
+
+func _add_crosshair_pip(parent: Control, position: Vector2, size: Vector2, color: Color, outline: bool, outline_color: Color) -> void:
+	if outline:
+		_add_crosshair_rect(parent, position - Vector2.ONE, size + Vector2(2.0, 2.0), outline_color)
+	_add_crosshair_rect(parent, position, size, color)
+
+
+func _get_crosshair_color() -> Color:
+	var color_value: Variant = crosshair_settings.get("color", Color(0.72, 0.96, 1.0, 0.92))
+	var color := Color(0.72, 0.96, 1.0, 0.92)
+	if typeof(color_value) == TYPE_COLOR:
+		color = color_value
+	color.a = float(crosshair_settings.get("opacity", color.a))
+	return color
+
+
+func _clear_children(node: Node) -> void:
+	for child in node.get_children():
+		node.remove_child(child)
+		child.queue_free()
+
+
+func _apply_player_settings() -> void:
+	if player != null and player.has_method("apply_aim_settings"):
+		player.call("apply_aim_settings", aim_settings)
+
+
+func _load_player_settings() -> void:
+	var config := ConfigFile.new()
+	if config.load(SETTINGS_PATH) != OK:
+		return
+	aim_settings["mouse_sensitivity"] = float(config.get_value("aim", "mouse_sensitivity", aim_settings.get("mouse_sensitivity", 0.00155)))
+	aim_settings["fov"] = float(config.get_value("aim", "fov", aim_settings.get("fov", 74.0)))
+	aim_settings["sprint_fov_add"] = float(config.get_value("aim", "sprint_fov_add", aim_settings.get("sprint_fov_add", 5.0)))
+	aim_settings["invert_y"] = bool(config.get_value("aim", "invert_y", aim_settings.get("invert_y", false)))
+	crosshair_settings["gap"] = float(config.get_value("crosshair", "gap", crosshair_settings.get("gap", 7.0)))
+	crosshair_settings["length"] = float(config.get_value("crosshair", "length", crosshair_settings.get("length", 8.0)))
+	crosshair_settings["thickness"] = float(config.get_value("crosshair", "thickness", crosshair_settings.get("thickness", 2.0)))
+	crosshair_settings["dot_size"] = float(config.get_value("crosshair", "dot_size", crosshair_settings.get("dot_size", 2.0)))
+	crosshair_settings["opacity"] = float(config.get_value("crosshair", "opacity", crosshair_settings.get("opacity", 0.92)))
+	crosshair_settings["outline"] = bool(config.get_value("crosshair", "outline", crosshair_settings.get("outline", true)))
+	crosshair_settings["dynamic_gap"] = bool(config.get_value("crosshair", "dynamic_gap", crosshair_settings.get("dynamic_gap", true)))
+	var color_value: Variant = config.get_value("crosshair", "color", crosshair_settings.get("color", Color(0.72, 0.96, 1.0, 0.92)))
+	if typeof(color_value) == TYPE_COLOR:
+		crosshair_settings["color"] = color_value
+
+
+func _save_player_settings() -> void:
+	var config := ConfigFile.new()
+	config.set_value("aim", "mouse_sensitivity", aim_settings.get("mouse_sensitivity", 0.00155))
+	config.set_value("aim", "fov", aim_settings.get("fov", 74.0))
+	config.set_value("aim", "sprint_fov_add", aim_settings.get("sprint_fov_add", 5.0))
+	config.set_value("aim", "invert_y", aim_settings.get("invert_y", false))
+	config.set_value("crosshair", "color", _get_crosshair_color())
+	config.set_value("crosshair", "gap", crosshair_settings.get("gap", 7.0))
+	config.set_value("crosshair", "length", crosshair_settings.get("length", 8.0))
+	config.set_value("crosshair", "thickness", crosshair_settings.get("thickness", 2.0))
+	config.set_value("crosshair", "dot_size", crosshair_settings.get("dot_size", 2.0))
+	config.set_value("crosshair", "opacity", crosshair_settings.get("opacity", 0.92))
+	config.set_value("crosshair", "outline", crosshair_settings.get("outline", true))
+	config.set_value("crosshair", "dynamic_gap", crosshair_settings.get("dynamic_gap", true))
+	config.save(SETTINGS_PATH)
+
+
 func _spawn_wave() -> void:
 	if enemies_root == null:
 		return
 	for child in enemies_root.get_children():
 		child.queue_free()
 	wave_active = true
+	rewards_pending = false
 	restart_timer = 0.0
+	wave_started_msec = Time.get_ticks_msec()
 	status_label.text = "" if status_label != null else ""
 	var extra_health := (wave_index - 1) * 12
 	for data in enemy_defs:
@@ -584,6 +1233,83 @@ func _spawn_wave() -> void:
 		enemy.configure(copy, player, self)
 		enemies_root.add_child(enemy)
 		enemy.global_position = data.get("position", Vector3.ZERO)
+
+
+func _show_wave_rewards() -> void:
+	reward_options = _build_reward_options()
+	if reward_panel == null:
+		return
+	reward_panel.visible = true
+	if reward_label != null:
+		var clear_time := float(Time.get_ticks_msec() - wave_started_msec) / 1000.0
+		reward_label.text = "[center][b]Wave %d Cleared[/b]\n%.1fs  %d shots  %.0f%% hit rate[/center]" % [
+			wave_index,
+			clear_time,
+			shots_fired,
+			_get_hit_rate() * 100.0
+		]
+	var buttons := reward_panel.find_children("RewardButton*", "Button", true, false)
+	for i in range(buttons.size()):
+		var button: Button = buttons[i] as Button
+		if i < reward_options.size():
+			var option: Dictionary = reward_options[i]
+			button.text = String(option.get("label", "Reward"))
+			button.disabled = false
+		else:
+			button.disabled = true
+	if player != null and player.has_method("set_gameplay_input_enabled"):
+		player.call("set_gameplay_input_enabled", false)
+
+
+func _build_reward_options() -> Array[Dictionary]:
+	return [
+		{"label": "+Damage", "kind": "damage", "amount": 3},
+		{"label": "+Armor", "kind": "armor", "amount": 10},
+		{"label": "+Ammo", "kind": "ammo", "amount": 18}
+	]
+
+
+func _select_reward(index: int) -> void:
+	if index < 0 or index >= reward_options.size():
+		return
+	var reward: Dictionary = reward_options[index]
+	match String(reward.get("kind", "")):
+		"damage":
+			if player != null and player.weapon != null:
+				player.weapon.damage += int(reward.get("amount", 0))
+				player.weapon.critical_damage += int(reward.get("amount", 0)) * 2
+		"armor":
+			if player != null and player.has_method("add_armor"):
+				player.call("add_armor", int(reward.get("amount", 0)))
+		"ammo":
+			if player != null and player.weapon != null:
+				player.weapon.reserve += int(reward.get("amount", 0))
+				player.weapon.reserve_ammo += int(reward.get("amount", 0))
+	rewards_pending = false
+	if reward_panel != null:
+		reward_panel.visible = false
+	wave_index += 1
+	kills = 0
+	if player != null and player.has_method("set_gameplay_input_enabled"):
+		player.call("set_gameplay_input_enabled", true)
+	_spawn_wave()
+
+
+func _on_weapon_fired(_from: Vector3, _to: Vector3) -> void:
+	shots_fired += 1
+
+
+func _on_weapon_hit_confirmed(_position: Vector3, amount: int, critical: bool, _defeated: bool) -> void:
+	shots_hit += 1
+	damage_dealt += amount
+	if critical:
+		critical_hits += 1
+
+
+func _get_hit_rate() -> float:
+	if shots_fired <= 0:
+		return 0.0
+	return float(shots_hit) / float(shots_fired)
 
 
 func _play_hit_marker(critical: bool) -> void:
@@ -600,7 +1326,8 @@ func _on_player_health_changed(current: int, maximum: int) -> void:
 		health_bar.value = current
 
 
-func _on_player_damage_taken(_amount: int) -> void:
+func _on_player_damage_taken(amount: int) -> void:
+	damage_taken += amount
 	if damage_flash == null:
 		return
 	damage_flash.color = Color(0.95, 0.08, 0.04, 0.26)
@@ -634,6 +1361,18 @@ func _refresh_ui() -> void:
 			summary.get("abilities", 0),
 			summary.get("chips", 0)
 		]
+	if ability_label != null:
+		ability_label.text = _get_ability_hud_text()
+	if telemetry_label != null:
+		var run_time := float(Time.get_ticks_msec() - run_started_msec) / 1000.0 if run_started_msec > 0 else 0.0
+		telemetry_label.text = "Time %.1fs | Waves %d | Hits %.0f%% | Crits %d | Damage %d | Taken %d" % [
+			run_time,
+			waves_cleared,
+			_get_hit_rate() * 100.0,
+			critical_hits,
+			damage_dealt,
+			damage_taken
+		]
 
 
 func _consume_pending_arena_bridge_payload() -> void:
@@ -655,6 +1394,10 @@ func _ensure_input_actions() -> void:
 	_ensure_key_action("fps_reload", KEY_R)
 	_ensure_key_action("fps_toggle_mouse", KEY_ESCAPE)
 	_ensure_key_action("fps_quick_restart", KEY_F5)
+	_ensure_key_action("fps_ability_1", KEY_Q)
+	_ensure_key_action("fps_ability_2", KEY_E)
+	_ensure_key_action("fps_ability_3", KEY_C)
+	_ensure_key_action("fps_ability_4", KEY_V)
 	_ensure_mouse_action("fps_fire", MOUSE_BUTTON_LEFT)
 
 

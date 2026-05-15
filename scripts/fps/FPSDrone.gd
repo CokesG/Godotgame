@@ -13,6 +13,9 @@ signal defeated
 @export var attack_cooldown := 1.05
 @export var texture_path := "res://art/game/enemies/enemy_skulker.png"
 @export var accent_color := Color(0.86, 0.24, 0.18)
+@export var archetype := "chaser"
+@export var ranged_attack_range := 9.5
+@export var hold_distance := 6.5
 
 var player: Node3D
 var game_mode: Node
@@ -20,6 +23,9 @@ var health: int
 var alive := true
 var attack_timer := 0.4
 var stagger_timer := 0.0
+var reveal_timer := 0.0
+var snare_timer := 0.0
+var bait_timer := 0.0
 var knockback := Vector3.ZERO
 var gravity := 17.0
 var body_mesh: MeshInstance3D
@@ -38,6 +44,9 @@ func configure(data: Dictionary, target_player: Node3D, owner_game_mode: Node) -
 	attack_cooldown = float(data.get("attack_cooldown", attack_cooldown))
 	texture_path = String(data.get("texture", texture_path))
 	accent_color = data.get("color", accent_color)
+	archetype = String(data.get("archetype", archetype))
+	ranged_attack_range = float(data.get("ranged_attack_range", ranged_attack_range))
+	hold_distance = float(data.get("hold_distance", hold_distance))
 	player = target_player
 	game_mode = owner_game_mode
 
@@ -55,9 +64,18 @@ func _physics_process(delta: float) -> void:
 		return
 	if player == null or not is_instance_valid(player):
 		return
+	if game_mode != null and game_mode.has_method("is_gameplay_paused") and bool(game_mode.call("is_gameplay_paused")):
+		velocity.x = move_toward(velocity.x, 0.0, acceleration * delta)
+		velocity.z = move_toward(velocity.z, 0.0, acceleration * delta)
+		move_and_slide()
+		return
 
 	attack_timer = maxf(0.0, attack_timer - delta)
 	stagger_timer = maxf(0.0, stagger_timer - delta)
+	reveal_timer = maxf(0.0, reveal_timer - delta)
+	snare_timer = maxf(0.0, snare_timer - delta)
+	bait_timer = maxf(0.0, bait_timer - delta)
+	_update_reveal_visual()
 	if not is_on_floor():
 		velocity.y -= gravity * delta
 
@@ -68,14 +86,18 @@ func _physics_process(delta: float) -> void:
 	if distance > 0.05:
 		var direction := to_player.normalized()
 		look_at(global_position + direction, Vector3.UP)
-		if distance > attack_range and stagger_timer <= 0.0:
-			var strafe := global_basis.x * sin(Time.get_ticks_msec() * 0.0015 + float(get_instance_id() % 17)) * 0.32
-			desired = (direction + strafe).normalized() * move_speed
+		desired = _get_desired_velocity(direction, distance)
+		if archetype == "ranged" and distance <= ranged_attack_range:
+			_try_ranged_attack()
 		elif distance <= attack_range:
 			_try_attack()
 
 	if stagger_timer > 0.0:
 		desired *= 0.25
+	if snare_timer > 0.0:
+		desired *= 0.35
+	if bait_timer > 0.0:
+		desired *= 0.72
 	velocity.x = move_toward(velocity.x, desired.x + knockback.x, acceleration * delta)
 	velocity.z = move_toward(velocity.z, desired.z + knockback.z, acceleration * delta)
 	knockback = knockback.lerp(Vector3.ZERO, clampf(delta * 8.0, 0.0, 1.0))
@@ -86,6 +108,8 @@ func _physics_process(delta: float) -> void:
 func take_damage(amount: int, hit_position: Vector3, impulse: Vector3, critical: bool = false) -> Dictionary:
 	if not alive:
 		return {"defeated": true}
+	if archetype == "shield" and not critical:
+		amount = int(round(float(amount) * 0.68))
 	health = maxi(0, health - amount)
 	stagger_timer = 0.12 if not critical else 0.22
 	knockback += Vector3(impulse.x, 0.0, impulse.z).limit_length(3.4 if critical else 2.1)
@@ -101,10 +125,64 @@ func is_critical_hit(point: Vector3) -> bool:
 	return point.y > global_position.y + 1.18
 
 
+func reveal_for(duration: float) -> void:
+	reveal_timer = maxf(reveal_timer, duration)
+	_update_reveal_visual()
+
+
+func apply_snare(duration: float) -> void:
+	snare_timer = maxf(snare_timer, duration)
+	stagger_timer = maxf(stagger_timer, minf(duration, 0.65))
+	_flash_body(false)
+
+
+func apply_bait(duration: float) -> void:
+	bait_timer = maxf(bait_timer, duration)
+	attack_timer = maxf(attack_timer, 0.55)
+	_flash_body(false)
+
+
 func _try_attack() -> void:
 	if attack_timer > 0.0:
 		return
 	attack_timer = attack_cooldown
+	if player != null and player.has_method("take_damage"):
+		player.call("take_damage", attack_damage, global_position)
+	_pulse_attack()
+
+
+func _get_desired_velocity(direction: Vector3, distance: float) -> Vector3:
+	if stagger_timer > 0.0:
+		return Vector3.ZERO
+	var strafe := global_basis.x * sin(Time.get_ticks_msec() * 0.0015 + float(get_instance_id() % 17)) * 0.32
+	match archetype:
+		"charger":
+			var charge_speed := move_speed * (1.55 if distance > 4.0 else 0.8)
+			return (direction + strafe * 0.18).normalized() * charge_speed
+		"ranged":
+			if distance < hold_distance:
+				return (-direction + strafe).normalized() * move_speed
+			if distance > ranged_attack_range:
+				return (direction + strafe).normalized() * move_speed
+			return strafe.normalized() * move_speed * 0.65
+		"shield":
+			if distance > attack_range:
+				return (direction + strafe * 0.18).normalized() * move_speed * 0.82
+			return Vector3.ZERO
+		_:
+			if distance > attack_range:
+				return (direction + strafe).normalized() * move_speed
+	return Vector3.ZERO
+
+
+func _try_ranged_attack() -> void:
+	if attack_timer > 0.0:
+		return
+	attack_timer = attack_cooldown
+	var start := global_position + Vector3(0.0, 1.35, 0.0)
+	var end := player.global_position + Vector3(0.0, 1.25, 0.0)
+	if game_mode != null and game_mode.has_method("spawn_tracer"):
+		game_mode.call("spawn_tracer", start, end, false)
 	if player != null and player.has_method("take_damage"):
 		player.call("take_damage", attack_damage, global_position)
 	_pulse_attack()
@@ -203,6 +281,19 @@ func _flash_body(critical: bool) -> void:
 		if is_instance_valid(body_mesh):
 			body_mesh.material_override = original
 	)
+
+
+func _update_reveal_visual() -> void:
+	if body_mesh == null:
+		return
+	if reveal_timer > 0.0:
+		body_mesh.material_overlay = _make_unshaded_material(Color(0.28, 0.92, 1.0, 0.42))
+		if sprite != null:
+			sprite.modulate = Color(0.55, 0.95, 1.0, 1.0)
+	else:
+		body_mesh.material_overlay = null
+		if sprite != null:
+			sprite.modulate = Color(1.0, 1.0, 1.0, 0.88)
 
 
 func _pulse_attack() -> void:

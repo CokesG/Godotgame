@@ -37,6 +37,9 @@ var base_position := Vector3(0.46, -0.42, -0.88)
 var recoil_position := Vector3.ZERO
 var recoil_rotation := Vector3.ZERO
 var rng := RandomNumberGenerator.new()
+var overclock_timer := 0.0
+var overclock_interval_scalar := 1.0
+var overclock_damage_scalar := 1.0
 
 var recoil_pattern: Array[Vector2] = [
 	Vector2(0.00, 0.55),
@@ -63,10 +66,19 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	fire_timer = maxf(0.0, fire_timer - delta)
 	time_since_last_shot += delta
+	if overclock_timer > 0.0:
+		overclock_timer = maxf(0.0, overclock_timer - delta)
+		if overclock_timer <= 0.0:
+			overclock_interval_scalar = 1.0
+			overclock_damage_scalar = 1.0
 	if reloading:
 		reload_timer -= delta
 		if reload_timer <= 0.0:
 			_finish_reload()
+
+	if game_mode != null and game_mode.has_method("is_gameplay_paused") and bool(game_mode.call("is_gameplay_paused")):
+		_recover_viewmodel(delta)
+		return
 
 	if Input.is_action_pressed("fps_fire"):
 		try_fire()
@@ -89,7 +101,7 @@ func try_fire() -> bool:
 		return false
 
 	ammo -= 1
-	fire_timer = fire_interval
+	fire_timer = fire_interval * overclock_interval_scalar
 	if time_since_last_shot > 0.35:
 		shot_index = 0
 	time_since_last_shot = 0.0
@@ -107,7 +119,7 @@ func try_fire() -> bool:
 		end_point = hit.get("position", to)
 		var collider: Object = hit.get("collider", null)
 		critical = _is_critical_hit(collider, end_point)
-		dealt_damage = critical_damage if critical else damage
+		dealt_damage = int(round(float(critical_damage if critical else damage) * overclock_damage_scalar))
 		if collider != null and collider.has_method("take_damage"):
 			var result: Dictionary = collider.call("take_damage", dealt_damage, end_point, direction * 6.5, critical)
 			defeated = bool(result.get("defeated", false))
@@ -161,6 +173,12 @@ func configure_from_bridge(weapon_profile: Dictionary, total_ammo: int = -1) -> 
 	if total_ammo >= 0:
 		reserve_ammo = maxi(0, total_ammo - magazine_size)
 	force_ready()
+
+
+func apply_temporary_overclock(duration: float, interval_scalar: float, damage_scalar: float) -> void:
+	overclock_timer = maxf(overclock_timer, duration)
+	overclock_interval_scalar = clampf(interval_scalar, 0.45, 1.0)
+	overclock_damage_scalar = clampf(damage_scalar, 1.0, 2.0)
 
 
 func add_sway(delta_pixels: Vector2) -> void:
