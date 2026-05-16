@@ -1,7 +1,7 @@
 # Dead Man's Ante - True Combat Hybrid
 
 Status: direction and first aim/skill contract
-Last updated: 2026-05-15
+Last updated: 2026-05-16
 
 ## Direction
 
@@ -72,6 +72,8 @@ Current FPS ability contract:
 - Crossfire now has five live FPS objective modes: `Hold Pot`, `Extract`, `Duel`, `Defend`, and `Boss Gate`. Slotted card style recommends the objective when entering from the card table: movement leans Extract, guard leans Defend, reads/traps lean Duel, ritual leans Boss Gate, and default kits hold the pot.
 - Objective rules now push back instead of only scoring passively: Hold Pot can be contested by nearby enemies, Extract has a timed escape after the pot pickup, Defend drains faster under center pressure, Duel buffs the marked target, and Boss Gate uses a harder champion profile.
 - The prep table now makes that objective choice visible and actionable: the objective plan label previews the next arena win condition, hand cards show FPS badges/reasons, selected cards explain "why this loadout", and `Recommend Loadout` auto-slots an affordable kit toward the current hand's strongest objective.
+- The loadout stage now behaves as a chip-spend kit shop: click a hand card, see valid slots, then attach it to `Gun`, `Q Ability`, `E Ability`, `Passive`, or `Risk`. Compatible filled slots can be replaced, and the replaced card returns to hand so experimentation does not destroy inventory.
+- `Equip Best` is the fast selected-card attach path, while manual slot clicks preserve player choice over whether a card becomes weapon pressure, active utility, passive economy, or risk/wager tech.
 - The prep table also has an armory readout: active arena reward mods, Card XP, wounds, selected-card upgrade/mutation state, and the predicted recommended kit with chip cost are visible before entering the shooter. Reward mods have rarity and objective-bias tags, and they are recorded in run reward history.
 - Card XP can now be spent directly from prep with `Upgrade` and `Mutate` actions on the selected hand card. Upgrades persist by card id, boost card-table damage/Guard through resolver context, and export into FPS weapon/ability payloads as damage, armor, cooldown, duration, radius, dash strength, or wager reward changes.
 - Mutations currently follow card style: attacks become `Deadeye`, guard cards `Bulwark`, movement `Fleet`, reads `Marked`, traps `Snare`, and ritual/bluff cards `Wager`. These are prototype mechanics first and final naming can still move.
@@ -79,6 +81,7 @@ Current FPS ability contract:
 - The 2D board now behaves like the command surface for the FPS map: cells show `POT`, `COV`, `ANG`, `FLK`, etc. with shooter roles, movement choices are labeled as routes, and card preview explains both the FPS loadout role and the active table callout/bonus.
 - FPS enemies now carry visible combat roles, status tags, attack windup rings, shield plates for guards, and incoming projectiles for ranged shots instead of invisible instant hits.
 - The FPS arena now has authored staging pieces: energy rails, spawn portals, an objective chip pot, cover silhouettes, wall signage, short-lived impact decals, framed HUD panels, and objective-mode props such as extract gates, defend barriers, duel marks, hold stakes, and the boss gate so the battlefield reads as a competitive table-ritual combat space before custom art arrives.
+- Hidden debug surfaces should not compete with the live loop. The legacy tactical grid/3D consequence view is suspended outside Debug, and live FPS transient effects are capped while crosshair, HUD, bounds, and enemy status refreshes are throttled to keep multi-wave arena runs responsive.
 - The dev hub includes shortcuts for raw FPS sandbox, seeded FPS loadout, card prep, all five objective modes, seeded return payout, and seeded defeat return so this loop can be tested without replaying the whole run.
 - FPS reward selection now builds an arena result with map name, objective mode/label/completion, wave, kills, hit rate, damage, selected reward, objective score, wounds, chips awarded, and next-hand draw count, then returns to `TestCombat` through `ArenaBridge`.
 - `TestCombat` consumes pending arena results on load, restores the pre-FPS run/deck/loadout snapshot, shows `ArenaPayoutPanel`, applies chip and non-chip payout effects, hides the tactical board/deck controls while payout is pending, blocks normal card actions until `Collect Payout`, and then leaves the player on the next prep hand.

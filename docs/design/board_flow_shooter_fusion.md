@@ -1,7 +1,7 @@
 # Dead Man's Ante - Board Flow / Shooter Fusion
 
-Status: Phase 87 card-table identity cleanup
-Last updated: 2026-05-15
+Status: Phase 89 FPS arena loadout cleanup
+Last updated: 2026-05-16
 
 ## North Star
 
@@ -43,6 +43,10 @@ Arena return is a reward state, not a board-targeting state. While an FPS payout
 The prep table now shows the next FPS objective before launch. `ObjectivePlanLabel` names the objective, explains the practical plan, and surfaces payout carryover bias such as bonus weapon damage, armor, or ammo. Cards in hand carry FPS recommendation badges (`WEAPON CORE`, `PICK FOR EXTRACT`, `GOOD FOR DEFEND`, `BOSS TECH`) plus tooltip/selected-card reasoning so the player can understand why a card belongs in the arena kit. `Recommend Loadout` auto-slots affordable cards toward the strongest objective in the current hand while still leaving manual slot/burn/hold decisions available.
 
 The visible player-facing surface is now the Card Table, not the tactical grid. Normal play shows `CARD TABLE - BUILD THE FPS KIT`, the current weapon/ability/passive/wager kit, next FPS objective, target, Card XP, and wound burden. The old `CombatGrid` remains available behind Debug as a legacy tactical/support surface for tests and card-combat internals, but normal players should not be asked to parse `POT MID`, lane, route, or cell callouts.
+
+The current loadout stage should read as a quick chip-spend/shop phase. The player picks a hand card first, then valid kit slots light up. The five active kit slots are `Gun`, `Q Ability`, `E Ability`, `Passive`, and `Risk`. Clicking a valid empty slot equips the selected card; clicking a compatible filled slot swaps the selected card in, refunds the old card to hand, and updates the loadout pile instead of losing the replaced card. `Equip Best` remains the fast path for the selected card, while `Sell`, `Hold`, `Upgrade`, and `Mutate` preserve economy/upgrade decisions for cards that should not enter the round kit.
+
+Hidden runtime surfaces should stay quiet during the shop phase. The legacy 3D tactical consequence viewport and grid processing are disabled unless Debug opens them, and the FPS scene now caps short-lived tracer/impact/tell/combat-text effects while throttling crosshair, HUD, bounds, and enemy-label refresh work. This is part of the loadout contract: the table should feel fast enough that spending chips on a kit is the friction, not the UI/rendering stack.
 
 Arena rewards now become visible run mods. The card table tracks active reward mods, rarity, Card XP, wounds, and card upgrades, writes arena mod decisions into run reward history, and shows an `ARMORY RECOMMENDS` line with the predicted kit and chip cost. Reward mods bias future objective recommendations, so choosing `Runner Edge`, `Fortified Guard`, or `Boss Tech` changes what the next hand wants to become.
 
@@ -387,14 +391,20 @@ Done in the prototype:
 20. Make wounds alter the next loop through chip tax, draw penalty, and armor penalty.
 21. Add first-pass objective pressure: Hold Pot contest, Extract timer, stronger Defend drain, empowered Duel target, and harder Boss Gate champion.
 22. Make the 3x3 board speak shared shooter-map language: lane callouts, route labels, FPS bridge previews, and board-cell tooltips now all point at the same Crossfire arena contract.
+23. Reframe loadout prep as a direct chip economy stage with `Gun`, `Q Ability`, `E Ability`, `Passive`, and `Risk` slots.
+24. Make selected hand cards attach to highlighted valid slots and support slot replacement by returning the old card to hand.
+25. Keep `Equip Best` as a one-click selected-card fast path while preserving manual slot choice for build expression.
+26. Disable hidden tactical board/arena processing outside Debug and cap/throttle live FPS transient effects so repeated waves stay responsive.
 
 Next implementation steps:
 
-1. Replace text-glyph HUD/table icons with generated or hand-painted card-power and map-callout icon textures.
-2. Give each class a unique passive that changes scoring or card economy, not only starting deck/HUD/VFX identity.
-3. Add escort and multi-stage boss variants after the five first objective modes feel good.
-4. Build a dedicated armory screen once upgrade branches become real choices instead of single selected-card actions.
-5. Prototype a second map that changes one tactical axis, then verify the board/FPS callout bridge still reads cleanly.
+1. Add clearer affordability states on hand cards and slots: can afford, short on chips, incompatible, already equipped, and swap candidate.
+2. Consider drag/drop after the click-to-select flow is stable, but keep one-click `Equip Best` as the fastest controller-friendly path.
+3. Replace text-glyph HUD/table icons with generated or hand-painted card-power and map-callout icon textures.
+4. Give each class a unique passive that changes scoring or card economy, not only starting deck/HUD/VFX identity.
+5. Add escort and multi-stage boss variants after the five first objective modes feel good.
+6. Build a dedicated armory screen once upgrade branches become real choices instead of single selected-card actions.
+7. Prototype a second map that changes one tactical axis, then verify the board/FPS callout bridge still reads cleanly.
 
 ## Design Rule
 
