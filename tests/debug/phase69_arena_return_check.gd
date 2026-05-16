@@ -1,5 +1,7 @@
 extends Node
 
+const OUTPUT_DIR := "user://phase69_arena_return_qa"
+
 var failed := false
 
 
@@ -49,6 +51,9 @@ func _run_check() -> void:
 	var panel: Control = combat_scene.find_child("ArenaPayoutPanel", true, false)
 	var label: RichTextLabel = combat_scene.find_child("ArenaPayoutLabel", true, false)
 	var button: Button = combat_scene.find_child("ArenaPayoutContinueButton", true, false)
+	var reward_label: RichTextLabel = combat_scene.find_child("ArenaPayoutRewardCardText", true, false)
+	var stats_label: RichTextLabel = combat_scene.find_child("ArenaPayoutStatsCardText", true, false)
+	var effects_label: RichTextLabel = combat_scene.find_child("ArenaPayoutEffectsCardText", true, false)
 	var table_row: Control = combat_scene.find_child("TableRow", true, false)
 	var deck_panel: Control = combat_scene.find_child("DeckPanel", true, false)
 	var continue_button: Button = combat_scene.find_child("ContinueButton", true, false)
@@ -76,6 +81,19 @@ func _run_check() -> void:
 	if not String(label.text).contains("Next arena weapon +3 damage") or not String(label.text).contains("Objective bonus +2 Chips"):
 		_fail("Arena payout label should summarize concrete payout effects.")
 		return
+	if reward_label == null or not String(reward_label.text).contains("Damage Payout") or not String(reward_label.text).contains("+9 Chips"):
+		_fail("Arena payout reward card should expose the selected reward and chips without relying on the hidden summary label.")
+		return
+	if stats_label == null or not String(stats_label.text).contains("Kills: 4") or not String(stats_label.text).contains("Accuracy: 75%"):
+		_fail("Arena payout stats card should summarize the FPS wave results.")
+		return
+	if effects_label == null or not String(effects_label.text).contains("Next arena weapon +3 damage"):
+		_fail("Arena payout carryover card should show concrete next-arena effects.")
+		return
+	if String(button.text) != "COLLECT PAYOUT":
+		_fail("Arena payout button should be a short, obvious primary action.")
+		return
+	await _capture_payout_screenshot()
 	if int(combat_scene.get("shooter_chips")) != 15:
 		_fail("Arena payout should restore the previous 4 chips, add 9 payout chips, and apply +2 objective bonus.")
 		return
@@ -196,6 +214,20 @@ func _settle() -> void:
 	await get_tree().process_frame
 	await get_tree().process_frame
 	await get_tree().create_timer(0.05).timeout
+
+
+func _capture_payout_screenshot() -> void:
+	if DisplayServer.get_name() == "headless":
+		return
+	var dir := DirAccess.open("user://")
+	if dir != null and not dir.dir_exists("phase69_arena_return_qa"):
+		dir.make_dir_recursive("phase69_arena_return_qa")
+	await get_tree().process_frame
+	await get_tree().process_frame
+	var image := get_viewport().get_texture().get_image()
+	if image == null or image.is_empty():
+		return
+	image.save_png("%s/01_payout.png" % OUTPUT_DIR)
 
 
 func _fail(message: String) -> void:

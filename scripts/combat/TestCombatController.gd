@@ -126,6 +126,10 @@ var hero_class_option: OptionButton
 var hero_class_summary_label: Label
 var arena_payout_panel: PanelContainer
 var arena_payout_label: RichTextLabel
+var arena_payout_reward_label: RichTextLabel
+var arena_payout_stats_label: RichTextLabel
+var arena_payout_effects_label: RichTextLabel
+var arena_payout_next_label: Label
 var arena_payout_continue_button: Button
 var loadout_slot_row: HBoxContainer
 var loadout_slot_buttons: Dictionary = {}
@@ -519,10 +523,9 @@ func _build_ui() -> void:
 	run_shell_layout.add_child(opening_step_row)
 
 	var opening_steps := [
-		{"label": "1 DEAL IN\nDraw hand", "tooltip": "Start the first table and draw your opening hand."},
-		{"label": "2 BUILD KIT\nSlot cards", "tooltip": "Cards become the FPS weapon, powers, passive, and wager."},
-		{"label": "3 UPGRADE\nSpend XP", "tooltip": "Improve or mutate cards after arena payouts."},
-		{"label": "4 ENTER FPS\nFight arena", "tooltip": "Take the card kit into the shooter arena."}
+		{"label": "1 DEAL IN", "tooltip": "Draw your opening hand."},
+		{"label": "2 BUILD KIT", "tooltip": "Auto-build or tweak the FPS loadout."},
+		{"label": "3 ENTER FPS", "tooltip": "Take the kit into the shooter arena."}
 	]
 	for index in range(opening_steps.size()):
 		var step_button := Button.new()
@@ -1165,12 +1168,12 @@ func _build_ui() -> void:
 	arena_payout_panel.name = "ArenaPayoutPanel"
 	arena_payout_panel.visible = false
 	arena_payout_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	arena_payout_panel.custom_minimum_size = Vector2(0, 318)
+	arena_payout_panel.custom_minimum_size = Vector2(0, 410)
 	body.add_child(arena_payout_panel)
 
 	var arena_payout_layout := VBoxContainer.new()
 	arena_payout_layout.name = "ArenaPayoutLayout"
-	arena_payout_layout.add_theme_constant_override("separation", 10)
+	arena_payout_layout.add_theme_constant_override("separation", 14)
 	arena_payout_panel.add_child(arena_payout_layout)
 
 	arena_payout_label = RichTextLabel.new()
@@ -1178,16 +1181,58 @@ func _build_ui() -> void:
 	arena_payout_label.bbcode_enabled = true
 	arena_payout_label.fit_content = true
 	arena_payout_label.scroll_active = false
-	arena_payout_label.custom_minimum_size = Vector2(0, 190)
+	arena_payout_label.visible = false
+	arena_payout_label.custom_minimum_size = Vector2(0, 0)
 	arena_payout_label.add_theme_font_size_override("normal_font_size", 17)
 	arena_payout_layout.add_child(arena_payout_label)
+
+	var payout_title := Label.new()
+	payout_title.name = "ArenaPayoutTitle"
+	payout_title.text = "ARENA PAYOUT"
+	payout_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	payout_title.add_theme_font_size_override("font_size", 30)
+	payout_title.add_theme_color_override("font_color", Color(1.0, 0.92, 0.72))
+	payout_title.add_theme_color_override("font_shadow_color", Color(0.0, 0.0, 0.0, 0.78))
+	payout_title.add_theme_constant_override("shadow_offset_x", 2)
+	payout_title.add_theme_constant_override("shadow_offset_y", 2)
+	arena_payout_layout.add_child(payout_title)
+
+	var payout_cards := HBoxContainer.new()
+	payout_cards.name = "ArenaPayoutCards"
+	payout_cards.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	payout_cards.add_theme_constant_override("separation", 12)
+	arena_payout_layout.add_child(payout_cards)
+
+	var reward_card := _build_arena_payout_card("ArenaPayoutRewardCard", "REWARD", Color(1.0, 0.78, 0.36))
+	arena_payout_reward_label = reward_card["body"]
+	payout_cards.add_child(reward_card["panel"])
+	var stats_card := _build_arena_payout_card("ArenaPayoutStatsCard", "RUN RESULTS", Color(0.72, 0.90, 1.0))
+	arena_payout_stats_label = stats_card["body"]
+	payout_cards.add_child(stats_card["panel"])
+	var effects_card := _build_arena_payout_card("ArenaPayoutEffectsCard", "CARRYOVER", Color(0.52, 1.0, 0.62))
+	arena_payout_effects_label = effects_card["body"]
+	payout_cards.add_child(effects_card["panel"])
+
+	arena_payout_next_label = Label.new()
+	arena_payout_next_label.name = "ArenaPayoutNextStep"
+	arena_payout_next_label.text = "Collect payout to unlock the new hand and build the next FPS kit."
+	arena_payout_next_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	arena_payout_next_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	arena_payout_next_label.add_theme_font_size_override("font_size", 16)
+	arena_payout_next_label.add_theme_color_override("font_color", Color(0.92, 0.88, 0.76))
+	arena_payout_layout.add_child(arena_payout_next_label)
+
+	var payout_button_row := HBoxContainer.new()
+	payout_button_row.name = "ArenaPayoutButtonRow"
+	payout_button_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	arena_payout_layout.add_child(payout_button_row)
 
 	arena_payout_continue_button = Button.new()
 	arena_payout_continue_button.name = "ArenaPayoutContinueButton"
 	arena_payout_continue_button.text = "Collect Payout"
-	arena_payout_continue_button.custom_minimum_size = Vector2(0, 58)
+	arena_payout_continue_button.custom_minimum_size = Vector2(320, 58)
 	arena_payout_continue_button.pressed.connect(_on_arena_payout_continue_pressed)
-	arena_payout_layout.add_child(arena_payout_continue_button)
+	payout_button_row.add_child(arena_payout_continue_button)
 
 	var table_row := HBoxContainer.new()
 	table_row.name = "TableRow"
@@ -1215,23 +1260,28 @@ func _build_ui() -> void:
 	arena_prep_panel.visible = false
 	arena_prep_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	arena_prep_panel.z_index = 30
-	_style_play_panel(arena_prep_panel, Color(0.058, 0.044, 0.034, 0.94), Color(1.0, 0.62, 0.22), "cue")
+	arena_prep_panel.custom_minimum_size = Vector2(0, 92)
+	_style_play_panel(arena_prep_panel, Color(0.045, 0.034, 0.028, 0.88), Color(1.0, 0.68, 0.28), "cue")
 	table_stage.add_child(arena_prep_panel)
-	arena_prep_panel.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	arena_prep_panel.set_anchors_preset(Control.PRESET_TOP_WIDE)
+	arena_prep_panel.offset_left = 10
+	arena_prep_panel.offset_top = 10
+	arena_prep_panel.offset_right = -10
+	arena_prep_panel.offset_bottom = 102
 
 	var arena_prep_layout := VBoxContainer.new()
 	arena_prep_layout.name = "ArenaPrepLayout"
-	arena_prep_layout.add_theme_constant_override("separation", 12)
+	arena_prep_layout.add_theme_constant_override("separation", 4)
 	arena_prep_panel.add_child(arena_prep_layout)
 
 	arena_prep_title_label = Label.new()
 	arena_prep_title_label.name = "ArenaPrepTitle"
-	arena_prep_title_label.text = "CARD TABLE - BUILD THE FPS KIT"
+	arena_prep_title_label.text = "FPS KIT BENCH"
 	arena_prep_title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	arena_prep_title_label.add_theme_font_size_override("font_size", 26)
+	arena_prep_title_label.add_theme_font_size_override("font_size", 18)
 	arena_prep_title_label.add_theme_color_override("font_color", Color(1.0, 0.86, 0.44))
 	arena_prep_title_label.add_theme_color_override("font_outline_color", Color(0.02, 0.015, 0.012))
-	arena_prep_title_label.add_theme_constant_override("outline_size", 3)
+	arena_prep_title_label.add_theme_constant_override("outline_size", 2)
 	arena_prep_layout.add_child(arena_prep_title_label)
 
 	arena_prep_summary_label = RichTextLabel.new()
@@ -1239,8 +1289,8 @@ func _build_ui() -> void:
 	arena_prep_summary_label.bbcode_enabled = true
 	arena_prep_summary_label.fit_content = true
 	arena_prep_summary_label.scroll_active = false
-	arena_prep_summary_label.custom_minimum_size = Vector2(0, 190)
-	arena_prep_summary_label.add_theme_font_size_override("normal_font_size", 18)
+	arena_prep_summary_label.custom_minimum_size = Vector2(0, 48)
+	arena_prep_summary_label.add_theme_font_size_override("normal_font_size", 14)
 	arena_prep_summary_label.add_theme_color_override("default_color", Color(0.92, 0.90, 0.84))
 	arena_prep_layout.add_child(arena_prep_summary_label)
 
@@ -1720,6 +1770,7 @@ func _build_ui() -> void:
 	hand_view.name = "HandView"
 	hand_view.set_script(HAND_VIEW_SCRIPT)
 	hand_scroll.add_child(hand_view)
+	deck_layout.move_child(hand_scroll, loadout_slot_row.get_index() + 1)
 	_apply_phase35_default_layout(
 		layout,
 		title,
@@ -1981,10 +2032,9 @@ func _refresh_hero_class_selector() -> void:
 	if start_hero_class_art != null:
 		start_hero_class_art.texture = DEAD_MANS_ANTE_SKIN_SCRIPT.load_texture(String(selected_entry.get("portrait", selected_entry.get("art", ""))))
 	if start_hero_class_loadout_label != null:
-		start_hero_class_loadout_label.text = "%s - %s\nPassive: %s\nStarter: %s\n%s" % [
+		start_hero_class_loadout_label.text = "%s - %s\nStarter: %s\nFPS: %s" % [
 			String(selected_entry.get("label", "Fighter")),
 			String(selected_entry.get("role", "Role")),
-			_get_class_passive_text(selected_entry),
 			String(selected_entry.get("deck_focus", "Opening deck ready.")),
 			String(selected_entry.get("arena_line", "FPS role ready."))
 		]
@@ -2265,6 +2315,46 @@ func _style_play_panel(panel: PanelContainer, bg_color: Color, border_color: Col
 		return
 
 	DEAD_MANS_ANTE_SKIN_SCRIPT.apply_panel(panel, bg_color, border_color, kind)
+
+
+func _build_arena_payout_card(card_name: String, title: String, accent: Color) -> Dictionary:
+	var panel := PanelContainer.new()
+	panel.name = card_name
+	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	panel.custom_minimum_size = Vector2(0, 190)
+	_style_play_panel(panel, Color(0.045, 0.036, 0.030, 0.96), accent, "cue")
+
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 12)
+	margin.add_theme_constant_override("margin_top", 10)
+	margin.add_theme_constant_override("margin_right", 12)
+	margin.add_theme_constant_override("margin_bottom", 10)
+	panel.add_child(margin)
+
+	var stack := VBoxContainer.new()
+	stack.add_theme_constant_override("separation", 8)
+	margin.add_child(stack)
+
+	var title_label := Label.new()
+	title_label.text = title
+	title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title_label.add_theme_font_size_override("font_size", 14)
+	title_label.add_theme_color_override("font_color", accent)
+	stack.add_child(title_label)
+
+	var body := RichTextLabel.new()
+	body.name = "%sText" % card_name
+	body.bbcode_enabled = true
+	body.fit_content = true
+	body.scroll_active = false
+	body.custom_minimum_size = Vector2(0, 126)
+	body.add_theme_font_size_override("normal_font_size", 15)
+	body.add_theme_color_override("default_color", Color(0.94, 0.90, 0.82))
+	stack.add_child(body)
+	return {
+		"panel": panel,
+		"body": body
+	}
 
 
 func _make_action_marker(marker_name: String, color: Color, border_width: int) -> PanelContainer:
@@ -2743,10 +2833,99 @@ func _refresh_arena_payout_panel() -> void:
 	arena_payout_panel.visible = arena_payout_pending and run_flow_state == RUN_FLOW_COMBAT
 	if arena_payout_label != null:
 		arena_payout_label.text = _get_arena_payout_text(pending_arena_result)
+	if arena_payout_reward_label != null:
+		arena_payout_reward_label.text = _get_arena_payout_reward_card_text(pending_arena_result)
+	if arena_payout_stats_label != null:
+		arena_payout_stats_label.text = _get_arena_payout_stats_card_text(pending_arena_result)
+	if arena_payout_effects_label != null:
+		arena_payout_effects_label.text = _get_arena_payout_effects_card_text(pending_arena_result)
+	if arena_payout_next_label != null:
+		arena_payout_next_label.text = "Collect payout to unlock the new hand, then build the next FPS kit from the cards you drew."
 	if arena_payout_continue_button != null:
 		arena_payout_continue_button.disabled = not arena_payout_pending
-		arena_payout_continue_button.text = "VIEW RUN RESULTS" if _arena_result_ends_run() else "COLLECT PAYOUT - BUILD NEXT HAND"
+		arena_payout_continue_button.text = "VIEW RUN RESULTS" if _arena_result_ends_run() else "COLLECT PAYOUT"
 		_style_compact_button(arena_payout_continue_button, arena_payout_pending, FEEDBACK_CARD_COLOR, "Collect the FPS arena payout and unlock the next prep hand.")
+
+
+func _get_arena_payout_reward_card_text(result: Dictionary) -> String:
+	if result.is_empty():
+		return ""
+	var cleared := bool(result.get("cleared", String(result.get("outcome", "win")) != "defeat"))
+	if not cleared:
+		return "[center][font_size=22][b]ARENA LOST[/b][/font_size][/center]\nRun defeat recorded.\nKills %d | Damage taken %d" % [
+			int(result.get("kills", 0)),
+			int(result.get("damage_taken", 0))
+		]
+	var reward: Dictionary = result.get("selected_reward", {})
+	var reward_label := _safe_bbcode_text(String(reward.get("label", "Arena Payout")))
+	var reward_kind := String(reward.get("kind", "reward")).capitalize()
+	var reward_amount := int(reward.get("amount", 0))
+	var chips := int(result.get("chips_awarded", 0))
+	var cards_to_draw := int(result.get("cards_drawn_after_wounds", result.get("cards_to_draw", combat_session.get("hand_target"))))
+	var draw_penalty := int(result.get("wound_draw_penalty", 0))
+	var draw_line := "Draw %d cards%s" % [cards_to_draw, "  (-%d wound)" % draw_penalty if draw_penalty > 0 else ""]
+	return "[center][font_size=22][b]%s[/b][/font_size]\n%s +%d[/center]\n[b]+%d Chips[/b]\n%s\n%s" % [
+		reward_label,
+		reward_kind,
+		reward_amount,
+		chips,
+		draw_line,
+		_get_payout_reward_flavor_text(String(reward.get("kind", "chips")))
+	]
+
+
+func _get_arena_payout_stats_card_text(result: Dictionary) -> String:
+	if result.is_empty():
+		return ""
+	var hit_rate := float(result.get("hit_rate", 0.0)) * 100.0
+	var clear_time := float(result.get("clear_time", 0.0))
+	var objective_line := "%s %s: %d" % [
+		String(result.get("objective_label", "Objective")),
+		"complete" if bool(result.get("objective_completed", false)) else ("failed" if bool(result.get("objective_failed", false)) else "partial"),
+		int(result.get("objective_score", 0))
+	]
+	return "[b]%s Wave %d[/b]\nKills: %d\nAccuracy: %.0f%%\nTime: %.1fs\n%s\nClass: %s" % [
+		_safe_bbcode_text(String(result.get("map_name", "Arena"))),
+		int(result.get("wave", 1)),
+		int(result.get("kills", 0)),
+		hit_rate,
+		clear_time,
+		_safe_bbcode_text(objective_line),
+		_safe_bbcode_text(String(result.get("hero", "Gambler-Knight")))
+	]
+
+
+func _get_arena_payout_effects_card_text(result: Dictionary) -> String:
+	if result.is_empty():
+		return ""
+	var shown: Array[String] = []
+	for line in pending_arena_effect_lines:
+		shown.append(_safe_bbcode_text(String(line)))
+		if shown.size() >= 4:
+			break
+	if shown.is_empty():
+		shown.append("No carryover effects.")
+	var overflow := pending_arena_effect_lines.size() - shown.size()
+	var overflow_line := "\n+%d more effect%s" % [overflow, "" if overflow == 1 else "s"] if overflow > 0 else ""
+	return "[b]Next Arena Changes[/b]\n%s%s\n\n[b]Progression[/b]\n+%d Card XP | Wounds %d | Mods %d" % [
+		"\n".join(shown),
+		overflow_line,
+		_calculate_arena_card_xp(result),
+		arena_wounds_total,
+		active_reward_mods.size()
+	]
+
+
+func _get_payout_reward_flavor_text(kind: String) -> String:
+	match kind:
+		"damage":
+			return "Weapon pressure carries into the next FPS arena."
+		"armor":
+			return "Survivability carries into the next loadout."
+		"ammo":
+			return "Tempo and reserve ammo improve the next fight."
+		_:
+			return "Chips feed upgrades, slots, and future risk."
 
 
 func _get_arena_payout_text(result: Dictionary) -> String:
@@ -3654,6 +3833,22 @@ func _get_loadout_slot_label(slot_id: String) -> String:
 			return slot_id.capitalize()
 
 
+func _get_compact_loadout_slot_label(slot_id: String) -> String:
+	match slot_id:
+		"weapon":
+			return "Gun"
+		"ability_1":
+			return "Q Power"
+		"ability_2":
+			return "E Power"
+		"passive":
+			return "Perk"
+		"wager":
+			return "Risk"
+		_:
+			return _get_loadout_slot_label(slot_id)
+
+
 func _get_recommended_loadout_slot(card: Resource) -> String:
 	match _get_card_vfx_style(card):
 		&"attack":
@@ -3705,23 +3900,39 @@ func _get_slotted_card_count() -> int:
 
 func _refresh_loadout_ui() -> void:
 	var preview_objective_mode := _get_preview_objective_mode()
+	var compact_live := run_flow_state == RUN_FLOW_COMBAT and not debug_controls_visible
 	if shooter_economy_label != null:
 		var arena_state := "PAYOUT READY" if arena_payout_pending else ("ARENA READY" if arena_round_armed else "PREP")
-		shooter_economy_label.text = "CHIPS %d | ARMOR %d | AMMO %d | SLOTTED %d/5 | CLASS %s | %s | SELECTED %s" % [
-			shooter_chips,
-			_get_bridge_armor_value(),
-			_get_bridge_ammo_value(),
-			_get_slotted_card_count(),
-			selected_hero_class_id.replace("_", " ").to_upper(),
-			arena_state,
-			_get_selected_card_label()
-		]
+		if compact_live:
+			shooter_economy_label.text = "CHIPS %d   ARMOR %d   AMMO %d   KIT %d/5" % [
+				shooter_chips,
+				_get_bridge_armor_value(),
+				_get_bridge_ammo_value(),
+				_get_slotted_card_count()
+			]
+		else:
+			shooter_economy_label.text = "CHIPS %d | ARMOR %d | AMMO %d | SLOTTED %d/5 | CLASS %s | %s | SELECTED %s" % [
+				shooter_chips,
+				_get_bridge_armor_value(),
+				_get_bridge_ammo_value(),
+				_get_slotted_card_count(),
+				selected_hero_class_id.replace("_", " ").to_upper(),
+				arena_state,
+				_get_selected_card_label()
+			]
 	if objective_plan_label != null:
-		objective_plan_label.text = "NEXT FPS OBJECTIVE: %s\n%s%s" % [
-			_get_objective_label(preview_objective_mode),
-			_get_objective_plan_text(preview_objective_mode),
-			_get_payout_bias_text()
-		]
+		if compact_live:
+			objective_plan_label.text = "%s: %s%s" % [
+				_get_objective_label(preview_objective_mode).to_upper(),
+				_get_objective_quick_plan_text(preview_objective_mode),
+				_get_compact_payout_bias_text()
+			]
+		else:
+			objective_plan_label.text = "NEXT FPS OBJECTIVE: %s\n%s%s" % [
+				_get_objective_label(preview_objective_mode),
+				_get_objective_plan_text(preview_objective_mode),
+				_get_payout_bias_text()
+			]
 		objective_plan_label.tooltip_text = "The card table sends objective_mode=%s through the ArenaBridge payload." % preview_objective_mode
 	if reward_mods_label != null:
 		reward_mods_label.text = _get_reward_mods_label_text()
@@ -3732,33 +3943,45 @@ func _refresh_loadout_ui() -> void:
 	_refresh_hero_class_selector()
 	for slot_id in loadout_slot_buttons.keys():
 		var button: Button = loadout_slot_buttons[slot_id]
+		var slot_label := _get_compact_loadout_slot_label(slot_id) if compact_live else _get_loadout_slot_label(slot_id)
+		button.custom_minimum_size = Vector2(122, 42) if compact_live else Vector2(132, 48)
 		if loadout_slots.has(slot_id):
 			var card: Resource = loadout_slots[slot_id]
-			button.text = "%s\n%s" % [_get_loadout_slot_label(slot_id).to_upper(), _get_card_name(card)]
+			button.text = "%s\n%s" % [slot_label.to_upper(), _get_card_name(card)]
 			button.tooltip_text = "%s is slotted for the combat bridge. Click another selected card action to replace it." % _get_card_name(card)
 			_style_compact_button(button, true, FEEDBACK_CARD_COLOR, button.tooltip_text)
 		else:
-			button.text = "%s\nEMPTY" % _get_loadout_slot_label(slot_id).to_upper()
-			button.tooltip_text = "Select a card, then click this slot or Slot Selected."
+			button.text = "%s\n+" % slot_label.to_upper() if compact_live else "%s\nEMPTY" % slot_label.to_upper()
+			button.tooltip_text = "Select a hand card, then click this slot."
 			_style_compact_button(button, false, Color(0.50, 0.46, 0.38), button.tooltip_text)
 	if slot_selected_button != null:
 		slot_selected_button.disabled = arena_payout_pending or selected_hand_index < 0
+		slot_selected_button.text = "Slot Card" if compact_live else "Slot Selected"
 	if burn_selected_button != null:
 		burn_selected_button.disabled = arena_payout_pending or selected_hand_index < 0
+		burn_selected_button.text = "Sell +2" if compact_live else "Burn +2 Chips"
 	if hold_selected_button != null:
 		hold_selected_button.disabled = arena_payout_pending or selected_hand_index < 0
+		hold_selected_button.visible = not compact_live or selected_hand_index >= 0
+		hold_selected_button.tooltip_text = "" if compact_live and selected_hand_index < 0 else "Hold this card for later."
 	if upgrade_selected_button != null:
 		var can_upgrade := _selected_card_can_buy_upgrade(false)
 		upgrade_selected_button.disabled = arena_payout_pending or not can_upgrade
+		upgrade_selected_button.text = "Upgrade" if not compact_live else "Upgrade XP"
+		if compact_live and not can_upgrade:
+			upgrade_selected_button.tooltip_text = ""
 		_style_compact_button(upgrade_selected_button, can_upgrade, FEEDBACK_CARD_COLOR, _get_upgrade_button_tooltip(false))
 	if mutate_selected_button != null:
 		var can_mutate := _selected_card_can_buy_upgrade(true)
 		mutate_selected_button.disabled = arena_payout_pending or not can_mutate
+		mutate_selected_button.visible = not compact_live or can_mutate
+		if compact_live and not can_mutate:
+			mutate_selected_button.tooltip_text = ""
 		_style_compact_button(mutate_selected_button, can_mutate, FEEDBACK_REVEAL_COLOR, _get_upgrade_button_tooltip(true))
 	if recommend_loadout_button != null:
 		var hand_count := int(deck_manager.call("get_hand_count")) if deck_manager != null else 0
 		recommend_loadout_button.disabled = arena_payout_pending or hand_count <= 0 or _get_slotted_card_count() >= 5
-		recommend_loadout_button.text = "1 AUTO-BUILD KIT\n%s" % _get_objective_label(preview_objective_mode).to_upper()
+		recommend_loadout_button.text = "1 AUTO-BUILD\n%s" % _get_objective_label(preview_objective_mode).to_upper()
 		var recommend_tooltip := "Auto-slot an affordable kit for %s from the current hand." % _get_objective_label(preview_objective_mode)
 		if arena_payout_pending:
 			recommend_tooltip = "Collect the arena payout first."
@@ -3767,30 +3990,77 @@ func _refresh_loadout_ui() -> void:
 		_style_compact_button(recommend_loadout_button, not recommend_loadout_button.disabled, FEEDBACK_MOVE_COLOR, recommend_tooltip)
 	if enter_arena_button != null:
 		enter_arena_button.disabled = arena_payout_pending or _get_slotted_card_count() <= 0
-		enter_arena_button.text = "2 ENTER FPS ARENA\n%d CARD KIT" % _get_slotted_card_count()
+		enter_arena_button.text = "2 ENTER FPS\n%d CARD KIT" % _get_slotted_card_count()
 		enter_arena_button.tooltip_text = "Collect the arena payout first." if arena_payout_pending else "Slot at least one card, then enter the shooter arena with that loadout."
 		_style_compact_button(enter_arena_button, arena_round_armed or _get_slotted_card_count() > 0, FEEDBACK_MOVE_COLOR, enter_arena_button.tooltip_text)
+	if bridge_payload_button != null:
+		bridge_payload_button.visible = not compact_live or debug_controls_visible
 	_refresh_hand_loadout_recommendations(preview_objective_mode)
 	_refresh_selected_card_loadout_reason(preview_objective_mode)
 	_refresh_arena_payout_panel()
-	var compact_live := run_flow_state == RUN_FLOW_COMBAT and not debug_controls_visible
 	if hand_action_status_label != null:
 		hand_action_status_label.visible = not compact_live
 	if reward_mods_label != null:
 		reward_mods_label.visible = not compact_live
 	if compact_live:
 		if combat_action_badge_label != null:
-			combat_action_badge_label.text = "NEXT: KIT - Auto-build or slot cards"
+			combat_action_badge_label.text = "LOADOUT: auto-build, tweak a card, then enter FPS"
 		if next_phase_button != null:
-			next_phase_button.text = "Table Step"
+			next_phase_button.text = "Quick Prep"
 
 
 func _refresh_arena_prep_panel() -> void:
 	if arena_prep_summary_label == null:
 		return
+	var preview_objective_mode := _get_preview_objective_mode()
 	if arena_prep_title_label != null:
-		arena_prep_title_label.text = "CARD TABLE - BUILD THE FPS KIT"
-	arena_prep_summary_label.text = _get_arena_prep_identity_text()
+		arena_prep_title_label.text = "FPS LOADOUT"
+	arena_prep_summary_label.text = _get_arena_prep_quick_text(preview_objective_mode)
+
+
+func _get_arena_prep_quick_text(objective_mode_value: String) -> String:
+	var target := _get_selected_enemy_target()
+	var target_name := String(target.get("name", "nearest fighter")) if not target.is_empty() else "nearest fighter"
+	var action_text := "Press [b]2[/b] to fight now" if _get_slotted_card_count() > 0 else "Press [b]1[/b] for a quick kit"
+	var wound_text := _get_wound_burden_text()
+	if wound_text.is_empty():
+		wound_text = "clean run"
+	return "[center][b]Kit %d/5 -> %s[/b]  |  Target %s  |  %s\n%s. Click a hand card only if you want to tweak.[/center]" % [
+		_get_slotted_card_count(),
+		_safe_bbcode_text(_get_objective_label(objective_mode_value)),
+		_safe_bbcode_text(target_name),
+		_safe_bbcode_text(wound_text),
+		action_text
+	]
+
+
+func _get_objective_quick_plan_text(mode: String) -> String:
+	match mode:
+		"extract":
+			return "grab pot, rotate out"
+		"duel":
+			return "burst the marked target"
+		"defend":
+			return "bring armor/control"
+		"boss_gate":
+			return "bring burst and tech"
+		_:
+			return "hold center with a balanced kit"
+
+
+func _get_compact_payout_bias_text() -> String:
+	if active_reward_mods.is_empty() and arena_weapon_damage_bonus <= 0 and arena_carryover_armor <= 0 and arena_carryover_ammo <= 0:
+		return ""
+	var entries: Array[String] = []
+	if arena_weapon_damage_bonus > 0:
+		entries.append("+%d dmg" % arena_weapon_damage_bonus)
+	if arena_carryover_armor > 0:
+		entries.append("+%d armor" % arena_carryover_armor)
+	if arena_carryover_ammo > 0:
+		entries.append("+%d ammo" % arena_carryover_ammo)
+	if not active_reward_mods.is_empty():
+		entries.append("%d mod%s" % [active_reward_mods.size(), "" if active_reward_mods.size() == 1 else "s"])
+	return "  |  %s" % _join_string_array(entries, " / ")
 
 
 func _get_arena_prep_identity_text() -> String:
@@ -5776,9 +6046,10 @@ func _refresh_action_controls() -> void:
 	var run_outcome := String(run_state.get("run_outcome", "running"))
 	var shell_blocks_combat := run_flow_state != RUN_FLOW_COMBAT
 	var payout_blocks_combat := arena_payout_pending
+	var compact_live := run_flow_state == RUN_FLOW_COMBAT and not debug_controls_visible
 
 	next_phase_button.disabled = shell_blocks_combat or (not payout_blocks_combat and not can_debug_adjust)
-	next_phase_button.visible = run_flow_state == RUN_FLOW_COMBAT
+	next_phase_button.visible = run_flow_state == RUN_FLOW_COMBAT and not compact_live
 	if run_flow_state == RUN_FLOW_START:
 		next_phase_button.text = "Deal In"
 	elif arena_payout_pending:
@@ -5793,8 +6064,8 @@ func _refresh_action_controls() -> void:
 		next_phase_button.text = "Choose Reward"
 	else:
 		next_phase_button.text = "Combat Over" if not can_debug_adjust else String(PHASE_ACTION_LABELS.get(phase_key, "Continue"))
-	if run_flow_state == RUN_FLOW_COMBAT and not debug_controls_visible and not arena_payout_pending:
-		next_phase_button.text = "Table Step"
+	if compact_live and not arena_payout_pending:
+		next_phase_button.text = "Quick Prep"
 	_refresh_primary_action_emphasis(shell_blocks_combat, payout_blocks_combat or can_debug_adjust, phase_key)
 	reset_grid_button.disabled = payout_blocks_combat or not can_debug_adjust
 	draw_button.disabled = payout_blocks_combat or not can_debug_adjust
@@ -5880,7 +6151,10 @@ func _refresh_action_guide(session_state: Dictionary, run_state: Dictionary) -> 
 
 	if combat_action_badge_label != null:
 		combat_action_badge_label.visible = run_flow_state == RUN_FLOW_COMBAT
-		combat_action_badge_label.text = "NEXT: %s - %s" % [label.to_upper(), detail]
+		if run_flow_state == RUN_FLOW_COMBAT and not debug_controls_visible:
+			combat_action_badge_label.text = "NEXT: ENTER FPS" if label == "FPS" else "NEXT: AUTO-BUILD"
+		else:
+			combat_action_badge_label.text = "NEXT: %s - %s" % [label.to_upper(), detail]
 		combat_action_badge_label.add_theme_color_override("font_color", color.lerp(Color(1.0, 0.92, 0.52), 0.45))
 
 	if key != last_action_guide_key:
@@ -5926,6 +6200,22 @@ func _get_action_guide_snapshot(session_state: Dictionary, run_state: Dictionary
 			"detail": "Arena payout",
 			"color": FEEDBACK_CARD_COLOR
 		}
+
+	if run_flow_state == RUN_FLOW_COMBAT and not debug_controls_visible:
+		if _get_slotted_card_count() > 0 and enter_arena_button != null and not bool(enter_arena_button.get("disabled")):
+			return {
+				"target": enter_arena_button,
+				"label": "FPS",
+				"detail": "Enter arena",
+				"color": FEEDBACK_MOVE_COLOR
+			}
+		if recommend_loadout_button != null and not bool(recommend_loadout_button.get("disabled")):
+			return {
+				"target": recommend_loadout_button,
+				"label": "KIT",
+				"detail": "Auto-build",
+				"color": FEEDBACK_MOVE_COLOR
+			}
 
 	if bool(session_state.get("combat_over", false)):
 		if bool(run_state.get("waiting_for_reward", false)):
@@ -6045,7 +6335,7 @@ func _refresh_battlefield_focus() -> void:
 		var player_target := _get_selected_enemy_target()
 		var player_target_name := String(player_target.get("name", "nearest fighter")) if not player_target.is_empty() else "nearest fighter"
 		var next_objective := _get_objective_label(_get_preview_objective_mode())
-		battlefield_focus_label.text = "CARD TABLE  |  FPS KIT %d/5  |  NEXT %s  |  TARGET %s" % [
+		battlefield_focus_label.text = "FPS LOADOUT  |  KIT %d/5  |  OBJECTIVE %s  |  TARGET %s" % [
 			_get_slotted_card_count(),
 			next_objective.to_upper(),
 			player_target_name.to_upper()
@@ -6185,6 +6475,8 @@ func _play_guided_click_beacon() -> void:
 	if run_flow_state == RUN_FLOW_START:
 		return
 	if combat_vfx == null or not combat_vfx.has_method("play_click_beacon_on"):
+		return
+	if _should_show_player_card_table():
 		return
 	if guided_click_target == null or not is_instance_valid(guided_click_target):
 		return
@@ -6697,7 +6989,7 @@ func _refresh_opening_steps() -> void:
 	if opening_step_row == null:
 		return
 
-	opening_step_row.visible = run_flow_state == RUN_FLOW_START
+	opening_step_row.visible = false
 	if not opening_step_row.visible:
 		return
 
@@ -6734,7 +7026,7 @@ func _sync_opening_idle_animation() -> void:
 func _get_run_shell_title(state: Dictionary) -> String:
 	match run_flow_state:
 		RUN_FLOW_START:
-			return "Opening Table: Pick Your Fighter"
+			return "Pick Your Fighter"
 		RUN_FLOW_REWARD:
 			return "Post-Combat Reward"
 		RUN_FLOW_NEXT_ENCOUNTER:
@@ -6751,7 +7043,7 @@ func _get_run_shell_detail(state: Dictionary) -> String:
 	var node_count := int(state.get("current_node_count", 0))
 	match run_flow_state:
 		RUN_FLOW_START:
-			return "Choose a fighter deck, then Deal In. Your cards become weapons, armor, reads, traps, and FPS abilities in the arena."
+			return "Choose a fighter, then Deal In. The next screen is your FPS loadout."
 		RUN_FLOW_REWARD:
 			var card_rewards: Array = state.get("pending_card_rewards", [])
 			var relic_rewards: Array = state.get("pending_relic_rewards", [])
@@ -8254,7 +8546,7 @@ func _sync_live_text_density() -> void:
 	var deck_panel_node := find_child("DeckPanel", true, false)
 	if deck_panel_node is Control:
 		(deck_panel_node as Control).visible = run_flow_state == RUN_FLOW_COMBAT and not payout_stage
-		(deck_panel_node as Control).custom_minimum_size = Vector2(0, 246 if compact_live else 260)
+		(deck_panel_node as Control).custom_minimum_size = Vector2(0, 360 if compact_live else 260)
 	var reward_artifacts := find_child("ArenaRewardArtifacts", true, false)
 	if reward_artifacts is Control:
 		(reward_artifacts as Control).visible = show_expanded_combat_detail
@@ -8282,6 +8574,9 @@ func _sync_live_text_density() -> void:
 	var target_controls_panel := find_child("TargetControlsPanel", true, false)
 	if target_controls_panel is Control:
 		(target_controls_panel as Control).visible = run_flow_state == RUN_FLOW_COMBAT and debug_controls_visible
+	var opponent_panel := find_child("OpponentCardsPanel", true, false)
+	if opponent_panel is Control:
+		(opponent_panel as Control).visible = run_flow_state == RUN_FLOW_COMBAT and (debug_controls_visible or not compact_live)
 	if run_shell_panel != null:
 		var show_shell_in_live := run_ceremony_panel != null and bool(run_ceremony_panel.get("visible"))
 		run_shell_panel.visible = not compact_live or show_shell_in_live
@@ -8374,6 +8669,8 @@ func _sync_live_text_density() -> void:
 		armory_plan_label.visible = show_expanded_combat_detail
 	if shooter_economy_label != null:
 		shooter_economy_label.visible = run_flow_state == RUN_FLOW_COMBAT
+	if objective_plan_label != null:
+		objective_plan_label.visible = run_flow_state == RUN_FLOW_COMBAT and not payout_stage
 	if arena_payout_panel != null:
 		arena_payout_panel.visible = payout_stage
 	var table_row := find_child("TableRow", true, false)
@@ -8410,7 +8707,10 @@ func _sync_compact_live_layout(compact_live: bool) -> void:
 
 	var table_row := find_child("TableRow", true, false)
 	if table_row is Control:
-		(table_row as Control).custom_minimum_size = Vector2(0, 224) if compact_live else Vector2(0, 300)
+		(table_row as Control).custom_minimum_size = Vector2(0, 132) if compact_live else Vector2(0, 300)
+	var table_board_panel := find_child("TableBoardPanel", true, false)
+	if table_board_panel is Control:
+		(table_board_panel as Control).custom_minimum_size = Vector2(0, 120) if compact_live else Vector2(0, 300)
 	if combat_grid != null:
 		combat_grid.custom_minimum_size = Vector2(500, 218) if compact_live else Vector2(620, 300)
 
@@ -8427,7 +8727,12 @@ func _sync_compact_live_layout(compact_live: bool) -> void:
 
 	var hand_scroll := find_child("HandScroll", true, false)
 	if hand_scroll is Control:
-		(hand_scroll as Control).custom_minimum_size = Vector2(0, 158) if compact_live else Vector2(0, 188)
+		(hand_scroll as Control).custom_minimum_size = Vector2(0, 142) if compact_live else Vector2(0, 188)
+	if objective_plan_label != null:
+		objective_plan_label.custom_minimum_size = Vector2(0, 24) if compact_live else Vector2(0, 44)
+		objective_plan_label.add_theme_font_size_override("font_size", 13 if compact_live else 14)
+	if shooter_economy_label != null:
+		shooter_economy_label.add_theme_font_size_override("font_size", 14 if compact_live else 15)
 
 
 func _sync_reward_panel_priority(compact_reward: bool) -> void:
