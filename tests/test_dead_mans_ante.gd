@@ -9,6 +9,7 @@ const DEBUG_SCENES := [
 	"res://tests/debug/Phase45GameplayMechanicsCheck.tscn",
 	"res://tests/debug/Phase45VisualQACheck.tscn",
 	"res://tests/debug/FPSPrototypeCheck.tscn",
+	"res://tests/debug/FPSWaveLoopCheck.tscn",
 	"res://tests/debug/FPSVisualQACheck.tscn",
 	"res://tests/debug/Phase56VFXShowcaseCheck.tscn",
 	"res://tests/debug/Phase61TacticalMapCheck.tscn",
@@ -33,6 +34,22 @@ func test_main_scene_and_phase45_resources_load() -> void:
 	assert_true(main_scene is PackedScene, "TestCombat should load as a PackedScene.")
 	for scene_path in DEBUG_SCENES:
 		assert_true(load(scene_path) is PackedScene, "%s should load as a PackedScene." % scene_path)
+
+
+func test_main_menu_promotes_fast_arena_entry() -> void:
+	var menu_script: GDScript = ResourceLoader.load("res://scripts/ui/MainMenu.gd", "", ResourceLoader.CACHE_MODE_IGNORE)
+	var menu: Control = menu_script.new()
+	menu.call("_build_ui")
+	var quick_arena := menu.find_child("QuickArenaButton", true, false) as Button
+	var deal_in := menu.find_child("DealInButton", true, false) as Button
+	var practice := menu.find_child("DevToolsButton", true, false) as Button
+	var status := menu.find_child("LaunchStatus", true, false) as Label
+	assert_true(quick_arena != null, "Main menu should expose a fast shooter-first Enter Arena button.")
+	assert_true(deal_in != null, "Main menu should still expose card-kit prep.")
+	assert_true(quick_arena.get_index() < deal_in.get_index(), "Fast arena entry should be the first primary action.")
+	assert_true(String(quick_arena.text).contains("ENTER ARENA"), "Fast arena CTA should be explicit.")
+	assert_eq(String(practice.text), "Practice Lab", "Prototype shortcuts should stay out of the main path.")
+	assert_true(String(status.text).contains("jumps straight into the shooter"), "Main menu status should explain the fast path.")
 
 
 func test_phase45_vfx_source_assets_exist() -> void:
@@ -385,15 +402,20 @@ func test_deck_manager_can_burn_cards_for_economy_flow() -> void:
 func test_deck_manager_can_slot_cards_into_loadout_flow() -> void:
 	var deck_script: GDScript = ResourceLoader.load("res://scripts/cards/DeckManager.gd", "", ResourceLoader.CACHE_MODE_IGNORE)
 	var deck: Node = deck_script.new()
-	deck.call("configure_deck", ["res://resources/cards/quick_slash.tres"])
+	deck.call("configure_deck", ["res://resources/cards/quick_slash.tres", "res://resources/cards/sidestep.tres"])
 	deck.call("reset_deck")
-	deck.call("draw_cards", 1)
+	deck.call("draw_cards", 2)
 	var slotted: Resource = deck.call("slot_card_at", 0)
 	assert_true(slotted is Resource, "Slotting should remove and return a hand card.")
 	var counts: Dictionary = deck.call("get_counts")
-	assert_eq(int(counts.get("hand", -1)), 0, "Slotted card should leave hand.")
+	assert_eq(int(counts.get("hand", -1)), 1, "Slotted card should leave hand.")
 	assert_eq(int(counts.get("loadout", -1)), 1, "Slotted card should enter the loadout pile.")
 	assert_eq(int(counts.get("discard", -1)), 0, "Slotted card should not look like a normal discard.")
+	var replacement: Resource = deck.call("replace_loadout_card_at", 0, slotted)
+	assert_true(replacement is Resource, "Replacing should remove and return another hand card.")
+	counts = deck.call("get_counts")
+	assert_eq(int(counts.get("hand", -1)), 1, "Replacing should return the old loadout card to hand.")
+	assert_eq(int(counts.get("loadout", -1)), 1, "Replacing should keep one active loadout card.")
 	var snapshot: Dictionary = deck.call("get_snapshot")
 	assert_eq((snapshot.get("loadout_pile_paths", []) as Array).size(), 1, "Deck snapshots should preserve slotted loadout cards.")
 	var resolved: Array = deck.call("resolve_loadout_pile")
@@ -524,6 +546,80 @@ func test_combat_controller_recommends_objective_aware_loadout_cards() -> void:
 	assert_eq(String(return_state.get("selected_hero_class_id", "")), "hex_sharpshooter", "Arena return state should preserve selected hero class.")
 
 
+func test_combat_controller_can_attach_and_replace_loadout_slot_cards() -> void:
+	var controller_script: GDScript = ResourceLoader.load("res://scripts/combat/TestCombatController.gd", "", ResourceLoader.CACHE_MODE_IGNORE)
+	var deck_script: GDScript = ResourceLoader.load("res://scripts/cards/DeckManager.gd", "", ResourceLoader.CACHE_MODE_IGNORE)
+	var controller: Control = controller_script.new()
+	var deck: Node = deck_script.new()
+	deck.call("restore_snapshot", {
+		"hand_paths": [
+			"res://resources/cards/quick_slash.tres",
+			"res://resources/cards/low_stab.tres",
+			"res://resources/cards/sidestep.tres"
+		]
+	})
+	controller.set("deck_manager", deck)
+	controller.set("shooter_chips", 4)
+	controller.set("run_flow_state", "combat")
+	controller.set("debug_controls_visible", false)
+	controller.set("arena_payout_pending", false)
+
+	var first: Dictionary = controller.call("_slot_hand_card_at", 0, "weapon")
+	assert_true(bool(first.get("ok", false)), "Manual slot click should attach the selected attack card to Gun.")
+	var replaced: Dictionary = controller.call("_slot_hand_card_at", 0, "weapon")
+	assert_true(bool(replaced.get("ok", false)), "Clicking a filled slot with another valid card should replace it.")
+	assert_true(replaced.get("replaced_card", null) is Resource, "Replacing should report the card returned to hand.")
+	var ability: Dictionary = controller.call("_slot_hand_card_at", 0, "ability_1")
+	assert_true(bool(ability.get("ok", false)), "Manual slot click should attach a movement card to Q ability.")
+	var slots: Dictionary = controller.get("loadout_slots")
+	assert_true(slots.has("weapon") and slots.has("ability_1"), "Manual attachment should build the FPS kit fields.")
+	assert_eq(int(deck.call("get_counts").get("loadout", -1)), 2, "Replacing should not leave stale cards in the loadout pile.")
+
+
+func test_compact_fps_loadout_screen_keeps_counts_and_hand_scroll_stable() -> void:
+	var controller_script: GDScript = ResourceLoader.load("res://scripts/combat/TestCombatController.gd", "", ResourceLoader.CACHE_MODE_IGNORE)
+	var hand_view_script: GDScript = ResourceLoader.load("res://scripts/ui/HandView.gd", "", ResourceLoader.CACHE_MODE_IGNORE)
+	var controller: Control = controller_script.new()
+	var quick_slash: Resource = load("res://resources/cards/quick_slash.tres")
+	var sidestep: Resource = load("res://resources/cards/sidestep.tres")
+	var focus := Label.new()
+	var next_badge := Label.new()
+	controller.set("run_flow_state", "combat")
+	controller.set("debug_controls_visible", false)
+	controller.set("arena_payout_pending", false)
+	controller.set("battlefield_focus_label", focus)
+	controller.set("combat_action_badge_label", next_badge)
+	controller.set("loadout_slots", {"weapon": quick_slash, "ability_1": sidestep})
+	controller.call("_refresh_loadout_ui")
+	assert_true(String(focus.text).contains("KIT 2/5"), "Compact FPS loadout header should use the live slotted-card count.")
+	assert_eq(String(next_badge.text), "NEXT: ENTER FPS", "Once a kit has cards, the compact next action should point to Enter FPS.")
+
+	var hand_scroll := ScrollContainer.new()
+	hand_scroll.name = "HandScroll"
+	var hand_view: HBoxContainer = hand_view_script.new()
+	hand_scroll.add_child(hand_view)
+	controller.add_child(hand_scroll)
+	controller.set("hand_view", hand_view)
+	hand_scroll.scroll_horizontal = 240
+	var compact_hand: Array = []
+	compact_hand.append(quick_slash)
+	controller.call("_apply_hand_cards", compact_hand)
+	assert_eq(hand_scroll.scroll_horizontal, 0, "Changing/removing hand cards should reset the compact hand scroll so cards do not appear cut off.")
+
+	var slot_grid := GridContainer.new()
+	slot_grid.size = Vector2(620, 100)
+	controller.set("loadout_slot_row", slot_grid)
+	var action_grid := GridContainer.new()
+	action_grid.size = Vector2(720, 100)
+	controller.set("hand_action_button_row", action_grid)
+	controller.call("_refresh_loadout_responsive_layout")
+	assert_eq(slot_grid.columns, 2, "Loadout slots should wrap before they overflow narrow screens.")
+	assert_eq(action_grid.columns, 2, "Loadout action buttons should wrap on tablet-width panels.")
+
+	var playability: Dictionary = controller.call("_get_card_playability_entry", quick_slash, {})
+	assert_true(bool(playability.get("playable", false)), "Compact kit build should allow card selection even when the tactical play phase is locked.")
+
+
 func test_arena_payout_records_reward_mods_and_progression() -> void:
 	var controller_script: GDScript = ResourceLoader.load("res://scripts/combat/TestCombatController.gd", "", ResourceLoader.CACHE_MODE_IGNORE)
 	var run_script: GDScript = ResourceLoader.load("res://scripts/run/RunManager.gd", "", ResourceLoader.CACHE_MODE_IGNORE)
@@ -568,6 +664,28 @@ func test_arena_payout_records_reward_mods_and_progression() -> void:
 	assert_false((run_state.get("reward_history", []) as Array).is_empty(), "Arena reward mods should be written to run reward history.")
 
 
+func test_arena_reward_artifacts_accept_plain_bias_arrays() -> void:
+	var controller_script: GDScript = ResourceLoader.load("res://scripts/combat/TestCombatController.gd", "", ResourceLoader.CACHE_MODE_IGNORE)
+	var controller: Control = controller_script.new()
+	var artifact_row := HBoxContainer.new()
+	var artifact_detail := RichTextLabel.new()
+	controller.set("reward_artifact_row", artifact_row)
+	controller.set("reward_artifact_detail_label", artifact_detail)
+	controller.set("active_reward_mods", [{
+		"label": "Runner Edge",
+		"kind": "damage",
+		"amount": 2,
+		"rarity": "Uncommon",
+		"bias_modes": ["extract", "duel"],
+		"summary": "Plain Array bias modes should still render."
+	}])
+	controller.call("_refresh_reward_artifact_cards")
+	var artifacts: Array = controller.call("_get_reward_artifact_snapshots")
+	assert_eq(artifacts.size(), 1, "Reward artifacts should build from plain Dictionary arrays.")
+	assert_true(String(artifact_detail.text).contains("EXTRACT"), "Reward artifact detail should render converted bias modes.")
+	assert_true(artifact_row.get_child_count() > 0, "Reward artifact buttons should render without typed-array assignment errors.")
+
+
 func test_arena_bridge_stores_and_hands_payload_to_fps() -> void:
 	var bridge_script: GDScript = ResourceLoader.load("res://scripts/combat/ArenaBridge.gd", "", ResourceLoader.CACHE_MODE_IGNORE)
 	assert_true(bridge_script is GDScript, "ArenaBridge autoload script should load.")
@@ -592,6 +710,27 @@ func test_arena_bridge_stores_and_hands_payload_to_fps() -> void:
 	var result: Dictionary = bridge.call("take_result")
 	assert_eq(int(result.get("chips_awarded", 0)), 7, "Bridge should hand the same FPS result back to the card table.")
 	assert_false(bool(bridge.call("has_pending_result")), "Taking the result should clear the pending return payload.")
+
+
+func test_arena_bridge_clears_stale_dev_tool_handoffs() -> void:
+	var bridge_script: GDScript = ResourceLoader.load("res://scripts/combat/ArenaBridge.gd", "", ResourceLoader.CACHE_MODE_IGNORE)
+	var bridge: Node = bridge_script.new()
+
+	bridge.call("set_payload", {"weapon_card": "quick_slash"}, "res://scenes/combat/TestCombat.tscn", {"shooter_chips": 9})
+	bridge.call("set_result", {"source": "dev_hub", "chips_awarded": 1})
+	assert_false(bool(bridge.call("has_pending_payload")), "Dev-tool results should clear stale FPS payloads.")
+	assert_false(bool(bridge.call("has_pending_return_state")), "Dev-tool results should not restore an old card-table snapshot.")
+
+	bridge.call("set_result", {"source": "dev_hub", "chips_awarded": 2})
+	bridge.call("set_payload", {"weapon_card": "low_stab"}, "res://scenes/combat/TestCombat.tscn")
+	assert_true(bool(bridge.call("has_pending_payload")), "New FPS payload should still be available.")
+	assert_false(bool(bridge.call("has_pending_result")), "New FPS payload should clear stale dev-tool results.")
+	assert_false(bool(bridge.call("has_pending_return_state")), "Payloads without return snapshots should clear stale return state.")
+
+	bridge.call("set_payload", {"weapon_card": "quick_slash"}, "res://scenes/combat/TestCombat.tscn", {"shooter_chips": 12})
+	bridge.call("take_payload")
+	bridge.call("set_result", {"source": "fps_arena", "chips_awarded": 4})
+	assert_true(bool(bridge.call("has_pending_return_state")), "FPS arena results should preserve the card-table return snapshot.")
 
 
 func test_fps_prototype_consumes_bridge_payload_as_active_loadout() -> void:
@@ -646,6 +785,62 @@ func test_fps_prototype_consumes_bridge_payload_as_active_loadout() -> void:
 	assert_true(int(result_preview.get("chips_awarded", 0)) >= 10, "FPS payout previews should calculate a useful chip award.")
 
 
+func test_fps_wave_defs_scale_and_rotate_objectives() -> void:
+	var prototype_script: GDScript = ResourceLoader.load("res://scripts/fps/FPSPrototype.gd", "", ResourceLoader.CACHE_MODE_IGNORE)
+	var prototype: Node = prototype_script.new()
+	prototype.call("apply_arena_bridge_payload", {"objective_mode": "hold_pot"})
+	prototype.set("wave_index", 1)
+	prototype.call("_set_objective_mode", "hold_pot")
+	var first_wave_defs: Array = prototype.call("_get_objective_enemy_defs")
+	prototype.set("wave_index", 4)
+	prototype.call("_set_objective_mode", "defend")
+	var later_wave_defs: Array = prototype.call("_get_objective_enemy_defs")
+	assert_true(first_wave_defs.size() >= 6, "FPS waves should start with enough enemies to avoid instant clears.")
+	assert_true(later_wave_defs.size() > first_wave_defs.size(), "Later FPS waves should scale longer than wave one.")
+	assert_eq(String(prototype.call("_get_wave_objective_mode", 2)), "extract", "FPS wave two should rotate away from the starting objective.")
+	assert_eq(String(prototype.call("_get_wave_objective_mode", 5)), "boss_gate", "FPS objective rotation should eventually reach the boss gate.")
+
+
+func test_fps_wave_reward_continues_arena_loop() -> void:
+	var prototype_script: GDScript = ResourceLoader.load("res://scripts/fps/FPSPrototype.gd", "", ResourceLoader.CACHE_MODE_IGNORE)
+	var prototype: Node = prototype_script.new()
+	prototype.call("apply_arena_bridge_payload", {
+		"objective_mode": "hold_pot",
+		"loadout": [
+			{"slot": "weapon", "id": "quick_slash", "weapon": {"name": "Loop Revolver", "damage": 20, "magazine": 6, "fire_rate": 3.0}}
+		],
+		"economy": {"chips": 5, "armor": 2, "ammo": 30},
+		"progression": {"card_xp_pool": 0, "wounds_total": 0}
+	})
+	prototype.set("wave_index", 1)
+	prototype.set("kills", 6)
+	prototype.set("current_wave_kills", 6)
+	prototype.set("shots_fired", 10)
+	prototype.set("shots_hit", 7)
+	prototype.set("objective_completed", true)
+	var reward := {
+		"label": "Center Cut",
+		"kind": "damage",
+		"amount": 3,
+		"chip_bonus": 2,
+		"rarity": "Uncommon",
+		"bias_modes": ["hold_pot", "duel"],
+		"summary": "Test reward."
+	}
+	var result: Dictionary = prototype.call("_build_arena_result", reward, true)
+	prototype.call("_continue_after_wave_reward", reward, result)
+	var summary: Dictionary = prototype.call("get_active_loadout_summary")
+	var weapon_profile: Dictionary = prototype.get("active_weapon_profile")
+	assert_eq(int(prototype.get("wave_index")), 2, "Reward selection should advance to wave two without leaving the arena.")
+	assert_eq(String(prototype.get("objective_mode")), "extract", "Continuing after a reward should rotate the next objective.")
+	assert_false(bool(prototype.get("rewards_pending")), "Reward selection should close the pending reward state.")
+	assert_false(bool(prototype.get("reward_return_in_progress")), "Reward selection should finish its in-arena transition.")
+	assert_eq(int(summary.get("reward_mods", 0)), 1, "In-arena rewards should stay on the active loadout.")
+	assert_true(int(summary.get("chips", 0)) > 5, "In-arena rewards should bank wave chips into the active economy.")
+	assert_eq(int(weapon_profile.get("damage", 0)), 23, "Damage rewards should immediately update the current kit.")
+	assert_true(int(summary.get("card_xp_pool", 0)) > 0, "In-arena rewards should preserve progression momentum.")
+
+
 func test_tactical_map_changes_damage_and_cover() -> void:
 	var map_script: GDScript = ResourceLoader.load("res://scripts/grid/TacticalMapDefinition.gd", "", ResourceLoader.CACHE_MODE_IGNORE)
 	var map_data: Dictionary = map_script.get_default_map()
@@ -680,7 +875,7 @@ func test_main_flow_uses_card_table_not_tactical_board_identity() -> void:
 	var controller: Control = controller_script.new()
 	var identity_text := String(controller.call("_get_arena_prep_identity_text"))
 	assert_true(identity_text.contains("THE HAND IS THE RUN"), "Main flow should explain that cards are the primary game layer.")
-	assert_true(identity_text.contains("weapon, two powers, passive, and wager"), "Card table identity should map the original card game into the FPS kit.")
+	assert_true(identity_text.contains("gun, Q ability, E ability, passive, and risk"), "Card table identity should map the original card game into the FPS kit.")
 	assert_false(identity_text.contains("POT MID"), "Main table identity should not ask the player to parse tactical cell callouts.")
 	controller.set("run_flow_state", "combat")
 	controller.set("debug_controls_visible", false)

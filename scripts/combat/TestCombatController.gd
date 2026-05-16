@@ -14,6 +14,7 @@ const HAND_VIEW_SCRIPT := preload("res://scripts/ui/HandView.gd")
 const DEAD_MANS_ANTE_SKIN_SCRIPT := preload("res://scripts/ui/DeadMansAnteSkin.gd")
 const RUN_MANAGER_SCRIPT := preload("res://scripts/run/RunManager.gd")
 const TEST_COMBAT_COPY_SCRIPT := preload("res://scripts/combat/TestCombatCopy.gd")
+const FPS_SCENE := "res://scenes/fps/FPSPrototype.tscn"
 const STARTER_CARD_PATHS := [
 	"res://resources/cards/quick_slash.tres",
 	"res://resources/cards/low_stab.tres",
@@ -131,9 +132,9 @@ var arena_payout_stats_label: RichTextLabel
 var arena_payout_effects_label: RichTextLabel
 var arena_payout_next_label: Label
 var arena_payout_continue_button: Button
-var loadout_slot_row: HBoxContainer
+var loadout_slot_row: GridContainer
 var loadout_slot_buttons: Dictionary = {}
-var hand_action_button_row: HBoxContainer
+var hand_action_button_row: GridContainer
 var slot_selected_button: Button
 var burn_selected_button: Button
 var hold_selected_button: Button
@@ -314,6 +315,7 @@ var guided_click_target: CanvasItem
 var guided_click_label: String = ""
 var guided_click_color: Color = Color(1.0, 0.78, 0.32)
 var last_action_guide_key: String = ""
+var fps_scene_preload_requested := false
 
 
 func _ready() -> void:
@@ -323,6 +325,7 @@ func _ready() -> void:
 	log_label.clear()
 	_reset_run_slice()
 	_consume_pending_arena_result()
+	call_deferred("_request_fps_scene_preload")
 
 
 func _process(_delta: float) -> void:
@@ -1300,6 +1303,8 @@ func _build_ui() -> void:
 	arena_view.modulate = Color.WHITE
 	table_stage.add_child(arena_view)
 	arena_view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	if arena_view.has_method("set_active"):
+		arena_view.call_deferred("set_active", false)
 
 	combat_grid = Control.new()
 	combat_grid.name = "CombatGrid"
@@ -1660,9 +1665,13 @@ func _build_ui() -> void:
 	_build_reward_artifact_panel(deck_layout)
 	_build_hero_class_selector(deck_layout)
 
-	loadout_slot_row = HBoxContainer.new()
+	loadout_slot_row = GridContainer.new()
 	loadout_slot_row.name = "LoadoutSlotRow"
-	loadout_slot_row.add_theme_constant_override("separation", 6)
+	loadout_slot_row.columns = 5
+	loadout_slot_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	loadout_slot_row.add_theme_constant_override("h_separation", 8)
+	loadout_slot_row.add_theme_constant_override("v_separation", 8)
+	loadout_slot_row.resized.connect(_refresh_loadout_responsive_layout)
 	deck_layout.add_child(loadout_slot_row)
 	for slot_id in ["weapon", "ability_1", "ability_2", "passive", "wager"]:
 		var slot_button := Button.new()
@@ -1670,7 +1679,8 @@ func _build_ui() -> void:
 		slot_button.text = "%s\nEMPTY" % _get_loadout_slot_label(slot_id)
 		slot_button.focus_mode = Control.FOCUS_NONE
 		slot_button.clip_text = true
-		slot_button.custom_minimum_size = Vector2(132, 48)
+		slot_button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		slot_button.custom_minimum_size = Vector2(156, 72)
 		slot_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		slot_button.pressed.connect(_on_loadout_slot_pressed.bind(slot_id))
 		loadout_slot_buttons[slot_id] = slot_button
@@ -1685,9 +1695,13 @@ func _build_ui() -> void:
 	armory_plan_label.add_theme_color_override("font_color", Color(0.86, 0.92, 0.98))
 	deck_layout.add_child(armory_plan_label)
 
-	hand_action_button_row = HBoxContainer.new()
+	hand_action_button_row = GridContainer.new()
 	hand_action_button_row.name = "HandCardActionRow"
-	hand_action_button_row.add_theme_constant_override("separation", 6)
+	hand_action_button_row.columns = 6
+	hand_action_button_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hand_action_button_row.add_theme_constant_override("h_separation", 6)
+	hand_action_button_row.add_theme_constant_override("v_separation", 6)
+	hand_action_button_row.resized.connect(_refresh_loadout_responsive_layout)
 	deck_layout.add_child(hand_action_button_row)
 
 	slot_selected_button = Button.new()
@@ -2398,6 +2412,67 @@ func _style_compact_button(button: Button, active: bool, color: Color, tooltip: 
 	DEAD_MANS_ANTE_SKIN_SCRIPT.apply_chip(button, active, color, tooltip)
 
 
+func _style_loadout_slot_button(button: Button, filled: bool, attach_ready: bool, incompatible: bool, color: Color, tooltip: String) -> void:
+	if button == null:
+		return
+
+	button.tooltip_text = tooltip
+	button.add_theme_font_size_override("font_size", 13 if filled or attach_ready else 12)
+	var bg := Color(0.070, 0.066, 0.060, 0.95)
+	var border := Color(0.32, 0.31, 0.31)
+	var border_width := 2
+	if filled:
+		bg = Color(0.13, 0.095, 0.070, 0.98).lerp(color, 0.15)
+		border = color.lerp(Color(1.0, 0.80, 0.34), 0.35)
+		border_width = 3
+	elif attach_ready:
+		bg = Color(0.12, 0.10, 0.070, 0.98).lerp(color, 0.20)
+		border = color
+		border_width = 3
+	elif incompatible:
+		bg = Color(0.075, 0.055, 0.050, 0.94)
+		border = FEEDBACK_DAMAGE_COLOR.darkened(0.22)
+
+	var normal := DEAD_MANS_ANTE_SKIN_SCRIPT.make_flat_style(bg, border, 5, border_width, 9)
+	var hover := DEAD_MANS_ANTE_SKIN_SCRIPT.make_flat_style(bg.lightened(0.06), border.lightened(0.10), 5, border_width, 9)
+	button.add_theme_stylebox_override("normal", normal)
+	button.add_theme_stylebox_override("hover", hover)
+	button.add_theme_stylebox_override("pressed", DEAD_MANS_ANTE_SKIN_SCRIPT.make_flat_style(bg.darkened(0.05), border, 5, border_width, 9))
+	button.add_theme_color_override("font_color", Color(1.0, 0.95, 0.82) if filled or attach_ready else Color(0.72, 0.70, 0.66))
+	button.add_theme_color_override("font_hover_color", Color(1.0, 0.96, 0.84))
+
+
+func _refresh_loadout_responsive_layout() -> void:
+	var available_width := 0.0
+	if loadout_slot_row != null:
+		available_width = loadout_slot_row.size.x
+		if available_width <= 1.0 and loadout_slot_row.get_parent() is Control:
+			available_width = (loadout_slot_row.get_parent() as Control).size.x
+		if available_width > 1.0:
+			if available_width < 430.0:
+				loadout_slot_row.columns = 1
+			elif available_width < 690.0:
+				loadout_slot_row.columns = 2
+			elif available_width < 920.0:
+				loadout_slot_row.columns = 3
+			else:
+				loadout_slot_row.columns = 5
+
+	if hand_action_button_row != null:
+		var action_width := hand_action_button_row.size.x
+		if action_width <= 1.0 and hand_action_button_row.get_parent() is Control:
+			action_width = (hand_action_button_row.get_parent() as Control).size.x
+		if action_width > 1.0:
+			if action_width < 430.0:
+				hand_action_button_row.columns = 1
+			elif action_width < 760.0:
+				hand_action_button_row.columns = 2
+			elif action_width < 980.0:
+				hand_action_button_row.columns = 3
+			else:
+				hand_action_button_row.columns = 6
+
+
 func _connect_turn_manager() -> void:
 	turn_manager.phase_changed.connect(_on_phase_changed)
 	turn_manager.turn_started.connect(_on_turn_started)
@@ -2616,6 +2691,17 @@ func _on_toggle_debug_pressed() -> void:
 func _on_card_clicked(hand_index: int) -> void:
 	selected_hand_index = hand_index
 	_refresh_loadout_ui()
+	if _is_live_loadout_build_mode():
+		var selected_card := _get_selected_hand_card()
+		if selected_card == null:
+			_push_feedback("That hand slot is empty. Pick another card for the kit.", FEEDBACK_PHASE_COLOR, hand_action_status_label)
+			return
+		_push_feedback(
+			"Selected %s. Click Gun, Q, E, Passive, or Risk to attach it." % _get_card_name(selected_card),
+			FEEDBACK_CARD_COLOR,
+			_get_hand_card_view(hand_index)
+		)
+		return
 	if not bool(combat_session.call("can_play_cards")):
 		_append_log("Cards can only be played during Player Commit.")
 		_push_feedback("Locked: %s" % _get_global_card_lock_reason(combat_session.call("get_state")), FEEDBACK_PHASE_COLOR, card_action_hint_label)
@@ -2763,16 +2849,45 @@ func _on_enter_arena_pressed() -> void:
 	if arena_view != null and arena_view.has_method("focus_unit"):
 		arena_view.call("focus_unit", &"player")
 	_refresh_loadout_ui()
-	var spent_bonuses := _get_arena_bonus_snapshot()
-	_clear_arena_bonuses()
 	var return_state := _build_arena_return_state()
+	var spent_bonuses := _get_arena_bonus_snapshot()
 	return_state["spent_arena_bonuses"] = spent_bonuses
+	return_state["arena_carryover_armor"] = 0
+	return_state["arena_carryover_ammo"] = 0
+	return_state["arena_weapon_damage_bonus"] = 0
 	var bridge := get_node_or_null("/root/ArenaBridge")
 	if bridge != null and bridge.has_method("set_payload"):
 		bridge.call("set_payload", payload, "res://scenes/combat/TestCombat.tscn", return_state)
 	var tree := get_tree()
 	if tree != null:
-		tree.change_scene_to_file("res://scenes/fps/FPSPrototype.tscn")
+		var packed_scene := _get_ready_fps_scene()
+		var error := tree.change_scene_to_packed(packed_scene) if packed_scene != null else tree.change_scene_to_file(FPS_SCENE)
+		if error == OK:
+			_clear_arena_bonuses()
+		else:
+			arena_round_armed = false
+			if bridge != null and bridge.has_method("clear_pending"):
+				bridge.call("clear_pending")
+			_push_feedback("Could not enter FPS arena: %s" % FPS_SCENE, FEEDBACK_DAMAGE_COLOR, enter_arena_button)
+			_refresh_loadout_ui()
+
+
+func _request_fps_scene_preload() -> void:
+	if DisplayServer.get_name() == "headless":
+		return
+	if fps_scene_preload_requested:
+		return
+	var error := ResourceLoader.load_threaded_request(FPS_SCENE)
+	if error == OK:
+		fps_scene_preload_requested = true
+
+
+func _get_ready_fps_scene() -> PackedScene:
+	if not fps_scene_preload_requested:
+		return null
+	if ResourceLoader.load_threaded_get_status(FPS_SCENE) != ResourceLoader.THREAD_LOAD_LOADED:
+		return null
+	return ResourceLoader.load_threaded_get(FPS_SCENE) as PackedScene
 
 
 func _consume_pending_arena_result() -> void:
@@ -3124,13 +3239,13 @@ func _get_reward_mod_summary(label: String, kind: String, amount: int) -> String
 func _get_reward_mod_bias_modes(kind: String, objective_mode: String) -> Array[String]:
 	match kind:
 		"damage":
-			return ["duel", "boss_gate", objective_mode]
+			return _string_array_from_variant(["duel", "boss_gate", objective_mode])
 		"armor":
-			return ["defend", "hold_pot", objective_mode]
+			return _string_array_from_variant(["defend", "hold_pot", objective_mode])
 		"ammo":
-			return ["extract", "duel", objective_mode]
+			return _string_array_from_variant(["extract", "duel", objective_mode])
 		_:
-			return [objective_mode]
+			return _string_array_from_variant([objective_mode])
 
 
 func _calculate_arena_card_xp(result: Dictionary) -> int:
@@ -3595,10 +3710,27 @@ func _join_string_array(values: Array[String], separator: String) -> String:
 	return separator.join(packed)
 
 
+func _is_live_loadout_build_mode() -> bool:
+	return run_flow_state == RUN_FLOW_COMBAT and not debug_controls_visible and not arena_payout_pending
+
+
+func _get_selected_hand_card() -> Resource:
+	if selected_hand_index < 0 or deck_manager == null:
+		return null
+	return deck_manager.call("get_card_at", selected_hand_index)
+
+
 func _on_loadout_slot_pressed(slot_id: String) -> void:
+	if arena_payout_pending:
+		_push_feedback("Collect the arena payout before changing the next kit.", FEEDBACK_CARD_COLOR, arena_payout_continue_button)
+		return
+	var selected_card := _get_selected_hand_card()
+	if selected_card != null:
+		_slot_selected_card(slot_id)
+		return
 	if loadout_slots.has(slot_id):
 		var card: Resource = loadout_slots[slot_id]
-		_push_feedback("%s slot: %s." % [_get_loadout_slot_label(slot_id), _get_card_name(card)], FEEDBACK_CARD_COLOR, loadout_slot_buttons.get(slot_id, null))
+		_push_feedback("%s slot: %s. Select a hand card to replace it." % [_get_compact_loadout_slot_label(slot_id), _get_card_name(card)], FEEDBACK_CARD_COLOR, loadout_slot_buttons.get(slot_id, null))
 		return
 	_slot_selected_card(slot_id)
 
@@ -3617,11 +3749,14 @@ func _slot_selected_card(forced_slot: String = "") -> bool:
 				_push_feedback("Selected card is no longer in hand.", FEEDBACK_DAMAGE_COLOR, hand_action_status_label)
 				selected_hand_index = -1
 			"chips":
-				_push_feedback("Need %d Chips to slot %s; you have %d." % [
+				_push_feedback("Need %d Chips to attach %s; you have %d%s." % [
 					int(result.get("cost", 0)),
 					String(result.get("card_name", "that card")),
-					shooter_chips
+					int(result.get("available", shooter_chips)),
+					" after refund" if int(result.get("refund", 0)) > 0 else ""
 				], FEEDBACK_DAMAGE_COLOR, shooter_economy_label)
+			"slot_type":
+				_push_feedback(String(result.get("reason", "That card does not fit this kit field.")), FEEDBACK_DAMAGE_COLOR, loadout_slot_buttons.get(forced_slot, hand_action_status_label))
 			"slot_failed":
 				_push_feedback("Could not slot that card; it may have moved already.", FEEDBACK_DAMAGE_COLOR, hand_action_status_label)
 				selected_hand_index = -1
@@ -3632,7 +3767,22 @@ func _slot_selected_card(forced_slot: String = "") -> bool:
 	var slotted_card: Resource = result.get("card", null)
 	var slot_id := String(result.get("slot_id", forced_slot))
 	var slot_cost := int(result.get("cost", 0))
-	_push_feedback("Slotted %s into %s for %d Chips." % [_get_card_name(slotted_card), _get_loadout_slot_label(slot_id), slot_cost], FEEDBACK_CARD_COLOR, loadout_slot_buttons.get(slot_id, null))
+	var replaced_card: Resource = result.get("replaced_card", null)
+	var refund := int(result.get("refund", 0))
+	if replaced_card != null:
+		var net_cost := maxi(0, slot_cost - refund)
+		_push_feedback(
+			"Replaced %s with %s in %s for %d net Chips." % [
+				_get_card_name(replaced_card),
+				_get_card_name(slotted_card),
+				_get_compact_loadout_slot_label(slot_id),
+				net_cost
+			],
+			FEEDBACK_CARD_COLOR,
+			loadout_slot_buttons.get(slot_id, null)
+		)
+	else:
+		_push_feedback("Attached %s to %s for %d Chips." % [_get_card_name(slotted_card), _get_compact_loadout_slot_label(slot_id), slot_cost], FEEDBACK_CARD_COLOR, loadout_slot_buttons.get(slot_id, null))
 	_refresh_loadout_ui()
 	return true
 
@@ -3648,19 +3798,38 @@ func _slot_hand_card_at(hand_index: int, forced_slot: String = "") -> Dictionary
 	if card == null:
 		return {"ok": false, "code": "missing", "reason": "Selected card is no longer in hand."}
 	var slot_id := forced_slot if not forced_slot.is_empty() else _get_recommended_loadout_slot(card)
+	if not _card_fits_recommended_slot(card, slot_id):
+		return {
+			"ok": false,
+			"code": "slot_type",
+			"reason": "%s cannot attach to %s. %s" % [
+				_get_card_name(card),
+				_get_compact_loadout_slot_label(slot_id),
+				_get_loadout_slot_accepts_text(slot_id)
+			]
+		}
 	var slot_cost := _get_loadout_slot_cost(card, slot_id)
-	if shooter_chips < slot_cost:
+	var replaced_card: Resource = loadout_slots.get(slot_id, null) if loadout_slots.has(slot_id) else null
+	var refund := _get_loadout_slot_cost(replaced_card, slot_id) if replaced_card != null else 0
+	var available_chips := shooter_chips + refund
+	if available_chips < slot_cost:
 		return {
 			"ok": false,
 			"code": "chips",
 			"reason": "Not enough Chips.",
 			"card_name": _get_card_name(card),
-			"cost": slot_cost
+			"cost": slot_cost,
+			"available": available_chips,
+			"refund": refund
 		}
-	var slotted_card: Resource = deck_manager.call("slot_card_at", hand_index)
+	var slotted_card: Resource = null
+	if replaced_card != null and deck_manager.has_method("replace_loadout_card_at"):
+		slotted_card = deck_manager.call("replace_loadout_card_at", hand_index, replaced_card)
+	else:
+		slotted_card = deck_manager.call("slot_card_at", hand_index)
 	if slotted_card == null:
 		return {"ok": false, "code": "slot_failed", "reason": "Could not slot that card."}
-	shooter_chips -= slot_cost
+	shooter_chips = available_chips - slot_cost
 	loadout_slots[slot_id] = slotted_card
 	held_hand_indices.erase(hand_index)
 	arena_round_armed = false
@@ -3670,7 +3839,9 @@ func _slot_hand_card_at(hand_index: int, forced_slot: String = "") -> Dictionary
 		"ok": true,
 		"card": slotted_card,
 		"slot_id": slot_id,
-		"cost": slot_cost
+		"cost": slot_cost,
+		"replaced_card": replaced_card,
+		"refund": refund
 	}
 
 
@@ -3820,15 +3991,15 @@ func _get_action_result_color(result: String) -> Color:
 func _get_loadout_slot_label(slot_id: String) -> String:
 	match slot_id:
 		"weapon":
-			return "Weapon"
+			return "Gun"
 		"ability_1":
-			return "Ability 1"
+			return "Q Ability"
 		"ability_2":
-			return "Ability 2"
+			return "E Ability"
 		"passive":
 			return "Passive"
 		"wager":
-			return "Wager"
+			return "Risk"
 		_:
 			return slot_id.capitalize()
 
@@ -3842,11 +4013,57 @@ func _get_compact_loadout_slot_label(slot_id: String) -> String:
 		"ability_2":
 			return "E Power"
 		"passive":
-			return "Perk"
+			return "Passive"
 		"wager":
 			return "Risk"
 		_:
 			return _get_loadout_slot_label(slot_id)
+
+
+func _get_loadout_slot_accepts_text(slot_id: String) -> String:
+	match slot_id:
+		"weapon":
+			return "Gun needs an attack card."
+		"ability_1":
+			return "Q accepts movement, guard, read, or trap cards."
+		"ability_2":
+			return "E accepts movement, guard, read, or trap cards."
+		"passive":
+			return "Passive accepts any card."
+		"wager":
+			return "Risk accepts ritual or bluff cards."
+		_:
+			return "Pick a compatible card."
+
+
+func _get_loadout_slot_need_short_text(slot_id: String) -> String:
+	match slot_id:
+		"weapon":
+			return "ATTACK"
+		"ability_1", "ability_2":
+			return "UTILITY"
+		"passive":
+			return "ANY"
+		"wager":
+			return "RITUAL"
+		_:
+			return "CARD"
+
+
+func _get_loadout_slot_color(slot_id: String) -> Color:
+	match slot_id:
+		"weapon":
+			return FEEDBACK_DAMAGE_COLOR
+		"ability_1":
+			return FEEDBACK_MOVE_COLOR
+		"ability_2":
+			return FEEDBACK_REVEAL_COLOR
+		"passive":
+			return FEEDBACK_GUARD_COLOR
+		"wager":
+			return FEEDBACK_CARD_COLOR
+		_:
+			return FEEDBACK_PHASE_COLOR
 
 
 func _get_recommended_loadout_slot(card: Resource) -> String:
@@ -3904,11 +4121,11 @@ func _refresh_loadout_ui() -> void:
 	if shooter_economy_label != null:
 		var arena_state := "PAYOUT READY" if arena_payout_pending else ("ARENA READY" if arena_round_armed else "PREP")
 		if compact_live:
-			shooter_economy_label.text = "CHIPS %d   ARMOR %d   AMMO %d   KIT %d/5" % [
+			shooter_economy_label.text = "CHIPS %d TO SPEND   KIT %d/5   ARMOR %d   AMMO %d" % [
 				shooter_chips,
+				_get_slotted_card_count(),
 				_get_bridge_armor_value(),
-				_get_bridge_ammo_value(),
-				_get_slotted_card_count()
+				_get_bridge_ammo_value()
 			]
 		else:
 			shooter_economy_label.text = "CHIPS %d | ARMOR %d | AMMO %d | SLOTTED %d/5 | CLASS %s | %s | SELECTED %s" % [
@@ -3922,7 +4139,7 @@ func _refresh_loadout_ui() -> void:
 			]
 	if objective_plan_label != null:
 		if compact_live:
-			objective_plan_label.text = "%s: %s%s" % [
+			objective_plan_label.text = "NEXT %s: %s%s | waves pay chips, cards, and upgrades" % [
 				_get_objective_label(preview_objective_mode).to_upper(),
 				_get_objective_quick_plan_text(preview_objective_mode),
 				_get_compact_payout_bias_text()
@@ -3941,22 +4158,44 @@ func _refresh_loadout_ui() -> void:
 	if armory_plan_label != null:
 		armory_plan_label.text = _get_armory_plan_text(preview_objective_mode)
 	_refresh_hero_class_selector()
+	_refresh_loadout_responsive_layout()
+	var selected_card := _get_selected_hand_card()
 	for slot_id in loadout_slot_buttons.keys():
 		var button: Button = loadout_slot_buttons[slot_id]
 		var slot_label := _get_compact_loadout_slot_label(slot_id) if compact_live else _get_loadout_slot_label(slot_id)
-		button.custom_minimum_size = Vector2(122, 42) if compact_live else Vector2(132, 48)
+		var slot_color := _get_loadout_slot_color(slot_id)
+		var selected_fits := selected_card != null and _card_fits_recommended_slot(selected_card, slot_id)
+		var selected_cost := _get_loadout_slot_cost(selected_card, slot_id) if selected_card != null else 0
+		button.custom_minimum_size = Vector2(136, 66) if compact_live else Vector2(156, 76)
+		button.disabled = arena_payout_pending
 		if loadout_slots.has(slot_id):
 			var card: Resource = loadout_slots[slot_id]
-			button.text = "%s\n%s" % [slot_label.to_upper(), _get_card_name(card)]
-			button.tooltip_text = "%s is slotted for the combat bridge. Click another selected card action to replace it." % _get_card_name(card)
-			_style_compact_button(button, true, FEEDBACK_CARD_COLOR, button.tooltip_text)
+			var attached_name := _shorten_chip_text(_get_card_name(card), 18 if compact_live else 24)
+			if selected_card != null and selected_fits:
+				button.text = "%s\n%s\nSWAP" % [slot_label.to_upper(), attached_name]
+			else:
+				button.text = "%s\n%s\nEQUIPPED" % [slot_label.to_upper(), attached_name]
+			button.tooltip_text = "%s has %s attached. %s" % [
+				slot_label,
+				_get_card_name(card),
+				"Selected card can replace it." if selected_fits else _get_loadout_slot_accepts_text(slot_id)
+			]
+			_style_loadout_slot_button(button, true, selected_fits, selected_card != null and not selected_fits, slot_color, button.tooltip_text)
 		else:
-			button.text = "%s\n+" % slot_label.to_upper() if compact_live else "%s\nEMPTY" % slot_label.to_upper()
-			button.tooltip_text = "Select a hand card, then click this slot."
-			_style_compact_button(button, false, Color(0.50, 0.46, 0.38), button.tooltip_text)
+			if selected_card != null and selected_fits:
+				button.text = "%s\nEQUIP\n%s" % [
+					slot_label.to_upper(),
+					_shorten_chip_text(_get_card_name(selected_card), 18 if compact_live else 24)
+				]
+			elif selected_card != null:
+				button.text = "%s\nNEEDS\n%s" % [slot_label.to_upper(), _get_loadout_slot_need_short_text(slot_id)]
+			else:
+				button.text = "%s\nEMPTY\n%s" % [slot_label.to_upper(), _get_loadout_slot_need_short_text(slot_id)]
+			button.tooltip_text = "Select a hand card, then click this slot. %s" % _get_loadout_slot_accepts_text(slot_id)
+			_style_loadout_slot_button(button, false, selected_fits, selected_card != null and not selected_fits, slot_color, button.tooltip_text)
 	if slot_selected_button != null:
 		slot_selected_button.disabled = arena_payout_pending or selected_hand_index < 0
-		slot_selected_button.text = "Slot Card" if compact_live else "Slot Selected"
+		slot_selected_button.text = "Equip Best" if compact_live else "Slot Selected"
 	if burn_selected_button != null:
 		burn_selected_button.disabled = arena_payout_pending or selected_hand_index < 0
 		burn_selected_button.text = "Sell +2" if compact_live else "Burn +2 Chips"
@@ -3968,21 +4207,19 @@ func _refresh_loadout_ui() -> void:
 		var can_upgrade := _selected_card_can_buy_upgrade(false)
 		upgrade_selected_button.disabled = arena_payout_pending or not can_upgrade
 		upgrade_selected_button.text = "Upgrade" if not compact_live else "Upgrade XP"
-		if compact_live and not can_upgrade:
-			upgrade_selected_button.tooltip_text = ""
-		_style_compact_button(upgrade_selected_button, can_upgrade, FEEDBACK_CARD_COLOR, _get_upgrade_button_tooltip(false))
+		_style_compact_button(upgrade_selected_button, can_upgrade, FEEDBACK_CARD_COLOR, "" if compact_live and not can_upgrade else _get_upgrade_button_tooltip(false))
 	if mutate_selected_button != null:
 		var can_mutate := _selected_card_can_buy_upgrade(true)
 		mutate_selected_button.disabled = arena_payout_pending or not can_mutate
 		mutate_selected_button.visible = not compact_live or can_mutate
-		if compact_live and not can_mutate:
-			mutate_selected_button.tooltip_text = ""
-		_style_compact_button(mutate_selected_button, can_mutate, FEEDBACK_REVEAL_COLOR, _get_upgrade_button_tooltip(true))
+		_style_compact_button(mutate_selected_button, can_mutate, FEEDBACK_REVEAL_COLOR, "" if compact_live and not can_mutate else _get_upgrade_button_tooltip(true))
 	if recommend_loadout_button != null:
 		var hand_count := int(deck_manager.call("get_hand_count")) if deck_manager != null else 0
 		recommend_loadout_button.disabled = arena_payout_pending or hand_count <= 0 or _get_slotted_card_count() >= 5
-		recommend_loadout_button.text = "1 AUTO-BUILD\n%s" % _get_objective_label(preview_objective_mode).to_upper()
+		recommend_loadout_button.text = "1 AUTO-SPEND\n%s" % _get_objective_label(preview_objective_mode).to_upper()
 		var recommend_tooltip := "Auto-slot an affordable kit for %s from the current hand." % _get_objective_label(preview_objective_mode)
+		if compact_live:
+			recommend_tooltip = ""
 		if arena_payout_pending:
 			recommend_tooltip = "Collect the arena payout first."
 		elif hand_count <= 0:
@@ -3991,7 +4228,7 @@ func _refresh_loadout_ui() -> void:
 	if enter_arena_button != null:
 		enter_arena_button.disabled = arena_payout_pending or _get_slotted_card_count() <= 0
 		enter_arena_button.text = "2 ENTER FPS\n%d CARD KIT" % _get_slotted_card_count()
-		enter_arena_button.tooltip_text = "Collect the arena payout first." if arena_payout_pending else "Slot at least one card, then enter the shooter arena with that loadout."
+		enter_arena_button.tooltip_text = "" if compact_live else ("Collect the arena payout first." if arena_payout_pending else "Slot at least one card, then enter the shooter arena with that loadout.")
 		_style_compact_button(enter_arena_button, arena_round_armed or _get_slotted_card_count() > 0, FEEDBACK_MOVE_COLOR, enter_arena_button.tooltip_text)
 	if bridge_payload_button != null:
 		bridge_payload_button.visible = not compact_live or debug_controls_visible
@@ -3999,14 +4236,15 @@ func _refresh_loadout_ui() -> void:
 	_refresh_selected_card_loadout_reason(preview_objective_mode)
 	_refresh_arena_payout_panel()
 	if hand_action_status_label != null:
-		hand_action_status_label.visible = not compact_live
+		hand_action_status_label.visible = run_flow_state == RUN_FLOW_COMBAT and not arena_payout_pending
 	if reward_mods_label != null:
 		reward_mods_label.visible = not compact_live
 	if compact_live:
 		if combat_action_badge_label != null:
-			combat_action_badge_label.text = "LOADOUT: auto-build, tweak a card, then enter FPS"
+			combat_action_badge_label.text = "NEXT: ENTER FPS" if _get_slotted_card_count() > 0 else "NEXT: AUTO-BUILD"
 		if next_phase_button != null:
 			next_phase_button.text = "Quick Prep"
+	_refresh_battlefield_focus()
 
 
 func _refresh_arena_prep_panel() -> void:
@@ -4021,11 +4259,11 @@ func _refresh_arena_prep_panel() -> void:
 func _get_arena_prep_quick_text(objective_mode_value: String) -> String:
 	var target := _get_selected_enemy_target()
 	var target_name := String(target.get("name", "nearest fighter")) if not target.is_empty() else "nearest fighter"
-	var action_text := "Press [b]2[/b] to fight now" if _get_slotted_card_count() > 0 else "Press [b]1[/b] for a quick kit"
+	var action_text := "Press [b]2[/b] to fight now" if _get_slotted_card_count() > 0 else "Spend Chips or press [b]1[/b] to auto-spend"
 	var wound_text := _get_wound_burden_text()
 	if wound_text.is_empty():
 		wound_text = "clean run"
-	return "[center][b]Kit %d/5 -> %s[/b]  |  Target %s  |  %s\n%s. Click a hand card only if you want to tweak.[/center]" % [
+	return "[center][b]Kit %d/5 -> %s[/b]  |  Target %s  |  %s\n%s. Cards are your shop: equip, sell, upgrade, then enter FPS.[/center]" % [
 		_get_slotted_card_count(),
 		_safe_bbcode_text(_get_objective_label(objective_mode_value)),
 		_safe_bbcode_text(target_name),
@@ -4072,7 +4310,7 @@ func _get_arena_prep_identity_text() -> String:
 	var wound_text := _get_wound_burden_text()
 	if wound_text.is_empty():
 		wound_text = "no wounds carried"
-	return "[center][b]THE HAND IS THE RUN[/b][/center]\nCards are the original game layer: weapon, two powers, passive, and wager. The board grid is debug-only now; the main decision is the kit you bring into FPS.\n\n[b]Kit:[/b] %s\n[b]Next FPS:[/b] %s against %s\n[b]Growth:[/b] Card XP %d | %s\n[b]Next Action:[/b] %s." % [
+	return "[center][b]THE HAND IS THE RUN[/b][/center]\nCards are the original game layer: gun, Q ability, E ability, passive, and risk. The board grid is debug-only now; the main decision is the kit you bring into FPS.\n\n[b]Kit:[/b] %s\n[b]Next FPS:[/b] %s against %s\n[b]Growth:[/b] Card XP %d | %s\n[b]Next Action:[/b] %s." % [
 		_safe_bbcode_text(kit_text),
 		_safe_bbcode_text(objective_label),
 		_safe_bbcode_text(target_name),
@@ -4382,7 +4620,7 @@ func _refresh_reward_artifact_cards() -> void:
 		card_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		card_button.set_meta("artifact_index", index)
 		card_button.pressed.connect(_on_reward_artifact_pressed.bind(index))
-		var bias_modes: Array[String] = artifact.get("bias_modes", [])
+		var bias_modes: Array[String] = _string_array_from_variant(artifact.get("bias_modes", []))
 		card_button.tooltip_text = "%s %s: %s Bias: %s" % [
 			String(artifact.get("rarity", "Common")),
 			String(artifact.get("label", "Arena Mod")),
@@ -4431,7 +4669,7 @@ func _get_reward_artifact_detail_text(index: int) -> String:
 		return "No arena artifacts yet."
 	index = clampi(index, 0, artifacts.size() - 1)
 	var artifact: Dictionary = artifacts[index]
-	var bias_modes: Array[String] = artifact.get("bias_modes", [])
+	var bias_modes: Array[String] = _string_array_from_variant(artifact.get("bias_modes", []))
 	var bias_text := _join_string_array(bias_modes, ", ") if not bias_modes.is_empty() else "none"
 	return "[b]%s %s[/b]  %s\n%s\nBias: %s | Card XP earned: %d | Wounds carried: %d" % [
 		String(artifact.get("rarity", "Common")).to_upper(),
@@ -4531,7 +4769,7 @@ func _get_armory_plan_text(target_mode: String) -> String:
 		]
 		return "%s | %s" % [slotted_text, selected_upgrade] if not selected_upgrade.is_empty() else slotted_text
 	var preview := _build_recommended_loadout_preview(target_mode)
-	var entries: Array[String] = preview.get("entries", [])
+	var entries: Array[String] = _string_array_from_variant(preview.get("entries", []))
 	if entries.is_empty():
 		var empty_text := "ARMORY: no affordable recommendation yet. Burn a low-fit card for Chips or manual-slot your best card."
 		return "%s | %s" % [empty_text, selected_upgrade] if not selected_upgrade.is_empty() else empty_text
@@ -4636,7 +4874,17 @@ func _refresh_selected_card_loadout_reason(target_mode: String) -> void:
 	var recommendation := _get_card_objective_recommendation(card, target_mode)
 	var badge := String(recommendation.get("badge", "LOADOUT"))
 	var reason := String(recommendation.get("reason", "Fits the next arena kit."))
-	hand_action_status_label.text = "LOADOUT: %s - %s. %s" % [_get_card_name(card), badge, reason]
+	if _is_live_loadout_build_mode():
+		var best_slot := _get_recommended_loadout_slot(card)
+		hand_action_status_label.text = "SELECTED: %s | %s | best %s for %d Chips. %s" % [
+			_get_card_name(card),
+			badge,
+			_get_compact_loadout_slot_label(best_slot),
+			_get_loadout_slot_cost(card, best_slot),
+			reason
+		]
+	else:
+		hand_action_status_label.text = "LOADOUT: %s - %s. %s" % [_get_card_name(card), badge, reason]
 	hand_action_status_label.add_theme_color_override("font_color", Color(0.76, 0.94, 1.0))
 
 
@@ -4684,15 +4932,15 @@ func _get_card_objective_recommendation(card: Resource, target_mode: String = ""
 func _get_recommended_slot_order_for_objective(mode: String) -> Array[String]:
 	match mode:
 		"extract":
-			return ["weapon", "ability_1", "ability_2", "passive", "wager"]
+			return _string_array_from_variant(["weapon", "ability_1", "ability_2", "passive", "wager"])
 		"duel":
-			return ["weapon", "ability_1", "ability_2", "passive", "wager"]
+			return _string_array_from_variant(["weapon", "ability_1", "ability_2", "passive", "wager"])
 		"defend":
-			return ["weapon", "ability_1", "ability_2", "passive", "wager"]
+			return _string_array_from_variant(["weapon", "ability_1", "ability_2", "passive", "wager"])
 		"boss_gate":
-			return ["weapon", "wager", "ability_1", "ability_2", "passive"]
+			return _string_array_from_variant(["weapon", "wager", "ability_1", "ability_2", "passive"])
 		_:
-			return ["weapon", "ability_1", "ability_2", "passive", "wager"]
+			return _string_array_from_variant(["weapon", "ability_1", "ability_2", "passive", "wager"])
 
 
 func _find_recommended_hand_index_for_slot(slot_id: String, target_mode: String) -> int:
@@ -4942,8 +5190,20 @@ func _on_reset_bluff_pressed() -> void:
 	bluff_system.call("reset_bluff")
 
 
-func _on_hand_changed(cards: Array[Resource]) -> void:
-	hand_view.call("set_cards", cards)
+func _on_hand_changed(cards: Array) -> void:
+	_apply_hand_cards(cards)
+
+
+func _apply_hand_cards(cards: Array) -> void:
+	var resource_cards: Array[Resource] = []
+	for card in cards:
+		if card is Resource:
+			resource_cards.append(card)
+	hand_view.call("set_cards", resource_cards)
+	var hand_scroll := find_child("HandScroll", true, false)
+	if hand_scroll is ScrollContainer:
+		(hand_scroll as ScrollContainer).scroll_horizontal = 0
+		(hand_scroll as ScrollContainer).set_deferred("scroll_horizontal", 0)
 	previewed_hand_index = -1
 	_refresh_card_action_hint()
 	_refresh_card_target_preview()
@@ -8512,21 +8772,25 @@ func _refresh_first_play_step_buttons(session_state: Dictionary, run_state: Dict
 
 
 func _get_active_first_play_step_indices(session_state: Dictionary, _run_state: Dictionary) -> Array[int]:
+	var indices: Array[int] = []
 	if run_flow_state == RUN_FLOW_START:
-		return [0]
+		indices.append(0)
+		return indices
 	if run_flow_state == RUN_FLOW_REWARD or run_flow_state == RUN_FLOW_NEXT_ENCOUNTER or run_flow_state == RUN_FLOW_RESULTS:
-		return []
+		return indices
 	if bool(session_state.get("combat_over", false)):
-		return []
+		return indices
 
 	var phase_key: String = String(session_state.get("current_phase_key", "START_TURN"))
 	match phase_key:
 		"PLAYER_COMMIT":
-			return [1, 2]
+			indices.append(1)
+			indices.append(2)
 		"BLUFF_WAGER", "REVEAL", "RESOLVE", "CLEANUP":
-			return [3]
+			indices.append(3)
 		_:
-			return [0]
+			indices.append(0)
+	return indices
 
 
 func _sync_live_text_density() -> void:
@@ -8591,9 +8855,13 @@ func _sync_live_text_density() -> void:
 	if arena_prep_panel != null:
 		arena_prep_panel.visible = show_player_card_table
 	if arena_view != null:
-		arena_view.visible = show_debug_tactical_board
+		if arena_view.has_method("set_active"):
+			arena_view.call("set_active", show_debug_tactical_board)
+		else:
+			arena_view.visible = show_debug_tactical_board
 	if combat_grid != null:
 		combat_grid.visible = show_debug_tactical_board
+		combat_grid.process_mode = Node.PROCESS_MODE_INHERIT if show_debug_tactical_board else Node.PROCESS_MODE_DISABLED
 	if combat_grid != null and combat_grid.has_method("set_compact_mode"):
 		combat_grid.call("set_compact_mode", compact_live)
 	_sync_compact_live_layout(compact_live)
@@ -9219,6 +9487,22 @@ func _refresh_hand_action_status(entries: Array[Dictionary], session_state: Dict
 	if hand_action_status_label == null:
 		return
 
+	if _is_live_loadout_build_mode():
+		var selected_card := _get_selected_hand_card()
+		if selected_card != null:
+			var best_slot := _get_recommended_loadout_slot(selected_card)
+			hand_action_status_label.text = "SELECTED: %s | best %s for %d Chips. Click a highlighted slot, Equip Best, or Sell." % [
+				_get_card_name(selected_card),
+				_get_compact_loadout_slot_label(best_slot),
+				_get_loadout_slot_cost(selected_card, best_slot)
+			]
+		elif deck_manager != null and int(deck_manager.call("get_hand_count")) > 0:
+			hand_action_status_label.text = "ECONOMY: spend Chips on Gun, Q, E, Passive, and Risk. Click a card to light valid slots."
+		else:
+			hand_action_status_label.text = "ECONOMY: draw a hand, spend Chips, then enter the arena."
+		hand_action_status_label.add_theme_color_override("font_color", Color(1.0, 0.86, 0.42))
+		return
+
 	var global_reason := _get_global_card_lock_reason(session_state)
 	if not global_reason.is_empty():
 		if run_flow_state == RUN_FLOW_START:
@@ -9295,6 +9579,11 @@ func _get_blocked_cards_next_action(reason: String) -> String:
 
 
 func _get_card_playability_entry(card: Resource, session_state: Dictionary) -> Dictionary:
+	if _is_live_loadout_build_mode():
+		if card == null:
+			return {"playable": false, "reason": "No card is in this hand slot."}
+		return {"playable": true, "reason": "Loadout kit: click to select, then attach to a kit slot."}
+
 	var global_reason: String = _get_global_card_lock_reason(session_state)
 	if not global_reason.is_empty():
 		return {"playable": false, "reason": global_reason}

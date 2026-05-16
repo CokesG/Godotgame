@@ -117,8 +117,6 @@ func _refresh() -> void:
 		if not recommendation_line.is_empty():
 			compact_lines.append(recommendation_line)
 		compact_lines.append("Cost %d | %s" % [cost, type_label])
-		compact_lines.append("Target: %s" % target_label)
-		compact_lines.append(_shorten_rules_text(rules_text, 34))
 		text = "\n".join(compact_lines)
 	else:
 		var full_lines := PackedStringArray()
@@ -136,11 +134,19 @@ func _refresh() -> void:
 	vertical_icon_alignment = VERTICAL_ALIGNMENT_TOP
 	var recommendation_tooltip := _get_recommendation_tooltip()
 	if is_playable:
-		tooltip_text = "Click to play %s during Player Commit. Target: %s%s" % [
-			card_name,
-			target_label,
-			_get_tag_tooltip() + recommendation_tooltip
-		]
+		if disabled_reason.begins_with("Loadout kit:"):
+			var loadout_tip := disabled_reason.substr("Loadout kit:".length()).strip_edges()
+			tooltip_text = "%s %s%s" % [
+				loadout_tip.capitalize(),
+				card_name,
+				_get_tag_tooltip() + recommendation_tooltip
+			]
+		else:
+			tooltip_text = "Click to play %s during Player Commit. Target: %s%s" % [
+				card_name,
+				target_label,
+				_get_tag_tooltip() + recommendation_tooltip
+			]
 	else:
 		tooltip_text = "Locked: %s | %s targets %s%s" % [
 			disabled_reason,
@@ -163,7 +169,7 @@ func _refresh() -> void:
 
 
 func _apply_compact_metrics() -> void:
-	custom_minimum_size = Vector2(154, 154) if compact_mode else Vector2(190, 226)
+	custom_minimum_size = Vector2(150, 126) if compact_mode else Vector2(190, 226)
 
 
 func play_feedback(color: Color) -> void:

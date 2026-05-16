@@ -37,8 +37,8 @@ func _verify_live_guidance_and_fast_button_feedback(combat_scene: Node) -> void:
 	await _settle()
 
 	var status_text := String(hand_status.get("text"))
-	if not status_text.contains("TARGET") or not status_text.contains("glowing"):
-		_fail("Live hand status should keep the first action sequence visible. Got: %s" % status_text)
+	if not status_text.contains("ECONOMY") or not status_text.contains("Gun, Q, E, Passive"):
+		_fail("Live hand status should explain kit attachment. Got: %s" % status_text)
 		return
 
 	continue_button.emit_signal("button_down")
@@ -51,44 +51,38 @@ func _verify_live_guidance_and_fast_button_feedback(combat_scene: Node) -> void:
 
 
 func _verify_target_and_card_press_feedback(combat_scene: Node) -> void:
-	var target_cards: Node = combat_scene.find_child("EnemyTargetCards", true, false)
-	var combat_grid: Node = combat_scene.find_child("CombatGrid", true, false)
 	var hand_view: Node = combat_scene.find_child("HandView", true, false)
-	var vfx_layer: Control = combat_scene.find_child("CombatVFX", true, false)
-	if target_cards == null or combat_grid == null or hand_view == null or vfx_layer == null:
-		_fail("Expected target cards, combat grid, hand, and VFX layer.")
+	var equip_best_button: Button = combat_scene.find_child("SlotSelectedCardButton", true, false)
+	var hand_status: Label = combat_scene.find_child("HandActionStatus", true, false)
+	if hand_view == null or equip_best_button == null or hand_status == null:
+		_fail("Expected hand, Equip Best button, and hand status.")
 		return
-	if target_cards.get_child_count() <= 0 or hand_view.get_child_count() <= 0:
-		_fail("Expected clickable target cards and hand cards after opening.")
-		return
-
-	var target_card: Button = target_cards.get_child(0)
-	var enemy_id: StringName = StringName(target_card.get_meta("enemy_id", &""))
-	target_card.emit_signal("button_down")
-	await get_tree().process_frame
-
-	var focus: Dictionary = combat_grid.call("get_focus_snapshot")
-	if StringName(focus.get("unit_id", &"")) != enemy_id:
-		_fail("Pressing a target card should immediately focus that enemy on the table.")
-		return
-	if not _has_vfx_child(vfx_layer, "VFXTargetLock"):
-		_fail("Pressing a target card should spawn immediate target-lock feedback.")
+	if hand_view.get_child_count() <= 0:
+		_fail("Expected clickable hand cards after opening.")
 		return
 
 	var first_card: Button = _get_first_playable_hand_card(hand_view)
 	if first_card == null:
-		_fail("Expected at least one playable hand card.")
+		_fail("Expected at least one selectable hand card.")
 		return
 
 	first_card.emit_signal("button_down")
 	if first_card.modulate == Color.WHITE:
-		_fail("Pressing a hand card should flash the card immediately before resolver work.")
+		_fail("Pressing a hand card should flash the card immediately before kit attachment.")
 		return
 
 	first_card.emit_signal("pressed")
 	await get_tree().process_frame
-	if not _has_vfx_child(vfx_layer, "VFXCardFly"):
-		_fail("Playing a hand card should still spawn traveling card feedback.")
+	var selected_status := String(hand_status.get("text"))
+	if not selected_status.contains("SELECTED") and not selected_status.contains("LOADOUT:"):
+		_fail("Clicking a hand card should select it for slot attachment.")
+		return
+
+	equip_best_button.emit_signal("pressed")
+	await get_tree().process_frame
+	var loadout_slots: Dictionary = combat_scene.get("loadout_slots")
+	if loadout_slots.is_empty():
+		_fail("Pressing Equip Best should attach the selected card to the kit.")
 
 
 func _get_first_playable_hand_card(hand_view: Node) -> Button:

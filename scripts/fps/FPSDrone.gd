@@ -17,6 +17,12 @@ signal defeated
 @export var ranged_attack_range := 9.5
 @export var hold_distance := 6.5
 
+const ARENA_HALF_EXTENT := 14.4
+const STUCK_SAMPLE_EPSILON := 0.10
+const STUCK_RECOVERY_SECONDS := 1.15
+const STUCK_RECOVERY_COOLDOWN := 0.80
+const VISUAL_REFRESH_INTERVAL := 0.08
+
 var player: Node3D
 var game_mode: Node
 var health: int
@@ -37,6 +43,15 @@ var tell_mesh: MeshInstance3D
 var shield_mesh: MeshInstance3D
 var tell_timer := 0.0
 var tell_text := ""
+var stuck_timer := 0.0
+var stuck_recovery_cooldown := 0.0
+var stuck_sample_position := Vector3.ZERO
+var has_stuck_sample := false
+var visual_refresh_elapsed := 0.0
+var reveal_overlay_material: StandardMaterial3D
+var reveal_visual_active := false
+var last_status_text := ""
+var last_status_modulate := Color(0.0, 0.0, 0.0, -1.0)
 var rng := RandomNumberGenerator.new()
 
 
@@ -61,6 +76,9 @@ func _ready() -> void:
 	add_to_group("fps_enemies")
 	health = max_health
 	_build_body()
+	reveal_overlay_material = _make_unshaded_material(Color(0.28, 0.92, 1.0, 0.42))
+	_update_reveal_visual(true)
+	_update_status_label(true)
 	_update_health_bar()
 
 
@@ -73,6 +91,7 @@ func _physics_process(delta: float) -> void:
 		velocity.x = move_toward(velocity.x, 0.0, acceleration * delta)
 		velocity.z = move_toward(velocity.z, 0.0, acceleration * delta)
 		move_and_slide()
+		_reset_stuck_sample()
 		return
 
 	attack_timer = maxf(0.0, attack_timer - delta)
@@ -81,9 +100,14 @@ func _physics_process(delta: float) -> void:
 	snare_timer = maxf(0.0, snare_timer - delta)
 	bait_timer = maxf(0.0, bait_timer - delta)
 	tell_timer = maxf(0.0, tell_timer - delta)
-	_update_reveal_visual()
+	stuck_recovery_cooldown = maxf(0.0, stuck_recovery_cooldown - delta)
+	visual_refresh_elapsed += delta
+	var refresh_visuals := visual_refresh_elapsed >= VISUAL_REFRESH_INTERVAL or tell_timer > 0.0
+	if refresh_visuals:
+		visual_refresh_elapsed = 0.0
+		_update_reveal_visual()
+		_update_status_label()
 	_update_tell_visual()
-	_update_status_label()
 	if not is_on_floor():
 		velocity.y -= gravity * delta
 
@@ -110,7 +134,10 @@ func _physics_process(delta: float) -> void:
 	velocity.z = move_toward(velocity.z, desired.z + knockback.z, acceleration * delta)
 	knockback = knockback.lerp(Vector3.ZERO, clampf(delta * 8.0, 0.0, 1.0))
 	move_and_slide()
-	_update_sprite_facing()
+	_recover_if_out_of_bounds()
+	_update_stuck_recovery(delta, desired, distance)
+	if refresh_visuals:
+		_update_sprite_facing()
 
 
 func take_damage(amount: int, hit_position: Vector3, impulse: Vector3, critical: bool = false) -> Dictionary:
@@ -135,18 +162,21 @@ func is_critical_hit(point: Vector3) -> bool:
 
 func reveal_for(duration: float) -> void:
 	reveal_timer = maxf(reveal_timer, duration)
-	_update_reveal_visual()
+	_update_reveal_visual(true)
+	_update_status_label(true)
 
 
 func apply_snare(duration: float) -> void:
 	snare_timer = maxf(snare_timer, duration)
 	stagger_timer = maxf(stagger_timer, minf(duration, 0.65))
+	_update_status_label(true)
 	_flash_body(false)
 
 
 func apply_bait(duration: float) -> void:
 	bait_timer = maxf(bait_timer, duration)
 	attack_timer = maxf(attack_timer, 0.55)
+	_update_status_label(true)
 	_flash_body(false)
 
 
@@ -188,6 +218,82 @@ func _get_desired_velocity(direction: Vector3, distance: float) -> Vector3:
 			if distance > attack_range:
 				return (direction + strafe).normalized() * move_speed
 	return Vector3.ZERO
+
+
+func _update_stuck_recovery(delta: float, desired: Vector3, distance: float) -> void:
+	if desired.length_squared() < 0.25 or distance <= attack_range + 0.5 or stagger_timer > 0.0 or snare_timer > 0.0:
+		_reset_stuck_sample()
+		return
+	if not has_stuck_sample:
+		stuck_sample_position = global_position
+		has_stuck_sample = true
+		return
+
+	var moved := Vector2(global_position.x - stuck_sample_position.x, global_position.z - stuck_sample_position.z).length()
+	if moved < STUCK_SAMPLE_EPSILON:
+		stuck_timer += delta
+	else:
+		stuck_timer = maxf(0.0, stuck_timer - delta * 2.0)
+		stuck_sample_position = global_position
+
+	if stuck_timer >= STUCK_RECOVERY_SECONDS and stuck_recovery_cooldown <= 0.0:
+		_nudge_around_cover(desired)
+
+
+func _nudge_around_cover(desired: Vector3) -> void:
+	var toward := Vector3.ZERO
+	if player != null and is_instance_valid(player):
+		toward = player.global_position - global_position
+		toward.y = 0.0
+	if toward.length_squared() < 0.01:
+		toward = desired
+		toward.y = 0.0
+	if toward.length_squared() < 0.01:
+		toward = Vector3.FORWARD
+	toward = toward.normalized()
+	var side := Vector3(-toward.z, 0.0, toward.x)
+	if int(get_instance_id()) % 2 == 0:
+		side = -side
+	global_position = _clamp_to_arena_floor(global_position + side * 1.25 + toward * 0.65)
+	velocity.x = toward.x * move_speed * 0.8
+	velocity.z = toward.z * move_speed * 0.8
+	stuck_timer = 0.0
+	stuck_recovery_cooldown = STUCK_RECOVERY_COOLDOWN
+	stuck_sample_position = global_position
+	has_stuck_sample = true
+
+
+func _recover_if_out_of_bounds() -> void:
+	if global_position.y >= -3.0 and absf(global_position.x) <= ARENA_HALF_EXTENT + 2.0 and absf(global_position.z) <= ARENA_HALF_EXTENT + 2.0:
+		return
+	global_position = _get_safe_position_near_player()
+	velocity = Vector3.ZERO
+	_reset_stuck_sample()
+
+
+func _get_safe_position_near_player() -> Vector3:
+	if player == null or not is_instance_valid(player):
+		return Vector3(0.0, 0.22, 0.0)
+	var away := global_position - player.global_position
+	away.y = 0.0
+	if away.length_squared() < 0.01:
+		away = Vector3.RIGHT
+	var radius := clampf(hold_distance, 4.0, 7.0)
+	return _clamp_to_arena_floor(player.global_position + away.normalized() * radius)
+
+
+func _clamp_to_arena_floor(position: Vector3) -> Vector3:
+	return Vector3(
+		clampf(position.x, -ARENA_HALF_EXTENT, ARENA_HALF_EXTENT),
+		0.22,
+		clampf(position.z, -ARENA_HALF_EXTENT, ARENA_HALF_EXTENT)
+	)
+
+
+func _reset_stuck_sample() -> void:
+	stuck_timer = 0.0
+	stuck_sample_position = global_position
+	has_stuck_sample = true
 
 
 func _try_ranged_attack() -> void:
@@ -283,9 +389,10 @@ func _build_body() -> void:
 	status_label.name = "StatusLabel"
 	status_label.position = Vector3(0.0, 2.26, 0.0)
 	status_label.text = _get_status_text()
-	status_label.font_size = 18
+	status_label.font_size = 16
+	status_label.pixel_size = 0.0048
 	status_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	status_label.outline_size = 4
+	status_label.outline_size = 3
 	status_label.outline_modulate = Color(0.02, 0.01, 0.01, 0.92)
 	status_label.modulate = Color(1.0, 0.86, 0.48)
 	add_child(status_label)
@@ -352,11 +459,17 @@ func _flash_body(critical: bool) -> void:
 	)
 
 
-func _update_reveal_visual() -> void:
+func _update_reveal_visual(force: bool = false) -> void:
 	if body_mesh == null:
 		return
-	if reveal_timer > 0.0:
-		body_mesh.material_overlay = _make_unshaded_material(Color(0.28, 0.92, 1.0, 0.42))
+	var active := reveal_timer > 0.0
+	if not force and active == reveal_visual_active:
+		return
+	reveal_visual_active = active
+	if active:
+		if reveal_overlay_material == null:
+			reveal_overlay_material = _make_unshaded_material(Color(0.28, 0.92, 1.0, 0.42))
+		body_mesh.material_overlay = reveal_overlay_material
 		if sprite != null:
 			sprite.modulate = Color(0.55, 0.95, 1.0, 1.0)
 	else:
@@ -371,9 +484,7 @@ func _show_attack_tell(text: String, color: Color, duration: float) -> void:
 	if tell_mesh != null:
 		tell_mesh.material_override = _make_unshaded_material(color)
 		tell_mesh.visible = true
-	if status_label != null:
-		status_label.modulate = color
-		status_label.text = _get_status_text()
+	_update_status_label(true)
 
 
 func _update_tell_visual() -> void:
@@ -386,13 +497,19 @@ func _update_tell_visual() -> void:
 	tell_mesh.scale = Vector3(pulse, pulse, pulse)
 
 
-func _update_status_label() -> void:
+func _update_status_label(force: bool = false) -> void:
 	if status_label == null:
 		return
-	status_label.text = _get_status_text()
-	status_label.modulate = Color(0.34, 0.92, 1.0) if reveal_timer > 0.0 else Color(1.0, 0.86, 0.48)
+	var text := _get_status_text()
+	var modulate := Color(0.34, 0.92, 1.0) if reveal_timer > 0.0 else Color(1.0, 0.86, 0.48)
 	if tell_timer > 0.0:
-		status_label.modulate = Color(1.0, 0.48, 0.22) if tell_text == "STRIKE" else Color(0.34, 0.88, 1.0)
+		modulate = Color(1.0, 0.48, 0.22) if tell_text == "STRIKE" else Color(0.34, 0.88, 1.0)
+	if force or text != last_status_text:
+		status_label.text = text
+		last_status_text = text
+	if force or modulate != last_status_modulate:
+		status_label.modulate = modulate
+		last_status_modulate = modulate
 
 
 func _get_status_text() -> String:
@@ -405,10 +522,9 @@ func _get_status_text() -> String:
 		tags.append("SNARED")
 	if bait_timer > 0.0:
 		tags.append("BAITED")
-	var suffix := ""
-	if not tags.is_empty():
-		suffix = "  %s" % " / ".join(tags)
-	return "%s  %s  HP %d/%d%s" % [display_name, _get_archetype_label(), health, max_health, suffix]
+	if tags.is_empty():
+		return display_name
+	return "%s  %s" % [display_name, " / ".join(tags)]
 
 
 func _get_archetype_label() -> String:

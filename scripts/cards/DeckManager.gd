@@ -124,6 +124,31 @@ func slot_card_at(hand_index: int) -> Resource:
 	return card
 
 
+func replace_loadout_card_at(hand_index: int, replaced_card: Resource) -> Resource:
+	if hand_index < 0 or hand_index >= hand.size():
+		log_requested.emit("Cannot slot card at hand index %d." % hand_index)
+		return null
+
+	var card: Resource = hand[hand_index]
+	hand.remove_at(hand_index)
+
+	var returned_name := ""
+	if replaced_card != null:
+		var loadout_index := loadout_pile.find(replaced_card)
+		if loadout_index >= 0:
+			loadout_pile.remove_at(loadout_index)
+			hand.append(replaced_card)
+			returned_name = _get_card_name(replaced_card)
+
+	loadout_pile.append(card)
+	if returned_name.is_empty():
+		log_requested.emit("Slotted %s into loadout." % _get_card_name(card))
+	else:
+		log_requested.emit("Replaced %s with %s in loadout." % [returned_name, _get_card_name(card)])
+	_emit_state()
+	return card
+
+
 func commit_card_at(hand_index: int) -> Resource:
 	if committed_card != null:
 		log_requested.emit("A card is already committed face-down.")
@@ -217,7 +242,11 @@ func get_counts() -> Dictionary:
 
 
 func get_hand_snapshot() -> Array[Resource]:
-	return hand.duplicate()
+	var snapshot: Array[Resource] = []
+	for card in hand:
+		if card != null:
+			snapshot.append(card)
+	return snapshot
 
 
 func get_snapshot() -> Dictionary:

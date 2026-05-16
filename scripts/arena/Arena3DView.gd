@@ -18,6 +18,7 @@ var focus_marker_tween: Tween
 var focus_unit_id: StringName = &""
 var units: Dictionary = {}
 var headless_mode: bool = false
+var active: bool = true
 var map_data: Dictionary = {}
 
 
@@ -38,15 +39,29 @@ func _ready() -> void:
 	_start_table_idle()
 
 
+func set_active(value: bool) -> void:
+	active = value
+	visible = value
+	process_mode = Node.PROCESS_MODE_INHERIT if value else Node.PROCESS_MODE_DISABLED
+	if viewport != null:
+		viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS if value else SubViewport.UPDATE_DISABLED
+	if value and map_root != null:
+		_rebuild_map_features()
+
+
+func _is_dormant() -> bool:
+	return headless_mode or not active
+
+
 func configure_map(new_map_data: Dictionary) -> void:
 	map_data = new_map_data.duplicate(true) if not new_map_data.is_empty() else TACTICAL_MAP_SCRIPT.get_default_map()
-	if headless_mode or map_root == null:
+	if _is_dormant() or map_root == null:
 		return
 	_rebuild_map_features()
 
 
 func reset_units(position_snapshot: Dictionary, combat_state: Dictionary = {}) -> void:
-	if headless_mode:
+	if _is_dormant():
 		return
 
 	for unit_id in units.keys():
@@ -61,7 +76,7 @@ func reset_units(position_snapshot: Dictionary, combat_state: Dictionary = {}) -
 
 
 func sync_units(position_snapshot: Dictionary) -> void:
-	if headless_mode:
+	if _is_dormant():
 		return
 
 	var seen := {}
@@ -92,7 +107,7 @@ func sync_units(position_snapshot: Dictionary) -> void:
 
 
 func sync_combat_state(combat_state: Dictionary) -> void:
-	if headless_mode or combat_state.is_empty():
+	if _is_dormant() or combat_state.is_empty():
 		return
 
 	_apply_actor_state(combat_state.get("player", {}))
@@ -102,7 +117,7 @@ func sync_combat_state(combat_state: Dictionary) -> void:
 
 
 func play_card_beat(style: StringName, source_id: StringName, target_id: StringName, target_cell: Vector2i = Vector2i(-1, -1)) -> void:
-	if headless_mode:
+	if _is_dormant():
 		return
 
 	var target_position := _get_unit_or_cell_position(target_id, target_cell)
@@ -131,7 +146,7 @@ func play_card_beat(style: StringName, source_id: StringName, target_id: StringN
 
 
 func play_move(unit_id: StringName, from_cell: Vector2i, to_cell: Vector2i) -> void:
-	if headless_mode:
+	if _is_dormant():
 		return
 
 	var unit_data: Dictionary = units.get(unit_id, {})
@@ -160,7 +175,7 @@ func play_move(unit_id: StringName, from_cell: Vector2i, to_cell: Vector2i) -> v
 
 
 func play_damage(unit_id: StringName, amount: int = 0) -> void:
-	if headless_mode:
+	if _is_dormant():
 		return
 	var position := _get_unit_or_cell_position(unit_id, Vector2i(-1, -1))
 	_spawn_burst(position, Color(1.0, 0.22, 0.14), &"slash")
@@ -171,7 +186,7 @@ func play_damage(unit_id: StringName, amount: int = 0) -> void:
 
 
 func play_guard(unit_id: StringName, amount: int = 0) -> void:
-	if headless_mode:
+	if _is_dormant():
 		return
 	var position := _get_unit_or_cell_position(unit_id, Vector2i(-1, -1))
 	_spawn_guard_ring(position)
@@ -180,7 +195,7 @@ func play_guard(unit_id: StringName, amount: int = 0) -> void:
 
 
 func play_defeat(unit_id: StringName) -> void:
-	if headless_mode:
+	if _is_dormant():
 		return
 	var unit_data: Dictionary = units.get(unit_id, {})
 	if unit_data.is_empty():
@@ -197,7 +212,7 @@ func play_defeat(unit_id: StringName) -> void:
 
 
 func focus_unit(unit_id: StringName) -> void:
-	if headless_mode:
+	if _is_dormant():
 		return
 	var unit_data: Dictionary = units.get(unit_id, {})
 	if unit_data.is_empty():
@@ -213,7 +228,7 @@ func focus_unit(unit_id: StringName) -> void:
 
 
 func preview_card_intent(style: StringName, source_id: StringName, target_id: StringName, target_cell: Vector2i = Vector2i(-1, -1)) -> void:
-	if headless_mode:
+	if _is_dormant():
 		return
 	var target_position := _get_unit_or_cell_position(target_id, target_cell)
 	if target_id != &"" and units.has(target_id):

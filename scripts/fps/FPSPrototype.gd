@@ -22,6 +22,9 @@ const DEFAULT_BRIDGE_PAYLOAD := {
 }
 
 const DEFAULT_OBJECTIVE_MODE := "hold_pot"
+const OBJECTIVE_MODE_ROTATION := ["hold_pot", "extract", "duel", "defend", "boss_gate"]
+const MIN_ENEMIES_PER_WAVE := 6
+const MAX_ENEMIES_PER_WAVE := 11
 const OBJECTIVE_MODE_DEFS := {
 	"hold_pot": {
 		"label": "Hold Pot",
@@ -95,6 +98,11 @@ const HERO_CLASS_PROFILES := {
 }
 
 const SETTINGS_PATH := "user://fps_settings.cfg"
+const UI_REFRESH_INTERVAL := 0.08
+const CROSSHAIR_DYNAMIC_REFRESH_INTERVAL := 0.05
+const RUNTIME_VIEW_CHECK_INTERVAL := 0.45
+const BOUNDS_RECOVERY_INTERVAL := 0.18
+const MAX_TRANSIENT_EFFECTS := 72
 const DEFAULT_AIM_SETTINGS := {
 	"mouse_sensitivity": 0.00155,
 	"gamepad_look_sensitivity": 2.4,
@@ -158,6 +166,7 @@ var hit_marker: Control
 var damage_flash: ColorRect
 var restart_timer := 0.0
 var kills := 0
+var current_wave_kills := 0
 var wave_index := 1
 var wave_active := false
 var settings_open := false
@@ -170,6 +179,7 @@ var damage_dealt := 0
 var damage_taken := 0
 var waves_cleared := 0
 var rewards_pending := false
+var reward_return_in_progress := false
 var active_reward_index := -1
 var reward_options: Array[Dictionary] = []
 var keybind_buttons: Dictionary = {}
@@ -191,6 +201,7 @@ var crosshair_settings: Dictionary = DEFAULT_CROSSHAIR_SETTINGS.duplicate(true)
 var crosshair_signature := ""
 var objective_mode := DEFAULT_OBJECTIVE_MODE
 var objective_def: Dictionary = OBJECTIVE_MODE_DEFS[DEFAULT_OBJECTIVE_MODE].duplicate(true)
+var arena_start_objective_mode := DEFAULT_OBJECTIVE_MODE
 var objective_score_bank := 0.0
 var objective_hold_time := 0.0
 var objective_completed := false
@@ -202,7 +213,13 @@ var objective_target_name := ""
 var objective_target_defeated := false
 var objective_contested_count := 0
 var objective_events: Array[String] = []
+var card_table_preload_requested := false
+var ui_refresh_elapsed := 0.0
+var crosshair_refresh_elapsed := 0.0
+var runtime_view_check_elapsed := 0.0
+var bounds_recovery_elapsed := 0.0
 var current_wave_enemy_total := 0
+var last_player_safe_position := spawn_position
 
 var enemy_defs: Array[Dictionary] = [
 	{
@@ -263,6 +280,7 @@ func _ready() -> void:
 	_build_arena()
 	_build_player()
 	_consume_pending_arena_bridge_payload()
+	_request_card_table_preload()
 	_build_ui()
 	run_started_msec = Time.get_ticks_msec()
 	_spawn_wave()
@@ -272,12 +290,23 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	_tick_ability_cooldowns(delta)
 	_update_objective(delta)
+	bounds_recovery_elapsed += delta
+	if bounds_recovery_elapsed >= BOUNDS_RECOVERY_INTERVAL:
+		bounds_recovery_elapsed = 0.0
+		_recover_out_of_bounds_actors()
+	runtime_view_check_elapsed += delta
+	if runtime_view_check_elapsed >= RUNTIME_VIEW_CHECK_INTERVAL:
+		runtime_view_check_elapsed = 0.0
+		_ensure_runtime_view_is_rendering()
 	if restart_timer > 0.0:
 		restart_timer -= delta
 		if restart_timer <= 0.0:
 			_spawn_wave()
-	_update_crosshair()
-	_refresh_ui()
+	_update_crosshair(false, delta)
+	ui_refresh_elapsed += delta
+	if ui_refresh_elapsed >= UI_REFRESH_INTERVAL:
+		ui_refresh_elapsed = 0.0
+		_refresh_ui()
 
 
 func _input(event: InputEvent) -> void:
@@ -382,6 +411,7 @@ func apply_arena_bridge_payload(payload: Dictionary) -> void:
 	ability_use_counts.clear()
 	_set_hero_class(String(active_bridge_payload.get("hero_class", "gambler_knight")))
 	_set_objective_mode(String(active_bridge_payload.get("objective_mode", DEFAULT_OBJECTIVE_MODE)))
+	arena_start_objective_mode = objective_mode
 
 	var loadout: Array = active_bridge_payload.get("loadout", [])
 	for entry in loadout:
@@ -421,6 +451,7 @@ func get_active_loadout_summary() -> Dictionary:
 		"ammo": int(economy.get("ammo", 24)),
 		"target_enemy": active_bridge_payload.get("reads", {}).get("target_enemy", &""),
 		"objective_mode": objective_mode,
+		"next_wave_objective": _get_wave_objective_mode(wave_index + 1),
 		"objective_label": String(objective_def.get("label", "Objective")),
 		"reward_mods": (active_bridge_payload.get("reward_mods", []) as Array).size(),
 		"card_upgrades": (active_bridge_payload.get("card_upgrades", {}) as Dictionary).size(),
@@ -636,6 +667,14 @@ func _set_objective_mode(mode: String) -> void:
 	_refresh_objective_mode_props()
 
 
+func _get_wave_objective_mode(target_wave_index: int) -> String:
+	var start_index := OBJECTIVE_MODE_ROTATION.find(arena_start_objective_mode)
+	if start_index < 0:
+		start_index = 0
+	var offset := maxi(0, target_wave_index - 1)
+	return String(OBJECTIVE_MODE_ROTATION[(start_index + offset) % OBJECTIVE_MODE_ROTATION.size()])
+
+
 func _update_objective(delta: float) -> void:
 	if player == null or not wave_active or rewards_pending:
 		return
@@ -716,15 +755,47 @@ func _record_objective_event(reason: String) -> void:
 
 
 func _count_living_enemies_near(position: Vector3, radius: float) -> int:
+	if enemies_root == null:
+		return 0
 	var count := 0
 	var target := position
 	target.y = 0.0
-	for enemy in get_living_enemies():
+	var radius_sq := radius * radius
+	for enemy in enemies_root.get_children():
+		if not enemy.has_method("take_damage") or not bool(enemy.get("alive")):
+			continue
 		var enemy_position: Vector3 = enemy.global_position
 		enemy_position.y = 0.0
-		if enemy_position.distance_to(target) <= radius:
+		if enemy_position.distance_squared_to(target) <= radius_sq:
 			count += 1
 	return count
+
+
+func _recover_out_of_bounds_actors() -> void:
+	var enemy_recovery_limit := 18.0
+	if player != null and is_instance_valid(player):
+		var player_position: Vector3 = player.global_position
+		if player_position.y >= 0.55:
+			last_player_safe_position = player_position
+		if player_position.y < -6.0:
+			player.global_position = last_player_safe_position
+			player.set("velocity", Vector3.ZERO)
+			_show_status_flash("Returned to arena bounds", Color(0.42, 0.96, 1.0))
+
+	if enemies_root == null:
+		return
+	for enemy in enemies_root.get_children():
+		if not enemy.has_method("take_damage") or not bool(enemy.get("alive")):
+			continue
+		var enemy_position: Vector3 = enemy.global_position
+		if enemy_position.y >= -4.0 and absf(enemy_position.x) <= enemy_recovery_limit and absf(enemy_position.z) <= enemy_recovery_limit:
+			continue
+		enemy.global_position = Vector3(
+			clampf(enemy_position.x, -14.4, 14.4),
+			0.22,
+			clampf(enemy_position.z, -14.4, 14.4)
+		)
+		enemy.set("velocity", Vector3.ZERO)
 
 
 func _is_player_near(position: Vector3, radius: float) -> bool:
@@ -734,7 +805,7 @@ func _is_player_near(position: Vector3, radius: float) -> bool:
 	player_position.y = 0.0
 	var target := position
 	target.y = 0.0
-	return player_position.distance_to(target) <= radius
+	return player_position.distance_squared_to(target) <= radius * radius
 
 
 func _get_objective_position() -> Vector3:
@@ -767,7 +838,7 @@ func _get_objective_progress_ratio() -> float:
 		"defend":
 			return clampf(objective_core_health / maxf(1.0, _get_objective_core_max_health()), 0.0, 1.0)
 		"duel", "boss_gate":
-			return 1.0 if objective_target_defeated else clampf(float(kills) / maxf(1.0, float(maxi(1, current_wave_enemy_total))), 0.0, 0.88)
+			return 1.0 if objective_target_defeated else clampf(float(current_wave_kills) / maxf(1.0, float(maxi(1, current_wave_enemy_total))), 0.0, 0.88)
 		_:
 			return 0.0
 
@@ -812,6 +883,7 @@ func _get_ability_hud_text() -> String:
 func _spawn_ability_ring(position: Vector3, color: Color, radius: float) -> void:
 	if effects_root == null:
 		return
+	_reserve_effect_slots(2)
 	var ring := MeshInstance3D.new()
 	ring.name = "AbilityRing"
 	var mesh := TorusMesh.new()
@@ -861,6 +933,7 @@ func _show_status_flash(text: String, color: Color) -> void:
 func spawn_tracer(start_position: Vector3, end_position: Vector3, critical: bool = false) -> void:
 	if effects_root == null:
 		return
+	_reserve_effect_slots(1)
 	var line := MeshInstance3D.new()
 	line.name = "Tracer"
 	var mesh := ImmediateMesh.new()
@@ -879,6 +952,7 @@ func spawn_tracer(start_position: Vector3, end_position: Vector3, critical: bool
 func spawn_impact(position: Vector3, normal: Vector3, critical: bool = false) -> void:
 	if effects_root == null:
 		return
+	_reserve_effect_slots(2)
 	var spark := MeshInstance3D.new()
 	spark.name = "Impact"
 	var mesh := SphereMesh.new()
@@ -899,6 +973,7 @@ func spawn_impact(position: Vector3, normal: Vector3, critical: bool = false) ->
 func _spawn_impact_decal(position: Vector3, critical: bool) -> void:
 	if effects_root == null:
 		return
+	_reserve_effect_slots(1)
 	var decal := MeshInstance3D.new()
 	decal.name = "ImpactDecal"
 	var mesh := CylinderMesh.new()
@@ -919,6 +994,7 @@ func _spawn_impact_decal(position: Vector3, critical: bool) -> void:
 func spawn_enemy_tell(position: Vector3, color: Color, radius: float, text: String = "DANGER") -> void:
 	if effects_root == null:
 		return
+	_reserve_effect_slots(2)
 	var ring := MeshInstance3D.new()
 	ring.name = "EnemyTellRing"
 	var mesh := TorusMesh.new()
@@ -959,6 +1035,7 @@ func spawn_enemy_projectile(start_position: Vector3, end_position: Vector3, dama
 		if player != null and player.has_method("take_damage"):
 			player.call("take_damage", damage, start_position)
 		return
+	_reserve_effect_slots(2)
 	var projectile := MeshInstance3D.new()
 	projectile.name = "EnemyProjectile"
 	var mesh := SphereMesh.new()
@@ -987,6 +1064,7 @@ func spawn_enemy_projectile(start_position: Vector3, end_position: Vector3, dama
 func spawn_combat_text(position: Vector3, text: String, critical: bool, defeated: bool) -> void:
 	if effects_root == null:
 		return
+	_reserve_effect_slots(1)
 	var label := Label3D.new()
 	label.name = "CombatText"
 	label.text = text
@@ -1009,6 +1087,7 @@ func spawn_combat_text(position: Vector3, text: String, critical: bool, defeated
 
 func on_enemy_defeated(_enemy: Node) -> void:
 	kills += 1
+	current_wave_kills += 1
 	_handle_objective_enemy_defeated(_enemy)
 	if get_living_enemies().is_empty():
 		wave_active = false
@@ -1036,6 +1115,7 @@ func restart_encounter() -> void:
 	for child in enemies_root.get_children():
 		child.queue_free()
 	kills = 0
+	current_wave_kills = 0
 	wave_index = 1
 	waves_cleared = 0
 	shots_fired = 0
@@ -1044,23 +1124,60 @@ func restart_encounter() -> void:
 	damage_dealt = 0
 	damage_taken = 0
 	rewards_pending = false
+	reward_return_in_progress = false
 	restart_timer = 0.0
 	run_started_msec = Time.get_ticks_msec()
-	_set_objective_mode(objective_mode)
+	_set_objective_mode(arena_start_objective_mode)
 	if reward_panel != null:
 		reward_panel.visible = false
 	if player != null:
 		player.reset_for_arena(spawn_position)
+		last_player_safe_position = spawn_position
 	_spawn_wave()
 
 
 func _on_player_restart_requested() -> void:
 	if player != null and bool(player.get("dead")):
-		wave_active = false
-		rewards_pending = false
-		_return_to_card_table(_build_arena_result({}, false))
+		_retry_current_wave_after_defeat()
 		return
 	restart_encounter()
+
+
+func _retry_current_wave_after_defeat() -> void:
+	wave_active = false
+	rewards_pending = false
+	reward_return_in_progress = false
+	restart_timer = 0.0
+	if reward_backdrop != null:
+		reward_backdrop.visible = false
+	if reward_panel != null:
+		reward_panel.visible = false
+	var retry_mode := objective_mode
+	if player != null:
+		player.reset_for_arena(spawn_position)
+		last_player_safe_position = spawn_position
+	_set_objective_mode(retry_mode)
+	_spawn_wave()
+	_show_status_flash("Wave %d retry" % wave_index, Color(1.0, 0.48, 0.30))
+
+
+func _ensure_runtime_view_is_rendering() -> void:
+	if ui_layer != null:
+		ui_layer.visible = true
+	if hud_root != null:
+		hud_root.visible = true
+	if not rewards_pending:
+		if reward_backdrop != null:
+			reward_backdrop.visible = false
+		if reward_panel != null:
+			reward_panel.visible = false
+	if settings_backdrop != null and not settings_open:
+		settings_backdrop.visible = false
+	if player == null or not is_instance_valid(player):
+		return
+	var player_camera: Camera3D = player.get("camera") as Camera3D
+	if player_camera != null and not player_camera.current:
+		player_camera.current = true
 
 
 func _build_world() -> void:
@@ -2152,7 +2269,7 @@ func _build_reward_panel(root: Control) -> void:
 
 	reward_summary_label = Label.new()
 	reward_summary_label.name = "RewardSummaryLabel"
-	reward_summary_label.text = "Pick one payout to bank the arena and return to the table."
+	reward_summary_label.text = "Pick one power-up to equip before the next wave."
 	reward_summary_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	reward_summary_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	reward_summary_label.add_theme_font_size_override("font_size", 12)
@@ -2766,9 +2883,14 @@ func _get_joypad_axis_label(axis: int, value: float) -> String:
 	return "Axis %d%s" % [axis, direction]
 
 
-func _update_crosshair() -> void:
+func _update_crosshair(force: bool = true, delta: float = 0.0) -> void:
 	if crosshair == null:
 		return
+	if not force:
+		crosshair_refresh_elapsed += delta
+		if crosshair_refresh_elapsed < CROSSHAIR_DYNAMIC_REFRESH_INTERVAL:
+			return
+	crosshair_refresh_elapsed = 0.0
 	var signature := _get_crosshair_signature(true)
 	if signature == crosshair_signature:
 		return
@@ -2843,6 +2965,20 @@ func _clear_children(node: Node) -> void:
 		child.queue_free()
 
 
+func _reserve_effect_slots(incoming_count: int = 1) -> void:
+	if effects_root == null:
+		return
+	var target_count := maxi(0, MAX_TRANSIENT_EFFECTS - maxi(1, incoming_count))
+	var trimmed := 0
+	while effects_root.get_child_count() > target_count and trimmed < MAX_TRANSIENT_EFFECTS:
+		var child := effects_root.get_child(0)
+		if child == null:
+			return
+		effects_root.remove_child(child)
+		child.queue_free()
+		trimmed += 1
+
+
 func _apply_player_settings() -> void:
 	if player != null and player.has_method("apply_aim_settings"):
 		player.call("apply_aim_settings", aim_settings)
@@ -2912,9 +3048,11 @@ func _spawn_wave() -> void:
 		child.queue_free()
 	wave_active = true
 	rewards_pending = false
+	current_wave_kills = 0
 	restart_timer = 0.0
 	wave_started_msec = Time.get_ticks_msec()
-	status_label.text = "" if status_label != null else ""
+	if status_label != null:
+		status_label.text = ""
 	var extra_health := (wave_index - 1) * 12
 	var wave_defs := _get_objective_enemy_defs()
 	current_wave_enemy_total = wave_defs.size()
@@ -2962,7 +3100,65 @@ func _get_objective_enemy_defs() -> Array[Dictionary]:
 		defs.append(copy)
 	if objective_mode == "boss_gate":
 		defs.append(_get_boss_gate_enemy_def())
-	return defs
+	return _expand_wave_enemy_defs(defs)
+
+
+func _get_wave_enemy_target_count() -> int:
+	return clampi(MIN_ENEMIES_PER_WAVE + maxi(0, wave_index - 1), MIN_ENEMIES_PER_WAVE, MAX_ENEMIES_PER_WAVE)
+
+
+func _expand_wave_enemy_defs(base_defs: Array[Dictionary]) -> Array[Dictionary]:
+	var expanded: Array[Dictionary] = []
+	for data in base_defs:
+		expanded.append(data.duplicate(true))
+	if expanded.is_empty():
+		return expanded
+
+	var templates: Array = []
+	for data in expanded:
+		if not bool(data.get("objective_target", false)):
+			templates.append(data.duplicate(true))
+	if templates.is_empty():
+		for data in expanded:
+			templates.append(data.duplicate(true))
+
+	var target_count := _get_wave_enemy_target_count()
+	var extra_index := 0
+	while expanded.size() < target_count:
+		var template: Dictionary = (templates[(extra_index + wave_index) % templates.size()] as Dictionary).duplicate(true)
+		var base_name := String(template.get("name", "Enemy"))
+		template["name"] = "%s Echo %d" % [base_name, extra_index + 1]
+		template["objective_target"] = false
+		template["position"] = _get_wave_spawn_position(expanded.size())
+		template["speed"] = float(template.get("speed", 3.4)) + minf(0.55, float(maxi(0, wave_index - 1)) * 0.06)
+		expanded.append(template)
+		extra_index += 1
+	return expanded
+
+
+func _get_wave_spawn_position(spawn_number: int) -> Vector3:
+	var cells := [
+		Vector2i(0, 0),
+		Vector2i(1, 0),
+		Vector2i(2, 0),
+		Vector2i(0, 1),
+		Vector2i(2, 1),
+		Vector2i(0, 2),
+		Vector2i(1, 2),
+		Vector2i(2, 2)
+	]
+	var offsets := [
+		Vector3(-1.4, 0.17, -1.1),
+		Vector3(1.1, 0.17, -0.7),
+		Vector3(0.2, 0.17, 1.2),
+		Vector3(-0.8, 0.17, 1.5),
+		Vector3(1.5, 0.17, 0.8),
+		Vector3(-1.1, 0.17, 0.3),
+		Vector3(0.8, 0.17, -1.4),
+		Vector3(1.7, 0.17, 1.4)
+	]
+	var cell: Vector2i = cells[(spawn_number + wave_index) % cells.size()]
+	return _map_cell_to_world(cell) + offsets[(spawn_number * 2 + wave_index) % offsets.size()]
 
 
 func _get_map_spawn_for_enemy(data: Dictionary) -> Vector3:
@@ -2997,6 +3193,7 @@ func _show_wave_rewards() -> void:
 	reward_options = _build_reward_options()
 	if reward_panel == null:
 		return
+	reward_return_in_progress = false
 	active_reward_index = 0
 	if reward_backdrop != null:
 		reward_backdrop.visible = true
@@ -3017,7 +3214,12 @@ func _show_wave_rewards() -> void:
 			_get_total_ability_uses()
 		]
 	if reward_summary_label != null:
-		reward_summary_label.text = "Choose one payout. Mouse, 1-3, arrow keys, A/D, Enter, or Space all work."
+		var next_mode := _get_wave_objective_mode(wave_index + 1)
+		var next_def: Dictionary = (OBJECTIVE_MODE_DEFS[next_mode] as Dictionary)
+		reward_summary_label.text = "Choose one power-up. It applies now, then Wave %d starts: %s." % [
+			wave_index + 1,
+			String(next_def.get("label", "Objective"))
+		]
 	var buttons := reward_panel.find_children("RewardButton*", "Button", true, false)
 	for i in range(buttons.size()):
 		var button: Button = buttons[i] as Button
@@ -3039,68 +3241,123 @@ func _show_wave_rewards() -> void:
 
 
 func _build_reward_options() -> Array[Dictionary]:
+	var options: Array[Dictionary] = []
 	var objective_bonus := 2 if objective_completed else 0
 	match objective_mode:
 		"extract":
-			return [
-				_make_reward_option("Runner Edge", "damage", 2, 2 + objective_bonus, "Uncommon", ["extract", "duel"], "Dash-heavy clears turn into sharper opening weapon pressure."),
-				_make_reward_option("Exit Plating", "armor", 8, 1 + objective_bonus, "Common", ["extract", "defend"], "Bank armor for risky grab-and-leave routes."),
-				_make_reward_option("Sprint Ammo", "ammo", 24, 1 + objective_bonus, "Common", ["extract", "duel"], "Carry extra reserve ammo for longer rotations.")
-			]
+			options.append(_make_reward_option("Runner Edge", "damage", 2, 2 + objective_bonus, "Uncommon", ["extract", "duel"], "Dash-heavy clears turn into sharper opening weapon pressure."))
+			options.append(_make_reward_option("Exit Plating", "armor", 8, 1 + objective_bonus, "Common", ["extract", "defend"], "Bank armor for risky grab-and-leave routes."))
+			options.append(_make_reward_option("Sprint Ammo", "ammo", 24, 1 + objective_bonus, "Common", ["extract", "duel"], "Carry extra reserve ammo for longer rotations."))
 		"duel":
-			return [
-				_make_reward_option("Marked Damage", "damage", 4, 2 + objective_bonus, "Rare" if objective_completed else "Uncommon", ["duel", "boss_gate"], "Marked kills become a bigger burst profile next round."),
-				_make_reward_option("Read Cache", "ammo", 16, 1 + objective_bonus, "Common", ["duel", "extract"], "Intel clears leave enough ammo to play for another mark."),
-				_make_reward_option("Duel Guard", "armor", 9, 1 + objective_bonus, "Common", ["duel", "defend"], "Survive the next committed fight with extra plating.")
-			]
+			options.append(_make_reward_option("Marked Damage", "damage", 4, 2 + objective_bonus, "Rare" if objective_completed else "Uncommon", ["duel", "boss_gate"], "Marked kills become a bigger burst profile next round."))
+			options.append(_make_reward_option("Read Cache", "ammo", 16, 1 + objective_bonus, "Common", ["duel", "extract"], "Intel clears leave enough ammo to play for another mark."))
+			options.append(_make_reward_option("Duel Guard", "armor", 9, 1 + objective_bonus, "Common", ["duel", "defend"], "Survive the next committed fight with extra plating."))
 		"defend":
-			return [
-				_make_reward_option("Fortified Guard", "armor", 14, 2 + objective_bonus, "Rare" if objective_completed else "Uncommon", ["defend", "hold_pot"], "Clean defenses become real armor for the next stand."),
-				_make_reward_option("Reload Wall", "ammo", 18, 1 + objective_bonus, "Common", ["defend", "extract"], "A held lane leaves reload stock for longer fights."),
-				_make_reward_option("Counter Damage", "damage", 3, 1 + objective_bonus, "Uncommon", ["defend", "duel"], "A stable hold converts into counter-pressure.")
-			]
+			options.append(_make_reward_option("Fortified Guard", "armor", 14, 2 + objective_bonus, "Rare" if objective_completed else "Uncommon", ["defend", "hold_pot"], "Clean defenses become real armor for the next stand."))
+			options.append(_make_reward_option("Reload Wall", "ammo", 18, 1 + objective_bonus, "Common", ["defend", "extract"], "A held lane leaves reload stock for longer fights."))
+			options.append(_make_reward_option("Counter Damage", "damage", 3, 1 + objective_bonus, "Uncommon", ["defend", "duel"], "A stable hold converts into counter-pressure."))
 		"boss_gate":
-			return [
-				_make_reward_option("Boss Tech", "damage", 5, 2 + objective_bonus, "Rare", ["boss_gate", "duel"], "Gate pressure becomes a major weapon-damage mod."),
-				_make_reward_option("Gate Plating", "armor", 12, 1 + objective_bonus, "Uncommon", ["boss_gate", "defend"], "Boss survival becomes armor for the next gate or hold."),
-				_make_reward_option("Ritual Ammo", "ammo", 20, 1 + objective_bonus, "Uncommon", ["boss_gate", "extract"], "Ritual clears leave reserve ammo for the next gamble.")
-			]
+			options.append(_make_reward_option("Boss Tech", "damage", 5, 2 + objective_bonus, "Rare", ["boss_gate", "duel"], "Gate pressure becomes a major weapon-damage mod."))
+			options.append(_make_reward_option("Gate Plating", "armor", 12, 1 + objective_bonus, "Uncommon", ["boss_gate", "defend"], "Boss survival becomes armor for the next gate or hold."))
+			options.append(_make_reward_option("Ritual Ammo", "ammo", 20, 1 + objective_bonus, "Uncommon", ["boss_gate", "extract"], "Ritual clears leave reserve ammo for the next gamble."))
 		_:
-			return [
-				_make_reward_option("Pot Anchor", "armor", 12, 2 + objective_bonus, "Uncommon", ["hold_pot", "defend"], "Holding center banks armor for the next stand."),
-				_make_reward_option("Center Cut", "damage", 3, 1 + objective_bonus, "Uncommon", ["hold_pot", "duel"], "Owning center turns into stronger weapon pressure."),
-				_make_reward_option("Table Ammo", "ammo", 18, 1 + objective_bonus, "Common", ["hold_pot", "extract"], "The table pays reserve ammo for another rotation.")
-			]
+			options.append(_make_reward_option("Pot Anchor", "armor", 12, 2 + objective_bonus, "Uncommon", ["hold_pot", "defend"], "Holding center banks armor for the next stand."))
+			options.append(_make_reward_option("Center Cut", "damage", 3, 1 + objective_bonus, "Uncommon", ["hold_pot", "duel"], "Owning center turns into stronger weapon pressure."))
+			options.append(_make_reward_option("Table Ammo", "ammo", 18, 1 + objective_bonus, "Common", ["hold_pot", "extract"], "The table pays reserve ammo for another rotation."))
+	return options
 
 
-func _make_reward_option(label: String, kind: String, amount: int, chip_bonus: int, rarity: String, bias_modes: Array[String], summary: String) -> Dictionary:
+func _make_reward_option(label: String, kind: String, amount: int, chip_bonus: int, rarity: String, bias_modes: Array, summary: String) -> Dictionary:
 	return {
 		"label": label,
 		"kind": kind,
 		"amount": amount,
 		"chip_bonus": chip_bonus,
 		"rarity": rarity,
-		"bias_modes": bias_modes.duplicate(),
+		"bias_modes": _string_array(bias_modes),
 		"summary": summary,
 		"mod_id": "%s_%s" % [kind, label.to_lower().replace(" ", "_").replace("-", "_")]
 	}
 
 
 func _select_reward(index: int) -> void:
+	if reward_return_in_progress:
+		return
 	if index < 0 or index >= reward_options.size():
 		_focus_reward_button(active_reward_index)
 		return
 	var reward: Dictionary = reward_options[index]
 	active_reward_index = index
+	reward_return_in_progress = true
 	if reward_summary_label != null:
-		reward_summary_label.text = "Banking %s..." % String(reward.get("label", "payout"))
+		reward_summary_label.text = "Equipping %s for Wave %d..." % [
+			String(reward.get("label", "power-up")),
+			wave_index + 1
+		]
 	var result := _build_arena_result(reward)
 	rewards_pending = false
 	if reward_backdrop != null:
 		reward_backdrop.visible = false
 	if reward_panel != null:
 		reward_panel.visible = false
-	_return_to_card_table(result)
+	call_deferred("_continue_after_wave_reward", reward, result)
+
+
+func _continue_after_wave_reward(reward: Dictionary, result: Dictionary) -> void:
+	_apply_in_arena_reward(reward, result)
+	wave_index += 1
+	_set_objective_mode(_get_wave_objective_mode(wave_index))
+	rewards_pending = false
+	reward_return_in_progress = false
+	if player != null and player.has_method("set_gameplay_input_enabled"):
+		player.call("set_gameplay_input_enabled", true)
+	Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
+	_spawn_wave()
+	_show_status_flash("Wave %d: %s" % [wave_index, String(objective_def.get("label", "Objective"))], _get_objective_color())
+	_refresh_ui()
+
+
+func _apply_in_arena_reward(reward: Dictionary, result: Dictionary) -> void:
+	if reward.is_empty():
+		return
+	var reward_mods: Array = active_bridge_payload.get("reward_mods", [])
+	reward_mods.append(reward.duplicate(true))
+	active_bridge_payload["reward_mods"] = reward_mods
+
+	var economy: Dictionary = (active_bridge_payload.get("economy", {}) as Dictionary).duplicate(true)
+	economy["chips"] = int(economy.get("chips", 0)) + int(result.get("chips_awarded", 0))
+	var kind := String(reward.get("kind", "reward"))
+	var amount := int(reward.get("amount", 0))
+	match kind:
+		"damage":
+			var current_damage := int(active_weapon_profile.get("damage", 18))
+			if player != null and player.weapon != null:
+				current_damage = int(player.weapon.get("damage"))
+			active_weapon_profile["damage"] = maxi(1, current_damage + amount)
+		"armor":
+			economy["armor"] = int(economy.get("armor", 0)) + amount
+			if player != null and player.has_method("add_armor"):
+				player.call("add_armor", amount)
+		"ammo":
+			economy["ammo"] = int(economy.get("ammo", 24)) + amount
+			var current_magazine := int(active_weapon_profile.get("magazine", 30))
+			if player != null and player.weapon != null:
+				current_magazine = int(player.weapon.get("magazine_size"))
+			active_weapon_profile["magazine"] = current_magazine + mini(6, maxi(1, int(roundf(float(amount) * 0.18))))
+	active_bridge_payload["economy"] = economy
+
+	var progression: Dictionary = (active_bridge_payload.get("progression", {}) as Dictionary).duplicate(true)
+	var xp_gain := maxi(2, _get_wave_kills_for_scoring() + (2 if objective_completed else 0))
+	progression["card_xp_pool"] = int(progression.get("card_xp_pool", 0)) + xp_gain
+	active_bridge_payload["progression"] = progression
+
+	for index in range(ability_cooldowns.size()):
+		ability_cooldowns[index] = 0.0
+	if player != null and player.weapon != null:
+		if player.weapon.has_method("configure_from_bridge"):
+			player.weapon.call("configure_from_bridge", active_weapon_profile, int(economy.get("ammo", 24)))
+		elif player.weapon.has_method("force_ready"):
+			player.weapon.call("force_ready")
 
 
 func _handle_reward_input(event: InputEvent) -> bool:
@@ -3196,7 +3453,7 @@ func _get_reward_tooltip(option: Dictionary) -> String:
 	return "%s\n%s\n%s\nBiases future prep toward: %s." % [
 		String(option.get("label", "Reward")),
 		_get_reward_focus_text(option),
-		String(option.get("summary", "Cash out and return to the card table.")),
+		String(option.get("summary", "Equip now and keep the arena moving.")),
 		", ".join(_string_array(option.get("bias_modes", [])))
 	]
 
@@ -3256,13 +3513,13 @@ func _get_reward_focus_text(option: Dictionary) -> String:
 	var chips := int(option.get("chip_bonus", 0))
 	match kind:
 		"damage":
-			return "Weapon damage carries into the next arena. Great when your hand is trying to end fights fast. +%d damage, +%d chips." % [amount, chips]
+			return "Weapon damage carries into the next wave. Great when your hand is trying to end fights fast. +%d damage, +%d chips." % [amount, chips]
 		"armor":
-			return "Adds survivability to the next loadout. Best for hold, defend, and close-range tests. +%d armor, +%d chips." % [amount, chips]
+			return "Adds survivability to the current loadout. Best for hold, defend, and close-range tests. +%d armor, +%d chips." % [amount, chips]
 		"ammo":
 			return "Adds breathing room for reload tests and longer waves. Best for Extract and sustained AR tuning. +%d ammo, +%d chips." % [amount, chips]
 		_:
-			return "Banks a flexible payout for the card table. +%d chips." % chips
+			return "Banks a flexible wave payout. +%d chips." % chips
 
 
 func _get_reward_kind_noun(kind: String) -> String:
@@ -3337,6 +3594,7 @@ func _build_arena_result(reward: Dictionary, cleared: bool = true) -> Dictionary
 	var remaining_health := int(player.get("health")) if player != null else 0
 	var remaining_armor := int(player.get("armor")) if player != null else 0
 	var objective_score := _calculate_objective_score(cleared, clear_time)
+	var scored_kills := _get_wave_kills_for_scoring()
 	return {
 		"source": "fps_arena",
 		"map_name": String(tactical_map.get("name", "Crossfire Table")),
@@ -3354,7 +3612,8 @@ func _build_arena_result(reward: Dictionary, cleared: bool = true) -> Dictionary
 		"outcome": "win" if cleared else "defeat",
 		"cleared": cleared,
 		"wave": wave_index,
-		"kills": kills,
+		"kills": scored_kills,
+		"total_kills": kills,
 		"clear_time": clear_time,
 		"shots_fired": shots_fired,
 		"shots_hit": shots_hit,
@@ -3381,9 +3640,10 @@ func _get_total_ability_uses() -> int:
 
 
 func _calculate_arena_chips(reward: Dictionary, cleared: bool = true, objective_score: int = 0) -> int:
+	var scored_kills := _get_wave_kills_for_scoring()
 	if not cleared:
-		return mini(2, max(0, kills))
-	var chips := 4 + kills
+		return mini(2, max(0, scored_kills))
+	var chips := 4 + scored_kills
 	if _get_hit_rate() >= 0.50:
 		chips += 2
 	if damage_taken <= 20:
@@ -3401,6 +3661,7 @@ func _calculate_arena_chips(reward: Dictionary, cleared: bool = true, objective_
 
 
 func _calculate_objective_score(cleared: bool, clear_time: float) -> int:
+	var scored_kills := _get_wave_kills_for_scoring()
 	var objective_part := int(roundf(objective_score_bank))
 	match objective_mode:
 		"hold_pot":
@@ -3417,13 +3678,17 @@ func _calculate_objective_score(cleared: bool, clear_time: float) -> int:
 	if objective_failed:
 		objective_part = maxi(0, objective_part - 24)
 	if not cleared:
-		return clampi(kills * 10 + int(_get_hit_rate() * 18.0) + objective_part, 0, 65)
-	var score := 32 + kills * 4 + int(_get_hit_rate() * 16.0) + objective_part
+		return clampi(scored_kills * 10 + int(_get_hit_rate() * 18.0) + objective_part, 0, 65)
+	var score := 32 + scored_kills * 4 + int(_get_hit_rate() * 16.0) + objective_part
 	if clear_time > 0.0 and clear_time <= 30.0:
 		score += 8
 	if damage_taken <= 20:
 		score += 6
 	return clampi(score, 0, 100)
+
+
+func _get_wave_kills_for_scoring() -> int:
+	return current_wave_kills if current_wave_kills > 0 else kills
 
 
 func _calculate_wounds_taken(cleared: bool, remaining_health: int) -> int:
@@ -3443,10 +3708,14 @@ func _return_to_card_table(result: Dictionary) -> void:
 			bridge.call("set_result", result)
 		if bridge.has_method("get_return_scene_path"):
 			scene_path = String(bridge.call("get_return_scene_path"))
+	if scene_path.is_empty():
+		scene_path = CARD_TABLE_SCENE
 	var tree := get_tree()
 	if tree != null:
-		var error := tree.change_scene_to_file(scene_path)
+		var packed_scene := _get_ready_card_table_scene(scene_path)
+		var error := tree.change_scene_to_packed(packed_scene) if packed_scene != null else tree.change_scene_to_file(scene_path)
 		if error != OK:
+			reward_return_in_progress = false
 			rewards_pending = true
 			if reward_backdrop != null:
 				reward_backdrop.visible = true
@@ -3454,6 +3723,24 @@ func _return_to_card_table(result: Dictionary) -> void:
 				reward_panel.visible = true
 			_show_status_flash("Return failed: %s" % scene_path, Color(1.0, 0.35, 0.22))
 			_focus_reward_button(active_reward_index)
+
+
+func _request_card_table_preload() -> void:
+	if DisplayServer.get_name() == "headless":
+		return
+	if card_table_preload_requested:
+		return
+	var error := ResourceLoader.load_threaded_request(CARD_TABLE_SCENE)
+	if error == OK:
+		card_table_preload_requested = true
+
+
+func _get_ready_card_table_scene(scene_path: String) -> PackedScene:
+	if scene_path != CARD_TABLE_SCENE or not card_table_preload_requested:
+		return null
+	if ResourceLoader.load_threaded_get_status(CARD_TABLE_SCENE) != ResourceLoader.THREAD_LOAD_LOADED:
+		return null
+	return ResourceLoader.load_threaded_get(CARD_TABLE_SCENE) as PackedScene
 
 
 func _on_weapon_fired(_from: Vector3, _to: Vector3) -> void:
@@ -3518,6 +3805,7 @@ func _refresh_ui() -> void:
 	if player == null or player.weapon == null:
 		return
 	var ammo_state: Dictionary = player.weapon.call("get_ammo_state") as Dictionary
+	var summary := get_active_loadout_summary()
 	if ammo_label != null:
 		ammo_label.text = str(ammo_state.get("ammo", 0))
 	if reserve_label != null:
@@ -3531,7 +3819,7 @@ func _refresh_ui() -> void:
 			reload_status_label.visible = is_reloading
 			reload_status_label.text = "RELOADING %d%%" % int(roundf(float(ammo_state.get("reload_progress", 0.0)) * 100.0))
 	if kill_label != null:
-		kill_label.text = "%d/%d" % [kills, maxi(1, current_wave_enemy_total)]
+		kill_label.text = "%d/%d" % [current_wave_kills, maxi(1, current_wave_enemy_total)]
 	if status_label != null and wave_active:
 		status_label.text = "WAVE %d" % wave_index
 	if objective_label != null:
@@ -3540,7 +3828,6 @@ func _refresh_ui() -> void:
 	if objective_progress_bar != null:
 		objective_progress_bar.value = _get_objective_progress_ratio()
 	if loadout_label != null:
-		var summary := get_active_loadout_summary()
 		loadout_label.add_theme_color_override("font_color", _get_class_accent_color())
 		loadout_label.text = "%s %s | %s | Armor %d | Chips %d | Upg %d W%d" % [
 			summary.get("hero", "Gambler-Knight"),
@@ -3553,7 +3840,7 @@ func _refresh_ui() -> void:
 		]
 	if ability_label != null:
 		ability_label.text = _get_ability_hud_text()
-	_refresh_card_combat_hud(ammo_state)
+	_refresh_card_combat_hud(ammo_state, summary)
 	if telemetry_label != null:
 		var run_time := float(Time.get_ticks_msec() - run_started_msec) / 1000.0 if run_started_msec > 0 else 0.0
 		telemetry_label.text = "Time %.1fs | Waves %d | Hits %.0f%% | Crits %d | Damage %d | Taken %d | Objective %d" % [
@@ -3567,10 +3854,11 @@ func _refresh_ui() -> void:
 		]
 
 
-func _refresh_card_combat_hud(ammo_state: Dictionary) -> void:
+func _refresh_card_combat_hud(ammo_state: Dictionary, summary: Dictionary = {}) -> void:
 	if card_hud_panel == null:
 		return
-	var summary := get_active_loadout_summary()
+	if summary.is_empty():
+		summary = get_active_loadout_summary()
 	if card_hud_weapon_label != null:
 		card_hud_weapon_label.text = "%s | %s" % [String(summary.get("hero_passive", "Ante Guard")).to_upper(), String(summary.get("weapon", "House Sidearm")).to_upper()]
 	if card_hud_economy_label != null:
