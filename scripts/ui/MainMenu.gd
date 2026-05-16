@@ -18,11 +18,13 @@ var status_label: Label
 var dev_tools_panel: Control
 var settings_panel: Control
 var map_data: Dictionary = {}
+var scene_preload_requests: Dictionary = {}
 
 
 func _ready() -> void:
 	map_data = TACTICAL_MAP_SCRIPT.get_default_map()
 	_build_ui()
+	_warm_common_scenes()
 
 
 func _build_ui() -> void:
@@ -64,19 +66,24 @@ func _build_ui() -> void:
 
 	var subtitle := Label.new()
 	subtitle.name = "SubtitleLabel"
-	subtitle.text = "Build a cursed card kit. Survive the FPS arena."
+	subtitle.text = "Build kit. Fight FPS. Bank payout."
 	subtitle.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	subtitle.add_theme_font_size_override("font_size", 18)
 	subtitle.add_theme_color_override("font_color", Color(0.82, 0.88, 0.84))
 	nav.add_child(subtitle)
 
 	_add_divider(nav)
-	var deal_in_button := _make_button("DEAL IN\nStart Run", CARD_SCENE, "DealInButton")
+	var quick_arena_button := _make_action_button("ENTER ARENA\nQuick Fight", "QuickArenaButton", _open_quick_arena)
+	quick_arena_button.custom_minimum_size = Vector2(0, 76)
+	quick_arena_button.add_theme_font_size_override("font_size", 22)
+	nav.add_child(quick_arena_button)
+
+	var deal_in_button := _make_button("BUILD KIT\nCard Table", CARD_SCENE, "DealInButton")
 	deal_in_button.custom_minimum_size = Vector2(0, 76)
 	deal_in_button.add_theme_font_size_override("font_size", 22)
 	nav.add_child(deal_in_button)
 	nav.add_child(_make_action_button("Settings", "SettingsButton", _toggle_settings))
-	nav.add_child(_make_action_button("Dev Tools", "DevToolsButton", _toggle_dev_tools))
+	nav.add_child(_make_action_button("Practice Lab", "DevToolsButton", _toggle_dev_tools))
 	nav.add_child(_make_action_button("Quit", "QuitButton", _quit_game))
 
 	settings_panel = _build_settings_panel()
@@ -91,7 +98,7 @@ func _build_ui() -> void:
 	status_label = Label.new()
 	status_label.name = "LaunchStatus"
 	status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	status_label.text = "Deal In starts the card table. Dev Tools are for testing shortcuts."
+	status_label.text = "Enter Arena jumps straight into the shooter. Build Kit opens card prep."
 	status_label.add_theme_font_size_override("font_size", 13)
 	status_label.add_theme_color_override("font_color", Color(0.88, 0.64, 0.38))
 	nav.add_child(status_label)
@@ -132,7 +139,7 @@ func _build_dev_tools_panel() -> Control:
 	dev.name = "DevToolsList"
 	dev.add_theme_constant_override("separation", 8)
 	scroll.add_child(dev)
-	_add_section_label(dev, "TESTING LAB")
+	_add_section_label(dev, "PRACTICE LAB")
 	dev.add_child(_make_button("Card Prep With Sample Hand", CARD_SCENE, "CardPrepButton"))
 	dev.add_child(_make_action_button("FPS With Slotted Weapon", "SlottedFPSButton", _open_fps_with_sample_loadout))
 	dev.add_child(_make_action_button("Hold Pot Test", "HoldPotTestButton", _open_objective_fps.bind("hold_pot")))
@@ -158,7 +165,7 @@ func _build_settings_panel() -> Control:
 	_apply_menu_panel_style(panel, Color(0.046, 0.050, 0.048, 0.92), Color(0.48, 0.58, 0.55))
 	var label := Label.new()
 	label.name = "SettingsSummary"
-	label.text = "Settings live inside the FPS pause menu for now: press Esc in the arena to adjust aim, reticle, sensitivity, and controls."
+	label.text = "Press Esc in the FPS arena to tune aim, reticle, sensitivity, and controls."
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	label.add_theme_font_size_override("font_size", 13)
 	label.add_theme_color_override("font_color", Color(0.82, 0.88, 0.84))
@@ -174,13 +181,13 @@ func _build_identity_panel() -> Control:
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 10)
 	panel.add_child(box)
-	_add_section_label(box, "THE GAME")
+	_add_section_label(box, "CORE LOOP")
 	var copy := RichTextLabel.new()
 	copy.name = "IdentityCopy"
 	copy.bbcode_enabled = true
 	copy.fit_content = true
 	copy.scroll_active = false
-	copy.text = "[b]Cards are the run.[/b]\nDraw a hand, build a weapon and ability kit, then take it into a first-person arena. Payouts become artifacts, Card XP, upgrades, mutations, and wounds that change the next table."
+	copy.text = "[b]1 Build kit[/b]\nCards become your gun, powers, perk, and risk.\n\n[b]2 Enter FPS[/b]\nClear the arena objective.\n\n[b]3 Bank payout[/b]\nRewards upgrade the next loadout."
 	copy.add_theme_font_size_override("normal_font_size", 18)
 	copy.add_theme_color_override("default_color", Color(0.92, 0.88, 0.78))
 	box.add_child(copy)
@@ -194,11 +201,11 @@ func _build_loop_panel() -> Control:
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 8)
 	panel.add_child(box)
-	_add_section_label(box, "RUN LOOP")
+	_add_section_label(box, "NEXT ACTION")
 	var loop := Label.new()
 	loop.name = "RunLoopSummary"
 	loop.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	loop.text = "Deal In -> build FPS kit -> enter arena -> choose payout -> upgrade cards -> survive the next fight."
+	loop.text = "Enter Arena is fastest. Build Kit lets you tune the next FPS loadout."
 	loop.add_theme_font_size_override("font_size", 17)
 	loop.add_theme_color_override("font_color", Color(0.84, 0.90, 0.88))
 	box.add_child(loop)
@@ -212,11 +219,11 @@ func _build_progression_panel() -> Control:
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 8)
 	panel.add_child(box)
-	_add_section_label(box, "WHAT CHANGES")
+	_add_section_label(box, "CARRYOVER")
 	var progression := Label.new()
 	progression.name = "ProgressionSummary"
 	progression.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	progression.text = "Reward artifacts bias future objectives. Card XP upgrades or mutates cards. Wounds tax chips, draw, and armor."
+	progression.text = "Payouts, Card XP, and wounds shape the next arena."
 	progression.add_theme_font_size_override("font_size", 16)
 	progression.add_theme_color_override("font_color", Color(0.88, 0.84, 0.92))
 	box.add_child(progression)
@@ -250,7 +257,7 @@ func _toggle_dev_tools() -> void:
 	if dev_tools_panel.visible and settings_panel != null:
 		settings_panel.visible = false
 	if status_label != null:
-		status_label.text = "Testing Lab open." if dev_tools_panel.visible else "Deal In starts the card table. Dev Tools are hidden."
+		status_label.text = "Practice Lab open." if dev_tools_panel.visible else "Enter Arena jumps straight into the shooter."
 
 
 func _toggle_settings() -> void:
@@ -260,7 +267,7 @@ func _toggle_settings() -> void:
 	if settings_panel.visible and dev_tools_panel != null:
 		dev_tools_panel.visible = false
 	if status_label != null:
-		status_label.text = "Settings note open." if settings_panel.visible else "Deal In starts the card table."
+		status_label.text = "Settings note open." if settings_panel.visible else "Enter Arena jumps straight into the shooter."
 
 
 func _quit_game() -> void:
@@ -345,19 +352,38 @@ func _get_feature_color(feature: Dictionary, key: String, fallback: Color) -> Co
 	return fallback
 
 
-func _go_to_scene(scene_path: String) -> void:
+func _go_to_scene(scene_path: String, preserve_bridge_state: bool = false) -> void:
 	if scene_path.is_empty():
 		return
-	var error := get_tree().change_scene_to_file(scene_path)
-	if error != OK and status_label != null:
-		status_label.text = "Could not open %s" % scene_path
+	if not preserve_bridge_state:
+		_clear_bridge_pending_state()
+	call_deferred("_change_to_scene", scene_path, preserve_bridge_state)
+
+
+func _change_to_scene(scene_path: String, preserve_bridge_state: bool = false) -> void:
+	var packed_scene := _get_ready_preloaded_scene(scene_path)
+	var error := get_tree().change_scene_to_packed(packed_scene) if packed_scene != null else get_tree().change_scene_to_file(scene_path)
+	if error != OK:
+		if preserve_bridge_state:
+			_clear_bridge_pending_state()
+		if status_label != null:
+			status_label.text = "Could not open %s" % scene_path
+
+
+func _open_quick_arena() -> void:
+	var bridge := get_node_or_null("/root/ArenaBridge")
+	if bridge != null and bridge.has_method("set_payload"):
+		bridge.call("set_payload", _build_sample_arena_payload(), CARD_SCENE)
+	if status_label != null:
+		status_label.text = "Loading arena..."
+	_go_to_scene(SHOOTER_SCENE, true)
 
 
 func _open_fps_with_sample_loadout() -> void:
 	var bridge := get_node_or_null("/root/ArenaBridge")
 	if bridge != null and bridge.has_method("set_payload"):
 		bridge.call("set_payload", _build_sample_arena_payload(), CARD_SCENE)
-	_go_to_scene(SHOOTER_SCENE)
+	_go_to_scene(SHOOTER_SCENE, true)
 
 
 func _open_objective_fps(objective_mode: String) -> void:
@@ -367,7 +393,7 @@ func _open_objective_fps(objective_mode: String) -> void:
 		payload["objective_mode"] = objective_mode
 		payload["reads"] = _get_objective_read_payload(objective_mode)
 		bridge.call("set_payload", payload, CARD_SCENE)
-	_go_to_scene(SHOOTER_SCENE)
+	_go_to_scene(SHOOTER_SCENE, true)
 
 
 func _open_payout_demo() -> void:
@@ -396,7 +422,7 @@ func _open_payout_demo() -> void:
 			"chips_awarded": 10,
 			"cards_to_draw": 5
 		})
-	_go_to_scene(CARD_SCENE)
+	_go_to_scene(CARD_SCENE, true)
 
 
 func _open_defeat_demo() -> void:
@@ -425,7 +451,36 @@ func _open_defeat_demo() -> void:
 			"chips_awarded": 1,
 			"cards_to_draw": 0
 		})
-	_go_to_scene(CARD_SCENE)
+	_go_to_scene(CARD_SCENE, true)
+
+
+func _clear_bridge_pending_state() -> void:
+	var bridge := get_node_or_null("/root/ArenaBridge")
+	if bridge != null and bridge.has_method("clear_pending"):
+		bridge.call("clear_pending")
+
+
+func _warm_common_scenes() -> void:
+	_request_scene_preload(SHOOTER_SCENE)
+	_request_scene_preload(CARD_SCENE)
+
+
+func _request_scene_preload(scene_path: String) -> void:
+	if DisplayServer.get_name() == "headless":
+		return
+	if scene_path.is_empty() or scene_preload_requests.has(scene_path):
+		return
+	var error := ResourceLoader.load_threaded_request(scene_path)
+	if error == OK:
+		scene_preload_requests[scene_path] = true
+
+
+func _get_ready_preloaded_scene(scene_path: String) -> PackedScene:
+	if not scene_preload_requests.has(scene_path):
+		return null
+	if ResourceLoader.load_threaded_get_status(scene_path) != ResourceLoader.THREAD_LOAD_LOADED:
+		return null
+	return ResourceLoader.load_threaded_get(scene_path) as PackedScene
 
 
 func _build_sample_arena_payload() -> Dictionary:

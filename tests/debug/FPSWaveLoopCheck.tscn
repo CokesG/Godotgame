@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://fps_wave_loop_check"]
+
+[ext_resource type="Script" path="res://tests/debug/fps_wave_loop_check.gd" id="1_wave_loop"]
+
+[node name="FPSWaveLoopCheck" type="Node"]
+script = ExtResource("1_wave_loop")
